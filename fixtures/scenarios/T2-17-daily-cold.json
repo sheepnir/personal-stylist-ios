@@ -1,0 +1,944 @@
+{
+  "id": "T2-17-daily-cold",
+  "title": "No-anchor daily, COLD — layer requirement",
+  "task": "T2",
+  "backlog_refs": [
+    "M0-12",
+    "M0-13"
+  ],
+  "prd_refs": [
+    "§10.2",
+    "§10.2 #9"
+  ],
+  "inputs": {
+    "wardrobe_ref": "full_ready_available",
+    "wardrobe": [
+      {
+        "id": "a1000001-0001-4000-8000-000000000001",
+        "displayName": "Navy Oxford Shirt",
+        "slot": "TOP",
+        "category": "shirt_oxford",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1b3a6b",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": true,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000002",
+        "displayName": "White Oxford Shirt (A)",
+        "slot": "TOP",
+        "category": "shirt_oxford",
+        "colorPrimary": {
+          "family": "white",
+          "hex": "#f5f5f0",
+          "name": "White"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": "2026-09-10",
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000003",
+        "displayName": "White Oxford Shirt (B)",
+        "slot": "TOP",
+        "category": "shirt_oxford",
+        "colorPrimary": {
+          "family": "white",
+          "hex": "#fafaf5",
+          "name": "Off-White"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": "2026-09-01",
+        "daysSinceIntake": 90,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000004",
+        "displayName": "Light Blue Poplin Shirt",
+        "slot": "TOP",
+        "category": "shirt_dress",
+        "colorPrimary": {
+          "family": "light_blue",
+          "hex": "#a8c5e2",
+          "name": "Light Blue"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 4,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000005",
+        "displayName": "Heather Grey Tee",
+        "slot": "TOP",
+        "category": "t_shirt",
+        "colorPrimary": {
+          "family": "grey",
+          "hex": "#9a9a9a",
+          "name": "Heather Grey"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 1,
+        "warmth": 1,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "RELAXED",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000006",
+        "displayName": "Olive Henley",
+        "slot": "TOP",
+        "category": "henley",
+        "colorPrimary": {
+          "family": "olive",
+          "hex": "#556b2f",
+          "name": "Olive"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 2,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000002-0002-4000-8000-000000000001",
+        "displayName": "Charcoal Crew Sweater",
+        "slot": "MID_LAYER",
+        "category": "sweater_crew",
+        "colorPrimary": {
+          "family": "charcoal",
+          "hex": "#36454f",
+          "name": "Charcoal"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool",
+          "cashmere"
+        ],
+        "surface": "NAPPED",
+        "formality": 3,
+        "warmth": 4,
+        "seasons": [
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000002-0002-4000-8000-000000000002",
+        "displayName": "Navy Cardigan",
+        "slot": "MID_LAYER",
+        "category": "cardigan",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1b3a6b",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "NAPPED",
+        "formality": 3,
+        "warmth": 3,
+        "seasons": [
+          "FALL",
+          "WINTER",
+          "SPRING"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000003-0003-4000-8000-000000000001",
+        "displayName": "Navy Sport Coat",
+        "slot": "JACKET",
+        "category": "sport_coat",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1a2f5a",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "TEXTURED",
+        "formality": 4,
+        "warmth": 3,
+        "seasons": [
+          "SPRING",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": true,
+        "wantToWearMore": true,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000003-0003-4000-8000-000000000002",
+        "displayName": "Grey Herringbone Sport Coat",
+        "slot": "JACKET",
+        "category": "sport_coat",
+        "colorPrimary": {
+          "family": "grey",
+          "hex": "#7a7a7a",
+          "name": "Medium Grey"
+        },
+        "colorSecondary": null,
+        "pattern": "HERRINGBONE",
+        "materials": [
+          "wool"
+        ],
+        "surface": "TEXTURED",
+        "formality": 4,
+        "warmth": 3,
+        "seasons": [
+          "FALL",
+          "WINTER",
+          "SPRING"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000003-0003-4000-8000-000000000003",
+        "displayName": "Navy Suit Jacket",
+        "slot": "JACKET",
+        "category": "suit_jacket",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#0f1f3d",
+          "name": "Dark Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "SMOOTH",
+        "formality": 5,
+        "warmth": 3,
+        "seasons": [
+          "SPRING",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": "b2000001-0001-4000-8000-000000000001",
+        "keepTogether": true
+      },
+      {
+        "id": "a1000003-0003-4000-8000-000000000004",
+        "displayName": "Tan Cotton Blazer",
+        "slot": "JACKET",
+        "category": "blazer",
+        "colorPrimary": {
+          "family": "tan",
+          "hex": "#c4a574",
+          "name": "Tan"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000004-0004-4000-8000-000000000001",
+        "displayName": "Charcoal Overcoat",
+        "slot": "OUTERWEAR",
+        "category": "overcoat",
+        "colorPrimary": {
+          "family": "charcoal",
+          "hex": "#2f2f2f",
+          "name": "Charcoal"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "NAPPED",
+        "formality": 4,
+        "warmth": 5,
+        "seasons": [
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000004-0004-4000-8000-000000000002",
+        "displayName": "Navy Rain Shell",
+        "slot": "OUTERWEAR",
+        "category": "shell",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1b3a6b",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "nylon"
+        ],
+        "surface": "SMOOTH",
+        "formality": 2,
+        "warmth": 3,
+        "seasons": [
+          "SPRING",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000001",
+        "displayName": "Indigo Jeans",
+        "slot": "BOTTOM",
+        "category": "jeans",
+        "colorPrimary": {
+          "family": "blue",
+          "hex": "#1e3a5f",
+          "name": "Indigo"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "denim"
+        ],
+        "surface": "RUGGED",
+        "formality": 2,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "SLIM",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000002",
+        "displayName": "Khaki Chinos",
+        "slot": "BOTTOM",
+        "category": "chinos",
+        "colorPrimary": {
+          "family": "tan",
+          "hex": "#c3b091",
+          "name": "Khaki"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000003",
+        "displayName": "Grey Wool Trousers",
+        "slot": "BOTTOM",
+        "category": "trousers_dress",
+        "colorPrimary": {
+          "family": "grey",
+          "hex": "#6e6e6e",
+          "name": "Grey"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "SMOOTH",
+        "formality": 4,
+        "warmth": 3,
+        "seasons": [
+          "FALL",
+          "WINTER",
+          "SPRING"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000004",
+        "displayName": "Navy Suit Trousers",
+        "slot": "BOTTOM",
+        "category": "suit_trousers",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#0f1f3d",
+          "name": "Dark Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "SMOOTH",
+        "formality": 5,
+        "warmth": 3,
+        "seasons": [
+          "SPRING",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": "b2000001-0001-4000-8000-000000000001",
+        "keepTogether": true
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000005",
+        "displayName": "Olive Chinos",
+        "slot": "BOTTOM",
+        "category": "chinos",
+        "colorPrimary": {
+          "family": "olive",
+          "hex": "#6b7c3e",
+          "name": "Olive"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 2,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000006-0006-4000-8000-000000000001",
+        "displayName": "Brown Leather Derbies",
+        "slot": "FOOTWEAR",
+        "category": "derby",
+        "colorPrimary": {
+          "family": "brown",
+          "hex": "#5c3317",
+          "name": "Brown"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 4,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": true,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000006-0006-4000-8000-000000000002",
+        "displayName": "Black Oxford Shoes",
+        "slot": "FOOTWEAR",
+        "category": "oxford_shoe",
+        "colorPrimary": {
+          "family": "black",
+          "hex": "#111111",
+          "name": "Black"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 5,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000006-0006-4000-8000-000000000003",
+        "displayName": "White Leather Sneakers",
+        "slot": "FOOTWEAR",
+        "category": "sneakers",
+        "colorPrimary": {
+          "family": "white",
+          "hex": "#f0f0f0",
+          "name": "White"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 1,
+        "warmth": 1,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000006-0006-4000-8000-000000000004",
+        "displayName": "Tan Loafers",
+        "slot": "FOOTWEAR",
+        "category": "loafer",
+        "colorPrimary": {
+          "family": "tan",
+          "hex": "#c4a574",
+          "name": "Tan"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000007-0007-4000-8000-000000000001",
+        "displayName": "Brown Leather Belt",
+        "slot": "ACCESSORY",
+        "category": "belt",
+        "colorPrimary": {
+          "family": "brown",
+          "hex": "#5c3317",
+          "name": "Brown"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 1,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000007-0007-4000-8000-000000000002",
+        "displayName": "Navy Silk Tie",
+        "slot": "ACCESSORY",
+        "category": "tie",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1b3a6b",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "silk"
+        ],
+        "surface": "SMOOTH",
+        "formality": 5,
+        "warmth": 1,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000007-0007-4000-8000-000000000003",
+        "displayName": "Grey Wool Scarf",
+        "slot": "ACCESSORY",
+        "category": "scarf",
+        "colorPrimary": {
+          "family": "grey",
+          "hex": "#888888",
+          "name": "Grey"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "wool"
+        ],
+        "surface": "NAPPED",
+        "formality": 3,
+        "warmth": 4,
+        "seasons": [
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000007-0007-4000-8000-000000000004",
+        "displayName": "Silver Watch",
+        "slot": "ACCESSORY",
+        "category": "watch",
+        "colorPrimary": {
+          "family": "grey",
+          "hex": "#c0c0c0",
+          "name": "Silver"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "steel"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 1,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      }
+    ],
+    "anchorGarmentId": null,
+    "lockedAssignments": [],
+    "boldness": "FAMILIAR",
+    "profile": {
+      "version": 1,
+      "summaryText": "Landscape architect who splits the week between site visits and studio reviews; wants tidy, layered outfits for standard work days.",
+      "age": 34,
+      "profession": "Landscape architect",
+      "workEnvironment": "SMART_CASUAL",
+      "presentationGoals": [
+        "Spend less time deciding in the morning"
+      ],
+      "comfortConstraints": [
+        "Shoes must handle uneven ground on site days"
+      ],
+      "experimentationLevel": 2,
+      "activeRules": []
+    },
+    "context": {
+      "occasion": "CASUAL_DAY",
+      "occasionFormality": 2,
+      "temperatureBand": "COLD",
+      "precipitation": false,
+      "timeOfDay": "MORNING",
+      "freeTextNote": null,
+      "capturedAt": "2026-09-18T09:00:00-07:00"
+    },
+    "options": {
+      "requireSlots": [
+        "TOP",
+        "BOTTOM",
+        "FOOTWEAR",
+        "OUTERWEAR"
+      ],
+      "accessoryPolicy": "OPEN"
+    }
+  },
+  "hard_filters_applied": [
+    "availability",
+    "readiness",
+    "layer_requirement_cold"
+  ],
+  "expected": {
+    "kind": "complete_outfit",
+    "complete_outfit": {
+      "TOP": "a1000001-0001-4000-8000-000000000001",
+      "BOTTOM": "a1000005-0005-4000-8000-000000000003",
+      "FOOTWEAR": "a1000006-0006-4000-8000-000000000001",
+      "OUTERWEAR": "a1000004-0004-4000-8000-000000000002",
+      "MID_LAYER": "a1000002-0002-4000-8000-000000000001"
+    },
+    "must_include": [
+      "a1000004-0004-4000-8000-000000000002"
+    ],
+    "layer_requirement": "COLD requires OUTERWEAR (D-22)"
+  },
+  "notes": "PRD §10.2 #9. Daily path, no anchor, COLD band — OUTERWEAR required."
+}

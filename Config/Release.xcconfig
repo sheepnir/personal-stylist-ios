@@ -1,0 +1,6 @@
+// Shared defaults. LocalSecrets.xcconfig (gitignored) may override OUTFIT_ENGINE_BASE_URL.
+// #168: DEVICE_TOKEN is intentionally absent — never bake auth secrets into the IPA.
+OUTFIT_ENGINE_BASE_URL = https:/$()/stylist-backend.example.invalid
+// Apple Team ID: intentionally empty. Set DEVELOPMENT_TEAM in the untracked LocalSecrets.xcconfig.
+DEVELOPMENT_TEAM =
+#include? "LocalSecrets.xcconfig"

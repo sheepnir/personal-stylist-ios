@@ -1,0 +1,41 @@
+name: Asset library check
+
+on:
+  pull_request:
+    paths:
+      - 'Assets.xcassets/**'
+      - 'Design/AssetLibrary.swift'
+      - 'Design/AvailabilityToken.swift'
+      - 'scripts/check-asset-library.py'
+      - '.github/workflows/asset-library-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Assets.xcassets/**'
+      - 'Design/AssetLibrary.swift'
+      - 'Design/AvailabilityToken.swift'
+      - 'scripts/check-asset-library.py'
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's superseded run. Groups are per PR, so
+# PRs never cancel each other; pushes to main get a unique group and always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  asset-library:
+    name: Catalog and accessor consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Check asset library
+        run: python3 scripts/check-asset-library.py

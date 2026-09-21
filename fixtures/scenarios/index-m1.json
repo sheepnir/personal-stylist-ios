@@ -1,0 +1,16 @@
+{
+  "task": "M1-F05",
+  "backlog_refs": [
+    "M1-F05-07",
+    "M0-21"
+  ],
+  "scenario_ids": [
+    "M1-F05-07-swap-rerank"
+  ],
+  "notes": "Alternatives / swap re-rank scenarios. T2 generate scenarios remain in index.json.",
+  "wardrobe": {
+    "garments": "wardrobe/garments.json",
+    "sets": "wardrobe/sets.json",
+    "images": "wardrobe/images/"
+  }
+}

@@ -1,0 +1,87 @@
+# SAMPLE configuration — never use this committed file with wrangler against a real account.
+# Copy it to the gitignored `wrangler.local.toml`, set your own `name`s and ids there, and pass
+# `--config wrangler.local.toml` to every wrangler command (see README.md "Configure and run wrangler").
+name = "example-stylist-backend"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Optional plain-text vars (sample values; see README "Spend cap"):
+# [vars]
+# DAILY_CAP_USD = "1.00"
+# SOFT_THRESHOLD_USD = "0.50"
+
+# Secrets (`wrangler secret put <NAME> --config wrangler.local.toml [--env <name>]`) are per
+# environment and NOT inherited:
+# - OPENROUTER_API_KEY: OpenRouter API key
+# - ENROLLMENT_SECRET: issues per-device tokens via POST /v1/auth/device
+# - DEVICE_TOKEN: optional legacy shared Bearer; leave unset to disable that path
+
+# ---------------------------------------------------------------------------------------
+# Default (top-level) environment.
+# ---------------------------------------------------------------------------------------
+
+# KV namespace for the usage ledger.
+# Create your own: `npx wrangler kv namespace create USAGE_LEDGER --config wrangler.local.toml`,
+# then paste the id here (in your wrangler.local.toml).
+[[kv_namespaces]]
+binding = "USAGE_LEDGER"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Abuse throttle only: approximate and per Cloudflare location, not spend accounting.
+# namespace_id: any positive integer unique within your Cloudflare account (as a string).
+[[ratelimits]]
+name = "REQUEST_RATE_LIMITER"
+namespace_id = "REPLACE_WITH_RATELIMIT_NAMESPACE_ID"
+simple = { limit = 60, period = 60 }
+
+[[durable_objects.bindings]]
+name = "DEVICE_TOKENS"
+class_name = "DeviceTokenRegistry"
+
+# ---------------------------------------------------------------------------------------
+# Named environments (`--env staging|production`).
+# Nothing is inherited from the top level: each environment has its own Worker `name`, KV
+# namespace, rate limiter, Durable Object binding and secrets. Create each environment's KV with
+# `npx wrangler kv namespace create USAGE_LEDGER --config wrangler.local.toml --env <name>`.
+# Delete these blocks in your local copy if you only use the default environment.
+# ---------------------------------------------------------------------------------------
+
+[env.production]
+name = "example-stylist-backend-production"
+vars = { ENVIRONMENT = "production" }
+
+[[env.production.kv_namespaces]]
+binding = "USAGE_LEDGER"
+id = "REPLACE_WITH_KV_NAMESPACE_ID_PRODUCTION"
+
+[[env.production.ratelimits]]
+name = "REQUEST_RATE_LIMITER"
+namespace_id = "REPLACE_WITH_RATELIMIT_NAMESPACE_ID_PRODUCTION"
+simple = { limit = 60, period = 60 }
+
+[[env.production.durable_objects.bindings]]
+name = "DEVICE_TOKENS"
+class_name = "DeviceTokenRegistry"
+
+[env.staging]
+name = "example-stylist-backend-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[[env.staging.kv_namespaces]]
+binding = "USAGE_LEDGER"
+id = "REPLACE_WITH_KV_NAMESPACE_ID_STAGING"
+
+[[env.staging.ratelimits]]
+name = "REQUEST_RATE_LIMITER"
+namespace_id = "REPLACE_WITH_RATELIMIT_NAMESPACE_ID_STAGING"
+simple = { limit = 60, period = 60 }
+
+[[env.staging.durable_objects.bindings]]
+name = "DEVICE_TOKENS"
+class_name = "DeviceTokenRegistry"
+
+[[migrations]]
+tag = "device-token-registry-v1"
+new_sqlite_classes = ["DeviceTokenRegistry"]

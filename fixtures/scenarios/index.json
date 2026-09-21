@@ -1,0 +1,40 @@
+{
+  "task": "T2",
+  "backlog_refs": [
+    "M0-12",
+    "M0-13"
+  ],
+  "scenario_ids": [
+    "T2-01-sportcoat-mild-work",
+    "T2-02-footwear-gap",
+    "T2-03-suit-anchor-atomic",
+    "T2-04-set-conflict-partner-laundry",
+    "T2-05-dislike-olive",
+    "T2-06-combination-rule",
+    "T2-07-draft-excluded",
+    "T2-08-cold-two-layer",
+    "T2-09-jeans-client-formality",
+    "T2-10-lock-conflict",
+    "T2-11-half-laundry",
+    "T2-12-set-shortlist-over-cap",
+    "T2-13-sportcoat-hot",
+    "T2-14-tee-important-meeting",
+    "T2-15-footwear-anchor",
+    "T2-16-accessory-anchor",
+    "T2-17-daily-cold",
+    "T2-18-daily-hot",
+    "T2-19-minimum-wardrobe",
+    "T2-20-repeat-sportcoat-mild-work",
+    "T2-21-twin-white-shirts",
+    "T2-22-low-confidence",
+    "T2-24-try-another-last",
+    "T2-24-try-another-exhausted",
+    "T2-28-nine-locks",
+    "T2-28-tenth-lock-conflict"
+  ],
+  "wardrobe": {
+    "garments": "wardrobe/garments.json",
+    "sets": "wardrobe/sets.json",
+    "images": "wardrobe/images/"
+  }
+}

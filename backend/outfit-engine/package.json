@@ -1,0 +1,36 @@
+{
+  "name": "@personal-stylist/outfit-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic Stage 1\u20134 outfit engine for Personal Stylist (M0-14/M0-15/M0-16/M0-17/M0-19/M0-20/M0-21)",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./eval": {
+      "types": "./src/eval/index.ts",
+      "import": "./src/eval/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:ci": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "serve:local": "tsx src/local/server.ts",
+    "generate:local": "tsx src/local/cli.ts generate",
+    "eval": "tsx src/eval/cli.ts",
+    "latency:gate": "tsx scripts/latency-gate.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4",
+    "tsx": "^4.19.2",
+    "@types/node": "^22.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

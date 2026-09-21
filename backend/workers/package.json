@@ -1,0 +1,26 @@
+{
+  "name": "personal-stylist-workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Workers backend for Personal Stylist (M0-09)",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.local.toml",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@personal-stylist/outfit-engine": "file:../outfit-engine"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260920.1",
+    "@types/node": "^26.6.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4",
+    "wrangler": "^4.135.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

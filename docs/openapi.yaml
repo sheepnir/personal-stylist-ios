@@ -1,0 +1,1625 @@
+openapi: 3.1.0
+
+info:
+  title: Personal Stylist — Stylist Backend
+  version: 0.3.3
+  summary: Backend that holds the OpenRouter key and runs the deterministic recommendation pipeline. Keeps no user data; its only state is a cost ledger and hashed device-token registry.
+  description: |
+    The contract between the iOS client and the stylist backend.
+
+    **This file is the integration boundary between the iOS developer and the backend/AI
+    developer. Changes require both to acknowledge before merge** (PRD §16.5, CC-06).
+
+    ## Design rules this contract encodes
+
+    1. **The backend keeps no user data.** The device is the source of truth (PRD §11.2,
+       D-13), so every request carries the data it needs and the client persists every
+       result. The backend's only persistent state is a **usage ledger** — device token,
+       day, task, model, cost — which exists so the daily spend cap is enforceable
+       (PRD §9.6, D-20). It holds no content.
+    2. **The model never sees the whole closet.** The client sends the eligible wardrobe
+       subset; the backend hard-filters and scores it down to a candidate set, and the model
+       selects only from that (PRD §8.1, D-03).
+    3. **Outfit responses reference garments by id.** A response containing an id outside
+       the candidate set is rejected by the backend before the client ever sees it
+       (PRD §9.4, D-04). Such a violation is a P0 defect. **Request** payloads may still
+       carry human `displayName` (and set `notes` on the wire today) for rationale/copy —
+       see privacy note below and the privacy payload note below.
+    4. **Purchase price never leaves the device** (PRD §12.2). `GarmentSummary` has no price
+       field, and cost-per-wear messaging is composed on the client (D-19).
+    5. **Failures degrade, they do not error.** The fallback ladder (PRD §9.5) means a
+       successful 200 may carry `fallbackLevel: DETERMINISTIC`. The client must render that
+       honestly rather than treating it as a normal result. Reaching the **hard** daily
+       spend cap is one such trigger: generation, rationale, and summary fall back to
+       deterministic output with a 200; only tasks with no fallback return 429.
+    6. **Unavailable garments never fill a gap** (D-25). The client sends only available,
+       ready garments; the backend never relaxes that; a slot nothing can fill is a gap.
+    7. **Combination rules are enforced on the outfit** (D-26). A disliked pairing never
+       excludes either member on its own; the validator rejects any result containing the pair.
+    8. **Locked garments are preserved exactly** (D-32) — same garment, same slot — and a
+       request whose locks conflict with the anchor, a set partner, or availability is
+       rejected before any model call (`LOCK_CONFLICT`, `SET_CONFLICT`).
+    9. **Sets are atomic** (D-30). A `keepTogether` set passes filtering only whole, is
+       shortlisted whole (over the per-slot cap if needed), and is selected whole or not at all.
+    10. **All scoring is on the backend** (D-33), including swap re-ranking via
+        `/v1/outfit/alternatives`. The client holds no scoring logic.
+
+    ## Privacy payload note
+
+    Image-free generate / alternatives requests carry garment `displayName` and set `notes`;
+    they are used for rationale copy. Clients must therefore **not** claim “names or notes are
+    never sent” for those paths — that statement holds only for the image-bearing paths
+    (T1 / T4). Purchase prices are never part of any request (rule 4); wear counts, master
+    image files, and pending captures without a slot are likewise outside this contract.
+
+    ## Usage reset time (canonical)
+
+    **Canonical field:** `UsageResponse.ledgerDayEndsAt` — end of the backend ledger day
+    (PRD §9.6, D-20). **Client-copy alias:** `resetsAt` may appear on `UsageResponse` and on
+    `429` `Problem` bodies (`SPEND_CAP_REACHED` or `RATE_LIMITED`). When both are present on
+    a usage payload they **MUST** be equal. Prefer reading `ledgerDayEndsAt` for ledger
+    accounting; use `resetsAt` for paused/retry copy.
+
+    ## Status
+
+    Scaffolding, v0. Endpoints marked `x-milestone: M2` are specified but not yet built.
+    Nothing here has been verified against a live model provider, so provider-dependent
+    limits (for example the image payload size) are provisional. Onboarding Problem codes and
+    `SummariseRequest.answers` keys are current as of 0.3.3.
+
+  contact:
+    name: Repository maintainer
+  license:
+    name: All rights reserved — see NOTICE.md
+
+servers:
+  - url: https://{host}
+    description: Stylist backend
+    variables:
+      host:
+        default: stylist-api.example.invalid
+        description: Placeholder. Set once the backend platform is confirmed (M0-08, VF-10).
+
+security:
+  - deviceToken: []
+
+tags:
+  - name: garments
+    description: Turning photographs and links into garment records.
+  - name: outfits
+    description: The recommendation pipeline.
+  - name: profile
+    description: Style profile support.
+  - name: feedback
+    description: Interpreting free-text feedback into proposed preference rules.
+  - name: ops
+    description: Cost, model configuration, and health.
+
+paths:
+
+  /health:
+    get:
+      tags: [ops]
+      operationId: healthCheck
+      summary: Liveness
+      description: |
+        No authentication. `status` is the JSON string enum `ok` — handlers must
+        serialize `"status":"ok"`, never a bare identifier (issue #90). Workers
+        also serve this payload at `/v1/health`.
+      security: []
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  /v1/auth/device:
+    post:
+      tags: [ops]
+      operationId: issueDeviceToken
+      summary: Issue a per-device opaque token
+      description: |
+        Authenticated by the Wrangler `ENROLLMENT_SECRET` (Bearer), not a device token.
+        Returns a fresh opaque token **once**; the Worker stores only its SHA-256 hash (D-46).
+        The enrollment secret never authenticates content endpoints.
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+          description: "Bearer <ENROLLMENT_SECRET>"
+      responses:
+        '201':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceToken, issuedAt]
+                properties:
+                  deviceToken: { type: string, description: Opaque token; show once. }
+                  issuedAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/auth/device/rotate:
+    post:
+      tags: [ops]
+      operationId: rotateDeviceToken
+      summary: Rotate the current device token
+      description: |
+        Revokes the current registry token and issues a replacement (D-46).
+        Legacy shared `DEVICE_TOKEN` callers receive a fresh per-device token
+        (`migratedFromLegacy: true`) without a revoke target.
+      responses:
+        '200':
+          description: Replacement token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceToken, issuedAt]
+                properties:
+                  deviceToken: { type: string }
+                  issuedAt: { type: string, format: date-time }
+                  migratedFromLegacy: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/auth/device/revoke:
+    post:
+      tags: [ops]
+      operationId: revokeDeviceToken
+      summary: Revoke the current device token
+      description: Marks the current registry token revoked. Subsequent content calls return 401.
+      responses:
+        '204':
+          description: Revoked.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/garment/attribute:
+    post:
+      tags: [garments]
+      operationId: attributeGarment
+      summary: Propose garment attributes from a photograph (task T1)
+      description: |
+        Returns structured attributes with a confidence value per field. Any field the model
+        cannot determine from the image **must** come back `null` rather than guessed — the
+        review card handles `null` gracefully but cannot detect a confident error
+        (PRD App. B). Fields below 0.6 confidence are flagged to the user before save
+        (PRD §7.2 AC-3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttributeRequest' }
+      responses:
+        '200':
+          description: Attributes proposed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttributeResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        # Distinguish via Problem.code: SPEND_CAP_REACHED vs RATE_LIMITED (same HTTP 429).
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/outfit/generate:
+    post:
+      tags: [outfits]
+      operationId: generateOutfit
+      summary: Generate a validated outfit (task T2)
+      description: |
+        The critical path. Runs the full pipeline: hard filter, score and shortlist, model
+        selection, validation, repair, fallback (PRD §8.1).
+
+        The client sends the wardrobe subset it can cheaply determine to be eligible
+        (available, not retired, owned). The backend does the rest, so scoring can be tuned
+        without an App Store round-trip (PRD §11.3).
+
+        **The response always contains a usable outfit or an explicit gap.** It never
+        contains a garment the user does not own, a draft, or an unavailable garment. Check
+        `generation.fallbackLevel` to know whether the stylist model was involved at all.
+
+        **"Try another" is stateless.** The backend keeps no record of previous outfits, so
+        the client passes the garment sets already shown in this session via
+        `options.excludeGarmentSets`. When no outfit differing in at least one non-locked
+        slot exists, the backend returns its best outfit anyway with `noAlternativeReason`
+        set, and the client shows that message instead of a silently repeated board (D-20).
+
+        **Spend caps.** Past the soft threshold the secondary model is used. Past the hard
+        cap no paid call is made and the deterministic path answers — still a 200, with
+        `fallbackLevel: DETERMINISTIC`. This endpoint never returns 429.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateRequest' }
+      responses:
+        '200':
+          description: |
+            An outfit was produced. May be a model result, a repaired result, a secondary-model
+            result, or a deterministic result — see `generation.fallbackLevel`. May carry
+            `noAlternativeReason` when the request excluded every different outfit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenerateResponse' }
+        '400':
+          description: |
+            Malformed request, schema violation, garment not ready, or a lock/set conflict
+            detected before any model call (D-32 / D-30).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                lockConflict:
+                  summary: Locked garment conflicts with anchor or availability
+                  value:
+                    title: Lock conflict
+                    status: 400
+                    code: LOCK_CONFLICT
+                    detail: One or more locked assignments cannot be honoured.
+                    dataPreserved: true
+                    conflicts:
+                      - garmentId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        reason: Locked TOP occupies the same slot as the anchor garment.
+                setConflict:
+                  summary: keepTogether partner missing from wardrobe or locks
+                  value:
+                    title: Set conflict
+                    status: 400
+                    code: SET_CONFLICT
+                    detail: A keepTogether set cannot be admitted whole.
+                    dataPreserved: true
+                    conflicts:
+                      - garmentId: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        reason: Set partner 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d is absent from wardrobe.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422':
+          description: |
+            No outfit is possible from the wardrobe supplied — for example, ready coverage is
+            below the minimum in PRD §7.2. This is not a failure of the model; do not retry
+            without changing the input. A single unfillable slot is NOT a 422: it is a 200
+            with a gap in that slot.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/outfit/rationale:
+    post:
+      tags: [outfits]
+      operationId: regenerateRationale
+      summary: Regenerate the explanation for an edited outfit (task T3)
+      description: |
+        Called after a swap. Cheap and single-purpose. If it fails, the client keeps the
+        previous rationale and notes that it describes the pre-swap outfit (PRD §7.5).
+        Past the hard spend cap a templated rationale is returned with
+        `fallbackLevel: DETERMINISTIC`; this endpoint never returns 429.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RationaleRequest' }
+      responses:
+        '200':
+          description: Rationale regenerated (or templated, past the hard cap).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RationaleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/outfit/alternatives:
+    post:
+      tags: [outfits]
+      operationId: rankAlternatives
+      summary: Rank swap alternatives for one slot against the current outfit (deterministic)
+      description: |
+        Owns swap re-ranking (D-33). Runs stage 1 filtering and stage 2 scoring for a single
+        slot with the rest of the outfit held fixed, then applies combination rules, locks,
+        and set integrity against those fixed pieces. **No model is called**; reasons are
+        templated from the scoring components. Target p95 ≤ 1 s.
+
+        The `candidateSet` returned by `/v1/outfit/generate` is valid only for the first swap
+        after generation; every subsequent swap must call this endpoint, because rankings and
+        reasons computed against the original outfit go stale as pieces change.
+
+        Never returns 429: it makes no paid call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlternativesRequest' }
+      responses:
+        '200':
+          description: Ranked alternatives for the requested slot. May be empty with a reason.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlternativesResponse' }
+        '400':
+          description: |
+            Malformed request, schema violation, or a lock/set conflict against the fixed
+            pieces of the current outfit (D-32 / D-30).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                lockConflict:
+                  summary: Requested swap slot is lock-fixed
+                  value:
+                    title: Lock conflict
+                    status: 400
+                    code: LOCK_CONFLICT
+                    detail: The requested slot is locked and cannot be swapped.
+                    dataPreserved: true
+                    conflicts:
+                      - garmentId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        reason: FOOTWEAR is locked; alternatives for this slot are refused.
+                setConflict:
+                  summary: Alternative would split a keepTogether set
+                  value:
+                    title: Set conflict
+                    status: 400
+                    code: SET_CONFLICT
+                    detail: Choosing an alternative would break a keepTogether set.
+                    dataPreserved: true
+                    conflicts:
+                      - garmentId: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        reason: Garment is a set member; partner must move with it.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/profile/summarise:
+    post:
+      tags: [profile]
+      operationId: summariseProfile
+      summary: Turn structured onboarding answers into a readable summary (task T4)
+      description: |
+        **Must not assert anything about a topic the user did not answer** (PRD §7.1 AC-2).
+        Null fields are omitted from the prompt entirely rather than rendered as "unknown",
+        which invites the model to guess. The response is validated against the set of null
+        fields before it is returned; on failure the backend returns a deterministic template
+        summary with `fallbackLevel: DETERMINISTIC`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SummariseRequest' }
+      responses:
+        '200':
+          description: Summary generated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SummariseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/selfie/review:
+    post:
+      tags: [outfits]
+      operationId: reviewSelfie
+      summary: Constructive feedback on a mirror selfie (task T5)
+      x-milestone: M2
+      description: |
+        Specified, not yet built. Requires a separate explicit opt-in from wardrobe-image
+        consent (D-17). The image is never persisted by the backend and is deleted locally on
+        screen exit unless the user saves it (PRD §7.11 AC-3).
+
+        Feedback **must** state what the image did not allow it to judge — lighting, angle,
+        framing, resolution (PRD §7.11 AC-2). It must never comment on the person's body
+        (PRD §13.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelfieReviewRequest' }
+      responses:
+        '200':
+          description: Feedback produced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SelfieReviewResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/SpendCapReached' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/feedback/interpret:
+    post:
+      tags: [feedback]
+      operationId: interpretFeedback
+      summary: Turn free-text feedback into proposed preference rules (task T6)
+      x-milestone: M2
+      description: |
+        Specified, not yet built. **Proposes only.** Rules are never activated by this
+        endpoint; activation requires three supporting signals or an explicit user statement,
+        and happens on the client (PRD §7.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedbackInterpretRequest' }
+      responses:
+        '200':
+          description: Zero or more proposed rules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackInterpretResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/SpendCapReached' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/link/extract:
+    post:
+      tags: [garments]
+      operationId: extractFromLink
+      summary: Extract garment attributes from a product page (task T7)
+      x-milestone: M2
+      description: |
+        Specified, not yet built. Only publicly reachable pages; no retailer accounts, no
+        credentials (PRD §7.12). A partial or failed extraction still returns 200 with
+        `extractionStatus` set, so the client can preserve what the user entered and offer a
+        retry or a manual path (PRD §7.12 AC-1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkExtractRequest' }
+      responses:
+        '200':
+          description: Extraction attempted. Check `extractionStatus`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkExtractResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/SpendCapReached' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /v1/usage:
+    get:
+      tags: [ops]
+      operationId: getUsage
+      summary: Model spend over the last 7 and 30 days
+      description: Backs the settings screen (PRD §9.6).
+      responses:
+        '200':
+          description: Usage figures.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/models:
+    get:
+      tags: [ops]
+      operationId: getModelConfig
+      summary: Configured models, capabilities, and verified data policy
+      description: |
+        Surfaces which model is in use so the settings screen can state it plainly
+        (PRD §12.3), and exposes whether the provider data policy has actually been verified
+        (VF-03). **The client must not send any image while `dataPolicy.verifiedOn` is null.**
+      responses:
+        '200':
+          description: Current model configuration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelConfigResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Per-device opaque token stored only in the iOS Keychain (PRD §12.4, D-46).
+        Issued by `POST /v1/auth/device` (enrollment secret); rotatable and revocable.
+        No OpenRouter or provider credential ever reaches the client. Never baked into the IPA.
+
+  responses:
+    BadRequest:
+      description: Malformed request or schema violation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid device token.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: |
+        Image payload exceeds the backend limit. The limit itself is unverified — see VF-10.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SpendCapReached:
+      description: |
+        The **hard** daily spend cap is exhausted (PRD §9.6, D-20) and this task has no
+        deterministic fallback, so no paid call was made. Returned only by attribution,
+        selfie review, feedback interpretation, and link extraction. Generation, rationale,
+        and summary never return this — they answer 200 with a deterministic result instead.
+        The client shows the cap state in settings rather than failing silently. Includes
+        `Retry-After` (seconds until the ledger day rolls over) and problem extension
+        `resetsAt` (alias of ledger day end — see info.description).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: |
+        HTTP 429 for paid/onboarding tasks. Inspect `Problem.code`:
+        - `RATE_LIMITED` — provider/platform rate limit (onboarding PRD §5.3.3 / §9.3);
+          retry with backoff; does **not** mark the ledger day spent; may include `resetsAt`
+          for the rate-limit window.
+        - `SPEND_CAP_REACHED` — hard daily spend cap (see also `SpendCapReached`); includes
+          `Retry-After` / `resetsAt` = ledger day end.
+        Attribution and other no-fallback paid tasks may return either code on 429.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UpstreamUnavailable:
+      description: |
+        The model provider is unreachable and no fallback applies. For `/v1/outfit/generate`
+        this should be unreachable — the deterministic path (fallback level 3) always returns
+        200. Reaching it here indicates a backend defect.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+
+    # ---------------------------------------------------------------- enums
+
+    Slot:
+      type: string
+      description: |
+        Body-coverage slots (PRD §6.1, D-22). `JACKET` (sport coat, blazer, suit jacket) and
+        `OUTERWEAR` (overcoat, shell, puffer) are distinct so both can be worn on a cold day.
+        There is no `FULL_BODY`: a suit is two garments linked by `setId`. `ACCESSORY` may be
+        assigned up to three times; every other slot once.
+      enum: [TOP, MID_LAYER, JACKET, OUTERWEAR, BOTTOM, FOOTWEAR, ACCESSORY]
+
+    Pattern:
+      type: string
+      enum: [SOLID, STRIPE, CHECK, PLAID, HERRINGBONE, PRINT, TEXTURED_SOLID]
+
+    Surface:
+      type: string
+      description: Drives texture-contrast scoring (PRD §8.3, App. C).
+      enum: [SMOOTH, MATTE, TEXTURED, NAPPED, RUGGED]
+
+    Season:
+      type: string
+      enum: [SPRING, SUMMER, FALL, WINTER]
+
+    Fit:
+      type: string
+      enum: [SLIM, REGULAR, RELAXED]
+
+    ColorFamily:
+      type: string
+      description: Harmony scoring operates on families, not hex values (PRD App. C).
+      enum:
+        [white, cream, grey, charcoal, black, navy, blue, light_blue, olive, green,
+         brown, tan, burgundy, red, orange, yellow, purple, pink, multi]
+
+    Occasion:
+      type: string
+      enum:
+        [WORK_STANDARD, WORK_IMPORTANT, CLIENT_EXEC, CASUAL_DAY, EVENING_OUT,
+         TRAVEL_DAY, WEEKEND_ERRANDS, SPECIAL_EVENT]
+
+    TemperatureBand:
+      type: string
+      description: Coarse by design — manual entry in M1, no weather integration required (D-06).
+      enum: [COLD, COOL, MILD, WARM, HOT]
+
+    TimeOfDay:
+      type: string
+      enum: [MORNING, AFTERNOON, EVENING]
+
+    Boldness:
+      type: string
+      enum: [FAMILIAR, SLIGHT_STRETCH, BOLD]
+
+    WorkEnvironment:
+      type: string
+      enum: [FORMAL_OFFICE, BUSINESS_CASUAL, SMART_CASUAL, CASUAL_TECH, REMOTE, MIXED]
+
+    FallbackLevel:
+      type: string
+      description: |
+        Which rung of the failure ladder produced this result (PRD §9.5).
+        `DETERMINISTIC` means no stylist model was involved and the client must say so.
+      enum: [NONE, REPAIR, SECONDARY_MODEL, DETERMINISTIC]
+
+    PreferenceKind:
+      type: string
+      enum: [COLOR, PATTERN, FIT, MATERIAL, COMBINATION, CATEGORY, OCCASION, COMFORT]
+
+    Polarity:
+      type: string
+      enum: [LIKE, DISLIKE, AVOID_HARD]
+
+    RuleScope:
+      type: string
+      enum: [ALWAYS, WORK, WEEKEND, EVENING, TRAVEL]
+
+    Provenance:
+      type: string
+      enum: [STATED, INFERRED, CONFIRMED]
+
+    Formality:
+      type: integer
+      minimum: 1
+      maximum: 5
+      description: Single 1-5 scale spanning garments and occasions (PRD §6.4).
+
+    Warmth:
+      type: integer
+      minimum: 1
+      maximum: 5
+
+    # ---------------------------------------------------------------- shared objects
+
+    Color:
+      type: object
+      additionalProperties: false
+      required: [family]
+      properties:
+        family: { $ref: '#/components/schemas/ColorFamily' }
+        hex:
+          type: [string, 'null']
+          pattern: '^#[0-9a-fA-F]{6}$'
+        name:
+          type: [string, 'null']
+          maxLength: 40
+
+    ImagePayload:
+      type: object
+      additionalProperties: false
+      required: [data, mediaType]
+      properties:
+        data:
+          type: string
+          contentEncoding: base64
+          description: Image bytes, base64-encoded. Downscale before sending (PRD §9.6, VF-04).
+        mediaType:
+          type: string
+          enum: [image/jpeg, image/png, image/heic]
+        width: { type: [integer, 'null'] }
+        height: { type: [integer, 'null'] }
+
+    GarmentSummary:
+      type: object
+      additionalProperties: false
+      description: |
+        A garment as the backend sees it.
+
+        **Deliberately excludes `purchasePrice`, `purchaseDate`, `priorWearEstimate`, and any
+        cost-per-wear figure** (PRD §12.2). The backend cannot compute cost per wear and must
+        not try; the client composes that messaging locally (D-19).
+
+        `lastWornOn` and `wantToWearMore` are required because they drive the neglect boost
+        and recency penalty (PRD §8.3) — the mechanism that gets underused garments worn
+        without letting price influence selection (D-01).
+
+        **Only READY garments may be sent** (PRD §6.1, D-23). The required fields below are
+        exactly the readiness fields; a draft cannot satisfy this schema and the client must
+        not invent values to make it do so. The backend rejects a request containing a
+        garment with a null readiness field with 400, code `GARMENT_NOT_READY`.
+      required: [id, displayName, slot, colorPrimary, pattern, surface, formality, warmth]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            The client's garment UUID. The backend maps these to short opaque tokens
+            (`g_4f2a`) for the prompt and maps them back before responding, so the model
+            never sees a UUID and validation errors are legible (PRD §9.3).
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: |
+            Never empty. User-set, or derived by the client from the readiness attributes when
+            the user has not set one ("Navy sport coat"). Used verbatim in rationales (D-31).
+
+            **Privacy (D-68 `PROPOSED`):** Sent today on image-free `generate` / `alternatives`.
+            Not part of a “never sent names” guarantee for those paths until D-68 is ACCEPTED
+            (or a separate redact decision lands). Still never a substitute for garment `id`
+            in engine selection (design rule 3).
+        slot: { $ref: '#/components/schemas/Slot' }
+        category:
+          type: [string, 'null']
+          description: From the taxonomy in PRD App. C. Extending it is a data change, not a code change.
+        colorPrimary: { $ref: '#/components/schemas/Color' }
+        colorSecondary:
+          oneOf:
+            - { $ref: '#/components/schemas/Color' }
+            - { type: 'null' }
+        pattern: { $ref: '#/components/schemas/Pattern' }
+        materials:
+          type: array
+          items: { type: string }
+          maxItems: 6
+        surface: { $ref: '#/components/schemas/Surface' }
+        formality: { $ref: '#/components/schemas/Formality' }
+        warmth: { $ref: '#/components/schemas/Warmth' }
+        seasons:
+          type: array
+          items: { $ref: '#/components/schemas/Season' }
+        fit:
+          oneOf:
+            - { $ref: '#/components/schemas/Fit' }
+            - { type: 'null' }
+        lastWornOn:
+          type: [string, 'null']
+          format: date
+          description: Null means never worn since intake. Drives recency and neglect scoring.
+        daysSinceIntake:
+          type: [integer, 'null']
+          description: Used for neglect scoring when `lastWornOn` is null.
+        isFavorite: { type: boolean, default: false }
+        wantToWearMore:
+          type: boolean
+          default: false
+          description: The "liked but neglected" flag. Multiplies the neglect boost by 1.5.
+        comfortIssue:
+          type: boolean
+          default: false
+          description: Set by COMFORT_ISSUE feedback; lowers the score for long-day occasions.
+        setId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Links members of a coordinated set — a suit's jacket and trousers (D-22). Members
+            keep their own slots. The client must send every member of a `keepTogether` set
+            or none of them. The backend treats the set atomically at every stage (D-30): it
+            passes stage 1 only if every member passes; it is scored as a unit (minimum of
+            members) and, once shortlisted, every member enters its own slot's shortlist even
+            over the per-slot cap; the model and the deterministic builder select it whole;
+            validation rejects half a set. If the anchor or a locked garment is a set member
+            whose partner is absent from the request, the request is rejected with 400
+            `SET_CONFLICT` naming the missing partner.
+        keepTogether:
+          type: boolean
+          default: false
+          description: When true and `setId` is set, the set is used whole or not at all.
+
+    Thumbnail:
+      type: object
+      additionalProperties: false
+      required: [garmentId, image]
+      properties:
+        garmentId: { type: string, format: uuid }
+        image: { $ref: '#/components/schemas/ImagePayload' }
+
+    PreferenceRule:
+      type: object
+      additionalProperties: false
+      description: |
+        Where a `DISLIKE` / `AVOID_HARD` rule is enforced depends on its subject (D-26):
+        a single-garment subject (`garmentId`, `color_family`, `pattern`, `material`,
+        `category`) is a Stage 1 exclusion; a `COMBINATION` subject (`pair` of garment ids or
+        of colour families) is enforced on the outfit — neither member is excluded alone, a
+        candidate completing a forbidden pair with the anchor or a locked slot is removed at
+        Stage 2, and the completed outfit is validated at Stage 4.
+      required: [kind, polarity, subject, scope, provenance]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        kind: { $ref: '#/components/schemas/PreferenceKind' }
+        polarity: { $ref: '#/components/schemas/Polarity' }
+        subject:
+          type: object
+          description: |
+            Structured reference, e.g. `{"color_family": "olive"}` or
+            `{"pair": ["<uuid>", "<uuid>"]}`. Shape depends on `kind`.
+          additionalProperties: true
+        scope: { $ref: '#/components/schemas/RuleScope' }
+        provenance: { $ref: '#/components/schemas/Provenance' }
+        supportingSignals: { type: integer, minimum: 0, default: 0 }
+        active: { type: boolean, default: false }
+
+    StyleProfilePayload:
+      type: object
+      additionalProperties: false
+      description: |
+        The confirmed profile as sent for generation. Null fields are omitted from the prompt
+        entirely — never rendered as "unknown", which invites the model to guess (PRD §9.3).
+      required: [version, summaryText, experimentationLevel]
+      properties:
+        version: { type: integer, minimum: 1 }
+        summaryText: { type: string, maxLength: 1200 }
+        age: { type: [integer, 'null'], minimum: 0, maximum: 120 }
+        profession: { type: [string, 'null'], maxLength: 120 }
+        workEnvironment:
+          oneOf:
+            - { $ref: '#/components/schemas/WorkEnvironment' }
+            - { type: 'null' }
+        presentationGoals:
+          type: array
+          items: { type: string, maxLength: 200 }
+          maxItems: 8
+        comfortConstraints:
+          type: array
+          items: { type: string, maxLength: 200 }
+          maxItems: 8
+        experimentationLevel: { type: integer, minimum: 1, maximum: 5 }
+        activeRules:
+          type: array
+          items: { $ref: '#/components/schemas/PreferenceRule' }
+          maxItems: 60
+
+    ContextSnapshot:
+      type: object
+      additionalProperties: false
+      required: [occasion, occasionFormality, temperatureBand]
+      properties:
+        occasion: { $ref: '#/components/schemas/Occasion' }
+        occasionFormality: { $ref: '#/components/schemas/Formality' }
+        temperatureBand: { $ref: '#/components/schemas/TemperatureBand' }
+        precipitation: { type: boolean, default: false }
+        timeOfDay:
+          oneOf:
+            - { $ref: '#/components/schemas/TimeOfDay' }
+            - { type: 'null' }
+        freeTextNote: { type: [string, 'null'], maxLength: 200 }
+        capturedAt: { type: string, format: date-time }
+
+    OutfitAssignment:
+      type: object
+      additionalProperties: false
+      description: |
+        Exactly one of `garmentId` or `gapReason` is set. A gap is named, never filled with an
+        invented item or an unavailable one (PRD §7.4, D-04, D-25). `ACCESSORY` may appear up
+        to three times with distinct garments; every other slot at most once (D-22).
+      required: [slot]
+      properties:
+        slot: { $ref: '#/components/schemas/Slot' }
+        garmentId: { type: [string, 'null'], format: uuid }
+        isAnchor: { type: boolean, default: false }
+        isLocked: { type: boolean, default: false }
+        gapReason: { type: [string, 'null'], maxLength: 120 }
+
+    Rationale:
+      type: object
+      additionalProperties: false
+      description: |
+        Length caps are the quality bar from PRD §13.6, enforced in schema rather than
+        requested in prose.
+      required: [summary]
+      properties:
+        summary: { type: string, maxLength: 200 }
+        pairingNotes:
+          type: array
+          items: { type: string, maxLength: 140 }
+          maxItems: 3
+        teachingNote: { type: [string, 'null'], maxLength: 160 }
+        cautions:
+          type: array
+          items: { type: string, maxLength: 120 }
+          maxItems: 2
+
+    GenerationMeta:
+      type: object
+      additionalProperties: false
+      description: |
+        Recorded on every production outfit so the trial is itself a continuing model
+        comparison, not just the offline harness (PRD §10.4).
+      required: [modelId, promptVersion, latencyMs, fallbackLevel]
+      properties:
+        modelId: { type: string, description: Exact OpenRouter model slug used. }
+        promptVersion: { type: string }
+        candidateSetHash: { type: [string, 'null'] }
+        latencyMs: { type: integer, minimum: 0 }
+        inputTokens: { type: [integer, 'null'] }
+        outputTokens: { type: [integer, 'null'] }
+        costUSD: { type: [number, 'null'], minimum: 0 }
+        repairAttempts: { type: integer, minimum: 0, default: 0 }
+        fallbackLevel: { $ref: '#/components/schemas/FallbackLevel' }
+        spendState:
+          type: string
+          enum: [OK, SOFT_THRESHOLD, HARD_CAP_DETERMINISTIC]
+          description: |
+            Spend-cap posture for this attempt (distinct from `fallbackLevel`, which also
+            covers repair and upstream failure). `OK` — under the soft threshold.
+            `SOFT_THRESHOLD` — soft threshold reached; secondary model used when a paid call
+            ran. `HARD_CAP_DETERMINISTIC` — hard cap reached; no paid call was made and the
+            deterministic path answered (still HTTP 200 on generate / rationale / summarise).
+
+    Relaxation:
+      type: object
+      additionalProperties: false
+      description: |
+        Records a step of the relaxation ladder (PRD §8.2) so the UI can explain itself.
+        Availability, readiness, ownership, and every `DISLIKE` / `AVOID_HARD` rule are never
+        relaxed and never appear here (D-25). An unfillable slot is `SLOT_ABANDONED` and
+        produces a gap assignment.
+      required: [step, slot]
+      properties:
+        step:
+          type: string
+          enum: [FORMALITY_WIDENED, WARMTH_WIDENED, SLOT_ABANDONED]
+        slot: { $ref: '#/components/schemas/Slot' }
+        note: { type: [string, 'null'], maxLength: 160 }
+
+    # ---------------------------------------------------------------- request / response
+
+    GarmentAttributes:
+      type: object
+      additionalProperties: false
+      description: |
+        Model-proposed garment attributes. **Every field is nullable, and a null is the
+        preferred answer when the model cannot determine the value from the image.** A model
+        that guesses a colour it cannot see is worse than one that declines: the review card
+        handles null gracefully but cannot detect a confident error (PRD App. B).
+      properties:
+        slot:
+          oneOf: [{ $ref: '#/components/schemas/Slot' }, { type: 'null' }]
+        category: { type: [string, 'null'] }
+        colorPrimary:
+          oneOf: [{ $ref: '#/components/schemas/Color' }, { type: 'null' }]
+        colorSecondary:
+          oneOf: [{ $ref: '#/components/schemas/Color' }, { type: 'null' }]
+        pattern:
+          oneOf: [{ $ref: '#/components/schemas/Pattern' }, { type: 'null' }]
+        materials:
+          type: [array, 'null']
+          items: { type: string }
+        surface:
+          oneOf: [{ $ref: '#/components/schemas/Surface' }, { type: 'null' }]
+        formality:
+          oneOf: [{ $ref: '#/components/schemas/Formality' }, { type: 'null' }]
+        warmth:
+          oneOf: [{ $ref: '#/components/schemas/Warmth' }, { type: 'null' }]
+        seasons:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/Season' }
+        fit:
+          oneOf: [{ $ref: '#/components/schemas/Fit' }, { type: 'null' }]
+
+    PrivacyConsent:
+      type: object
+      additionalProperties: false
+      description: |
+        Attestation that the user completed the onboarding privacy screen for the named
+        policy version (PRD §12.3, VF-03). **Required on any request that carries image
+        payloads** (`AttributeRequest`, `SelfieReviewRequest`, and `GenerateRequest` when
+        `thumbnails` is non-empty). Image-free generate must omit this field — the backend
+        must not require it then.
+
+        Backend rejection: image payloads are refused with 400 when
+        `GET /v1/models` → `dataPolicy.verifiedOn` is null **or** when images are present and
+        this object is absent.
+      required: [wardrobeImagesAcceptedAt, policyVersion]
+      properties:
+        wardrobeImagesAcceptedAt:
+          type: string
+          format: date-time
+          description: When the user accepted wardrobe-image processing under `policyVersion`.
+        selfieOptInAt:
+          type: string
+          format: date-time
+          description: |
+            When the user opted in to selfie review. Required in practice for
+            `SelfieReviewRequest`; optional on other image-bearing calls.
+        policyVersion:
+          type: string
+          description: Privacy-policy / data-use version string shown on the consent screen.
+
+    AttributeRequest:
+      type: object
+      additionalProperties: false
+      required: [image, privacyConsent]
+      properties:
+        image: { $ref: '#/components/schemas/ImagePayload' }
+        privacyConsent:
+          $ref: '#/components/schemas/PrivacyConsent'
+        slotHint:
+          oneOf:
+            - { $ref: '#/components/schemas/Slot' }
+            - { type: 'null' }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    AttributeResponse:
+      type: object
+      additionalProperties: false
+      required: [attributes, confidence, generation]
+      properties:
+        suggestedDisplayName: { type: [string, 'null'], maxLength: 80 }
+        attributes: { $ref: '#/components/schemas/GarmentAttributes' }
+        confidence:
+          type: object
+          description: Field name to confidence, 0-1. Anything below 0.6 is flagged to the user before save.
+          additionalProperties: { type: number, minimum: 0, maximum: 1 }
+        warnings:
+          type: array
+          items: { type: string, maxLength: 160 }
+          description: e.g. "image appears to contain more than one garment", "colour unreliable under this lighting"
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    GenerateRequest:
+      type: object
+      additionalProperties: false
+      required: [profile, context, wardrobe]
+      properties:
+        profile: { $ref: '#/components/schemas/StyleProfilePayload' }
+        context: { $ref: '#/components/schemas/ContextSnapshot' }
+        anchorGarmentId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            When set, this garment **must** appear in the result (PRD §7.4 AC-1). Absence from
+            a response is a P0 defect. Null for the daily-outfit path (M2).
+        lockedAssignments:
+          type: array
+          description: |
+            Garments the user has pinned. **Preserved exactly** — same garment, same slot — by
+            the model, the deterministic builder, and validation (D-32). Capacity is the full
+            outfit: six single positions plus three accessories. Each locked garment must be
+            in `wardrobe`, available and ready, must not occupy the anchor's slot, and must
+            not be a `keepTogether` member whose partner is absent — any of these is rejected
+            with 400 `LOCK_CONFLICT` or `SET_CONFLICT` before any model call. Two locked
+            garments forming a pair forbidden by an active combination rule are accepted as
+            the user's explicit choice, with a caution in the rationale.
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+          maxItems: 9
+        boldness: { $ref: '#/components/schemas/Boldness' }
+        wardrobe:
+          type: array
+          description: |
+            The eligible subset — ready (`readiness == READY`), available, not retired, owned;
+            drafts must not be sent (D-23). The backend hard-filters and scores this down to
+            the candidate set; the model sees only the shortlist (PRD §8.1, D-03).
+          items: { $ref: '#/components/schemas/GarmentSummary' }
+          minItems: 3
+          maxItems: 500
+        thumbnails:
+          type: array
+          description: |
+            Optional. Whether these improve quality enough to justify cost and latency is an
+            open A/B question (PRD §10.5 Q1) — not an assumption. When this array is non-empty,
+            `privacyConsent` is required on the same request; the backend rejects the payload
+            if `GET /v1/models` → `dataPolicy.verifiedOn` is null or consent is absent.
+          items: { $ref: '#/components/schemas/Thumbnail' }
+          maxItems: 13
+        privacyConsent:
+          description: |
+            Required **only when `thumbnails` is present and non-empty**. Image-free generate
+            must omit this field. Backend rejects image payloads if
+            `GET /v1/models` → `dataPolicy.verifiedOn` is null **or** consent is absent when
+            images are present.
+          oneOf:
+            - { $ref: '#/components/schemas/PrivacyConsent' }
+            - { type: 'null' }
+        recentOutfits:
+          type: array
+          description: |
+            Garment id sets from suggestions in the last 14 days, for the repeat-pair penalty
+            (PRD §8.3). Scoring input only; does not constrain the result.
+          items:
+            type: array
+            items: { type: string, format: uuid }
+          maxItems: 20
+        options:
+          type: object
+          additionalProperties: false
+          properties:
+            candidatesPerSlot:
+              type: integer
+              minimum: 4
+              maximum: 10
+              default: 8
+              description: |
+                Per-slot shortlist cap. Over-cap admissions (issue #38):
+                - Set partners are admitted over this cap (D-30).
+                - Colour-family coverage may add up to 2 additional items (bounded by maxCap+2=12), 
+                  except when boldness is FAMILIAR (coverage is skipped).
+                - BOLD stretch inject adds 1 item with a distinct colour family.
+                When candidatesPerSlot is explicitly set, it acts as a ceiling: BOLD boldness 
+                will not increase it beyond the requested value.
+            accessoryPolicy:
+              type: string
+              enum: [OPEN, LOCKED]
+              default: OPEN
+              description: |
+                `OPEN` — the engine may add accessories up to three in total, keeping any locked
+                ones. `LOCKED` — exactly the locked accessories, no additions (D-32). This is
+                how "lock the accessory slot" is expressed, as distinct from locking one accessory.
+            requireSlots:
+              type: array
+              items: { $ref: '#/components/schemas/Slot' }
+              default: [TOP, BOTTOM, FOOTWEAR]
+            excludeGarmentSets:
+              type: array
+              description: |
+                For "try another" (D-20). Each entry is the full garment-id set of an outfit
+                already shown in this dressing session. The result must differ from every
+                entry in at least one non-locked slot. The backend holds no outfit history,
+                so ids of previous outfits would be meaningless here — the sets themselves
+                are sent. If no differing outfit exists, the backend still returns 200 with
+                its best outfit and `noAlternativeReason` set.
+              items:
+                type: array
+                items: { type: string, format: uuid }
+                minItems: 2
+              maxItems: 10
+        requestId: { type: [string, 'null'], format: uuid }
+
+    GenerateResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Contains no price or cost-per-wear field by design (D-19). The client composes that
+        messaging from data it already holds.
+      required: [outfitId, assignments, rationale, generation]
+      properties:
+        outfitId: { type: string, format: uuid }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+          minItems: 2
+        rationale: { $ref: '#/components/schemas/Rationale' }
+        boldnessUsed: { $ref: '#/components/schemas/Boldness' }
+        noAlternativeReason:
+          type: [string, 'null']
+          maxLength: 200
+          description: |
+            Set when `options.excludeGarmentSets` ruled out every outfit that differs in a
+            non-locked slot (D-20). The returned outfit may then equal one already shown; the
+            client shows this reason instead of a repeated board.
+        relaxationsApplied:
+          type: array
+          items: { $ref: '#/components/schemas/Relaxation' }
+        candidateSet:
+          type: object
+          description: |
+            The shortlist per slot, returned so the client can render the swap list without a
+            second model call (PRD §7.5 AC-4). **Valid only until the first user swap that
+            changes an assignment;** thereafter clients **must** call
+            `POST /v1/outfit/alternatives` (D-33). Rankings and reasons computed against the
+            original outfit go stale as pieces change.
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [garmentId]
+              properties:
+                garmentId: { type: string, format: uuid }
+                score: { type: [number, 'null'] }
+                reason: { type: [string, 'null'], maxLength: 120 }
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    RationaleRequest:
+      type: object
+      additionalProperties: false
+      required: [profile, context, assignments, garments]
+      properties:
+        profile: { $ref: '#/components/schemas/StyleProfilePayload' }
+        context: { $ref: '#/components/schemas/ContextSnapshot' }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+        garments:
+          type: array
+          description: Full summaries for the assigned garments, so the rationale can name real attributes.
+          items: { $ref: '#/components/schemas/GarmentSummary' }
+        boldness: { $ref: '#/components/schemas/Boldness' }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    RationaleResponse:
+      type: object
+      additionalProperties: false
+      required: [rationale, generation]
+      properties:
+        rationale: { $ref: '#/components/schemas/Rationale' }
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    AlternativesRequest:
+      type: object
+      additionalProperties: false
+      required: [slot, currentAssignments, profile, context, wardrobe]
+      properties:
+        slot:
+          $ref: '#/components/schemas/Slot'
+        currentAssignments:
+          type: array
+          description: |
+            The outfit as it stands now, including the anchor and every lock. All slots other
+            than `slot` are treated as fixed pieces for scoring and rule enforcement.
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+          minItems: 1
+          maxItems: 9
+        profile: { $ref: '#/components/schemas/StyleProfilePayload' }
+        context: { $ref: '#/components/schemas/ContextSnapshot' }
+        wardrobe:
+          type: array
+          description: Eligible, ready garments, as for generation. The backend filters to `slot`.
+          items: { $ref: '#/components/schemas/GarmentSummary' }
+          minItems: 1
+          maxItems: 500
+        recentOutfits:
+          type: array
+          items:
+            type: array
+            items: { type: string, format: uuid }
+          maxItems: 20
+        limit: { type: integer, minimum: 1, maximum: 12, default: 8 }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    AlternativesResponse:
+      type: object
+      additionalProperties: false
+      required: [slot, alternatives]
+      properties:
+        slot: { $ref: '#/components/schemas/Slot' }
+        alternatives:
+          type: array
+          description: Ranked best-first. Excludes anything violating a lock, a set, or a combination rule against the fixed pieces.
+          items:
+            type: object
+            additionalProperties: false
+            required: [garmentId, score, reason]
+            properties:
+              garmentId: { type: string, format: uuid }
+              score: { type: number }
+              reason:
+                type: string
+                maxLength: 120
+                description: Templated from scoring components, e.g. "cooler, and keeps the brown-and-navy pairing". Not model-generated.
+              setPartnerIds:
+                type: array
+                description: Non-empty when choosing this garment also brings its set partners into their slots.
+                items: { type: string, format: uuid }
+        emptyReason:
+          type: [string, 'null']
+          enum: [NO_ELIGIBLE, SET_BLOCKED, COMBINATION_BLOCKED, LOCK_FIXED, null]
+          description: |
+            Set when `alternatives` is empty. Stable codes for QA scenarios #26–28:
+            `NO_ELIGIBLE` — no ready garment remains for the slot after filters;
+            `SET_BLOCKED` — every candidate would split a keepTogether set;
+            `COMBINATION_BLOCKED` — every candidate violates a combination rule against fixed
+            pieces; `LOCK_FIXED` — the slot (or its only candidates) is locked.
+
+    SummariseRequest:
+      type: object
+      additionalProperties: false
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          description: |
+            Structured onboarding answers (onboarding PRD §9.2). **Omit unanswered topics
+            entirely** rather than sending null — the null-field validator (M1-F01-06 / #206)
+            checks the response against the set of omitted keys. Unknown keys SHOULD be
+            ignored by the server; clients MUST NOT send keys outside this list.
+            `additionalProperties` remains true so older clients are not hard-rejected while
+            AC-A3 schema tests pin the documented properties below.
+          additionalProperties: true
+          properties:
+            age:
+              type: integer
+              minimum: 0
+              maximum: 120
+              description: Omitted when unknown.
+            profession:
+              type: string
+              maxLength: 120
+              description: Omitted when empty.
+            workEnvironment:
+              $ref: '#/components/schemas/WorkEnvironment'
+            typicalOccasions:
+              type: array
+              description: |
+                Chip→enum: Work days→`WORK_STANDARD`, Important meetings→`WORK_IMPORTANT`,
+                Casual days→`CASUAL_DAY`, Evenings out→`EVENING_OUT`,
+                Weekend errands→`WEEKEND_ERRANDS`. Weights normalised over non-zero chips;
+                omit when all zero / untouched.
+              items:
+                type: object
+                additionalProperties: false
+                required: [occasion, weight]
+                properties:
+                  occasion: { $ref: '#/components/schemas/Occasion' }
+                  weight: { type: number, minimum: 0, maximum: 1 }
+            presentationGoals:
+              type: array
+              description: Up to eight fixed labels and/or free-text strings; omit when empty.
+              items: { type: string, maxLength: 120 }
+              maxItems: 8
+            comfortConstraints:
+              type: array
+              description: |
+                Preference strings only (≤ 8). Enforceable rules are **not** sent to T4 —
+                they are preference rules on device.
+              items: { type: string, maxLength: 120 }
+              maxItems: 8
+            experimentationLevel:
+              type: integer
+              minimum: 1
+              maximum: 5
+              description: Omitted when untouched.
+        requestId: { type: [string, 'null'], format: uuid }
+
+    SummariseResponse:
+      type: object
+      additionalProperties: false
+      required: [summaryText, generation]
+      properties:
+        summaryText: { type: string, maxLength: 1200 }
+        assertedTopics:
+          type: array
+          description: Topics the summary makes a claim about. Validated against the answered set.
+          items: { type: string }
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    SelfieReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [image, privacyConsent]
+      properties:
+        image: { $ref: '#/components/schemas/ImagePayload' }
+        privacyConsent:
+          $ref: '#/components/schemas/PrivacyConsent'
+          description: |
+            Required — selfie is an image payload. Prefer `selfieOptInAt` set. Backend rejects
+            if `GET /v1/models` → `dataPolicy.verifiedOn` is null or consent is absent.
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+        garments:
+          type: array
+          items: { $ref: '#/components/schemas/GarmentSummary' }
+        profile:
+          oneOf:
+            - { $ref: '#/components/schemas/StyleProfilePayload' }
+            - { type: 'null' }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    SelfieReviewResponse:
+      type: object
+      additionalProperties: false
+      required: [whatsWorking, cannotTell, generation]
+      properties:
+        whatsWorking:
+          type: array
+          items: { type: string, maxLength: 200 }
+          minItems: 1
+          maxItems: 3
+        oneThingToConsider: { type: [string, 'null'], maxLength: 200 }
+        cannotTell:
+          type: array
+          description: |
+            Required. What lighting, angle, framing, or resolution prevented judging
+            (PRD §7.11 AC-2). An empty array is only valid for a genuinely clear image.
+          items: { type: string, maxLength: 160 }
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    FeedbackInterpretRequest:
+      type: object
+      additionalProperties: false
+      required: [freeText]
+      properties:
+        freeText: { type: string, maxLength: 1000 }
+        context:
+          oneOf:
+            - { $ref: '#/components/schemas/ContextSnapshot' }
+            - { type: 'null' }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/OutfitAssignment' }
+        existingRules:
+          type: array
+          items: { $ref: '#/components/schemas/PreferenceRule' }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    FeedbackInterpretResponse:
+      type: object
+      additionalProperties: false
+      required: [proposedRules, generation]
+      properties:
+        proposedRules:
+          type: array
+          description: Always inactive. Activation is a client decision (PRD §7.6).
+          items: { $ref: '#/components/schemas/PreferenceRule' }
+          maxItems: 5
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    LinkExtractRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, format: uri, maxLength: 2048 }
+        requestId: { type: [string, 'null'], format: uuid }
+
+    LinkExtractResponse:
+      type: object
+      additionalProperties: false
+      required: [extractionStatus, generation]
+      properties:
+        extractionStatus:
+          type: string
+          enum: [FULL, PARTIAL, FAILED]
+        failureReason: { type: [string, 'null'], maxLength: 200 }
+        attributes:
+          oneOf:
+            - { $ref: '#/components/schemas/GarmentAttributes' }
+            - { type: 'null' }
+        imageUrls:
+          type: array
+          items: { type: string, format: uri }
+          maxItems: 6
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
+
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Liveness payload. `status` is a JSON string (`"ok"`), never a bare identifier
+        (issue #90). Workers add `service` / `version` / `timestamp`; the local bridge
+        also keeps `ok` and `mode` for iOS #83 compatibility.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Must serialize as `"status":"ok"`.
+        ok:
+          type: boolean
+          description: Local-bridge compatibility flag.
+        mode:
+          type: string
+          description: Local-bridge mode, e.g. `deterministic-local`.
+        service:
+          type: string
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    UsageResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Read from the backend usage ledger (PRD §9.6, D-20) — the backend's only persistent
+        state. `reservedTodayUSD` is cost reserved for in-flight requests and not yet
+        reconciled; `spentTodayUSD + reservedTodayUSD` is what the cap is checked against.
+      required:
+        [last7DaysUSD, last30DaysUSD, dailyCapUSD, softThresholdUSD, spentTodayUSD,
+         reservedTodayUSD, softThresholdReached, hardCapReached]
+      properties:
+        last7DaysUSD: { type: number, minimum: 0 }
+        last30DaysUSD: { type: number, minimum: 0 }
+        dailyCapUSD:
+          type: number
+          minimum: 0
+          description: The hard cap.
+        softThresholdUSD:
+          type: number
+          minimum: 0
+          description: Above this, the secondary model is used.
+        spentTodayUSD: { type: number, minimum: 0 }
+        reservedTodayUSD:
+          type: number
+          minimum: 0
+          description: Includes reservations for attempts whose outcome is still unknown (D-34).
+        unresolvedAttempts:
+          type: integer
+          minimum: 0
+          description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13). Each ages to "spent" after 24 h.
+        softThresholdReached: { type: boolean }
+        hardCapReached: { type: boolean }
+        ledgerDayEndsAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            **Canonical** end of the backend ledger day (UTC). Prefer this field for
+            accounting and for composing “paused until …” when the hard cap is reached.
+        resetsAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            **Alias of `ledgerDayEndsAt`** for client paused/retry copy (onboarding PRD
+            §5.3.3 / §9.3). When both are present they MUST be equal. Workers (#216) may
+            emit either or both; clients SHOULD prefer `ledgerDayEndsAt` and fall back to
+            `resetsAt`.
+        byTask:
+          type: object
+          description: Cost split by task T1-T7, so attribution cost stays separable from generation cost.
+          additionalProperties: { type: number, minimum: 0 }
+
+    ModelConfigResponse:
+      type: object
+      additionalProperties: false
+      required: [primary, promptVersion, dataPolicy]
+      properties:
+        primary: { $ref: '#/components/schemas/ModelDescriptor' }
+        secondary:
+          oneOf:
+            - { $ref: '#/components/schemas/ModelDescriptor' }
+            - { type: 'null' }
+        promptVersion: { type: string }
+        dataPolicy:
+          type: object
+          additionalProperties: false
+          required: [excludesTrainingProviders, verifiedOn]
+          description: |
+            Surfaces VF-03. **The client must not send any image while `verifiedOn` is null.**
+          properties:
+            excludesTrainingProviders: { type: boolean }
+            verifiedOn: { type: [string, 'null'], format: date }
+            note: { type: [string, 'null'], maxLength: 300 }
+
+    ModelDescriptor:
+      type: object
+      additionalProperties: false
+      required: [slug]
+      properties:
+        slug: { type: string }
+        displayName: { type: [string, 'null'] }
+        supportsVision: { type: [boolean, 'null'], description: Null until verified (VF-01). }
+        supportsStructuredOutput: { type: [boolean, 'null'], description: Null until verified (VF-05). }
+        contextWindow: { type: [integer, 'null'] }
+
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem detail, with product extensions (`code`, `dataPreserved`,
+        `resetsAt`, conflict lists).
+      additionalProperties: true
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: |
+            Stable machine-readable code. Defined codes:
+
+            - `WARDROBE_BELOW_MINIMUM`
+            - `SPEND_CAP_REACHED` (429; no-fallback paid tasks — onboarding PRD §9.3)
+            - `RATE_LIMITED` (429; backoff/retry — distinct from spend cap; Workers emit today)
+            - `POLICY_REJECTED` (400; consent absent/stale or `dataPolicy` unverified)
+            - `BAD_REQUEST` (400; malformed / schema violation — Workers emit today)
+            - `UNAUTHORIZED` (401; missing/invalid device token — Workers emit today)
+            - `GARMENT_NOT_READY` (D-23)
+            - `LOCK_CONFLICT` (D-32)
+            - `SET_CONFLICT` (D-30)
+            - `PAYLOAD_TOO_LARGE` (413)
+            - `UPSTREAM_UNAVAILABLE` (503)
+
+            `LOCK_CONFLICT` and `SET_CONFLICT` carry a `conflicts` extension listing the
+            garment ids involved and a one-clause reason each. Client behaviour per
+            onboarding code is in onboarding PRD §5.3.3 (CC-06).
+        resetsAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the client may retry or when paused copy should resume. For
+            `SPEND_CAP_REACHED`, equals the ledger day end (`UsageResponse.ledgerDayEndsAt`).
+            For `RATE_LIMITED`, the rate-limit window end (may be sooner than the ledger day).
+        dataPreserved:
+          type: boolean
+          description: |
+            Whether the client can safely retry without the user re-entering anything.
+            Always true for a well-behaved backend — PRD §9.5 requires that no failure
+            discards user input.

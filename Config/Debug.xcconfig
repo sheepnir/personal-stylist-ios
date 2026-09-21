@@ -1,0 +1,9 @@
+// Shared defaults. LocalSecrets.xcconfig (gitignored) may override OUTFIT_ENGINE_BASE_URL.
+// #168: DEVICE_TOKEN is intentionally absent — never bake auth secrets into the IPA.
+// Debug ships an EMPTY engine URL: the Simulator then falls back to the local bridge
+// (http://127.0.0.1:8787, see App/EngineConfig.swift). Set a real HTTPS URL in LocalSecrets.xcconfig
+// for device builds.
+OUTFIT_ENGINE_BASE_URL =
+// Apple Team ID: intentionally empty. Set DEVELOPMENT_TEAM in the untracked LocalSecrets.xcconfig.
+DEVELOPMENT_TEAM =
+#include? "LocalSecrets.xcconfig"

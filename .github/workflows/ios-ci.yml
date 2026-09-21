@@ -1,0 +1,97 @@
+name: iOS CI
+
+on:
+  pull_request:
+    paths:
+      - 'App/**'
+      - 'Features/**'
+      - 'Persistence/**'
+      - 'Design/**'
+      - 'Tests/**'
+      - 'project.yml'
+      - 'Config/**'
+      - 'Assets.xcassets/**'
+      - 'fixtures/**'
+      - '.github/workflows/ios-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'App/**'
+      - 'Features/**'
+      - 'Persistence/**'
+      - 'Design/**'
+      - 'Tests/**'
+      - 'project.yml'
+      - 'Config/**'
+      - 'Assets.xcassets/**'
+      - 'fixtures/**'
+      - '.github/workflows/ios-ci.yml'
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's superseded run. Groups are per PR, so
+# PRs never cancel each other; pushes to main get a unique group and always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ios-build-test:
+    name: XcodeGen + Build + Unit Tests
+    runs-on: macos-15
+    # Hosted macOS is billed per minute; expect ~12–25 min wall time for generate+build+test.
+    # UI tests stay opt-in (not run here) — Simulator UI suites are slower and flakier than unit tests.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode with iPhone 17 Simulator
+        run: |
+          set -euo pipefail
+          # Default image Xcode may be 16.x (no iPhone 17). Prefer Xcode 26+ when present.
+          for candidate in \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode_26.2.app \
+            /Applications/Xcode_26.1.app \
+            /Applications/Xcode_26.0.1.app \
+            /Applications/Xcode_26.app \
+            /Applications/Xcode.app
+          do
+            if [[ -d "$candidate" ]]; then
+              echo "Selecting $candidate"
+              sudo xcode-select -s "$candidate/Contents/Developer"
+              break
+            fi
+          done
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun simctl list devices available | grep -E 'iPhone 17($| )' || {
+            echo "iPhone 17 Simulator not available on this image"
+            xcrun simctl list devices available | grep -i iphone || true
+            exit 1
+          }
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build and run unit tests
+        run: |
+          set -euo pipefail
+          export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+          xcodebuild test \
+            -project PersonalStylist.xcodeproj \
+            -scheme PersonalStylist \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData/PersonalStylist-ci" \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:PersonalStylistTests

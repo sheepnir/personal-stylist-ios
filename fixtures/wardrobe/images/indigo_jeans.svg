@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <rect width="160" height="160" fill="#1e3a5f"/>
+  <rect x="8" y="8" width="144" height="144" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.5"/>
+  <text x="80" y="28" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#ffffff" opacity="0.8">BOTTOM</text>
+  <text x="80" y="90" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#ffffff">Indigo Jeans</text>
+  <text x="80" y="148" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#ffffff" opacity="0.6">SYNTHETIC</text>
+</svg>

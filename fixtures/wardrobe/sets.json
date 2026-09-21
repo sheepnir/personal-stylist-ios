@@ -1,0 +1,12 @@
+[
+  {
+    "id": "b2000001-0001-4000-8000-000000000001",
+    "displayName": "Navy Suit",
+    "keepTogether": true,
+    "memberGarmentIds": [
+      "a1000003-0003-4000-8000-000000000003",
+      "a1000005-0005-4000-8000-000000000004"
+    ],
+    "notes": "D-22/D-30 atomic set \u2014 jacket + trousers used whole or not at all; still needs a TOP shirt."
+  }
+]

@@ -1,0 +1,46 @@
+name: Repo Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's superseded run. Groups are per PR, so
+# PRs never cancel each other; pushes to main get a unique group and always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  repo-checks:
+    name: Fixture Literals, Wear Logging, Copy Verifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: No sample wardrobe literals (CC-01)
+        run: ./scripts/check-no-founder-literals.sh
+
+      - name: Wear-logging rules
+        run: python3 scripts/check-wear-logging.py
+
+      - name: Cost-per-wear copy cases
+        run: python3 scripts/verify-cost-per-wear-copy.py
+
+      - name: Generate-failure copy (no raw HTTP/URL errors)
+        run: python3 scripts/verify-generate-failure-copy.py
+
+      - name: OpenAPI contract examples (#220)
+        run: |
+          python3 -c "import yaml, jsonschema" 2>/dev/null || pip3 install --user pyyaml==6.0.3 jsonschema==4.26.0
+          python3 scripts/verify-openapi-contract-examples.py

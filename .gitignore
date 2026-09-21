@@ -1,0 +1,63 @@
+# macOS
+.DS_Store
+**/.DS_Store
+._*
+**/._*
+
+# Xcode / Swift
+DerivedData/
+build/
+*.xcuserstate
+**/xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcresult/
+*.xcarchive
+.swiftpm/
+Package.resolved
+
+# Signing material — never commit
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.pem
+*.key
+ExportOptions*.plist
+
+# Node / backend
+node_modules/
+npm-debug.log*
+yarn-error.log*
+dist/
+coverage/
+*.tsbuildinfo
+.wrangler/
+wrangler.local.toml
+.dev.vars
+.dev.vars*
+
+# Env / secrets — never commit
+.env
+.env*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+Config/LocalSecrets.xcconfig
+**/LocalSecrets.xcconfig
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+.icon-source/

@@ -1,0 +1,240 @@
+{
+  "id": "T2-19-minimum-wardrobe",
+  "title": "Wardrobe at the exact generation minimum",
+  "task": "T2",
+  "backlog_refs": [
+    "M0-12",
+    "M0-13"
+  ],
+  "prd_refs": [
+    "§10.2",
+    "§10.2 #14",
+    "§7.2"
+  ],
+  "inputs": {
+    "wardrobe_ref": "exact_minimum_coverage",
+    "wardrobe": [
+      {
+        "id": "a1000001-0001-4000-8000-000000000001",
+        "displayName": "Navy Oxford Shirt",
+        "slot": "TOP",
+        "category": "shirt_oxford",
+        "colorPrimary": {
+          "family": "navy",
+          "hex": "#1b3a6b",
+          "name": "Navy"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": true,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000001-0001-4000-8000-000000000002",
+        "displayName": "White Oxford Shirt (A)",
+        "slot": "TOP",
+        "category": "shirt_oxford",
+        "colorPrimary": {
+          "family": "white",
+          "hex": "#f5f5f0",
+          "name": "White"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "SMOOTH",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": "2026-09-10",
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000001",
+        "displayName": "Indigo Jeans",
+        "slot": "BOTTOM",
+        "category": "jeans",
+        "colorPrimary": {
+          "family": "blue",
+          "hex": "#1e3a5f",
+          "name": "Indigo"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "denim"
+        ],
+        "surface": "RUGGED",
+        "formality": 2,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "SLIM",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000005-0005-4000-8000-000000000002",
+        "displayName": "Khaki Chinos",
+        "slot": "BOTTOM",
+        "category": "chinos",
+        "colorPrimary": {
+          "family": "tan",
+          "hex": "#c3b091",
+          "name": "Khaki"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "cotton"
+        ],
+        "surface": "MATTE",
+        "formality": 3,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": false,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      },
+      {
+        "id": "a1000006-0006-4000-8000-000000000001",
+        "displayName": "Brown Leather Derbies",
+        "slot": "FOOTWEAR",
+        "category": "derby",
+        "colorPrimary": {
+          "family": "brown",
+          "hex": "#5c3317",
+          "name": "Brown"
+        },
+        "colorSecondary": null,
+        "pattern": "SOLID",
+        "materials": [
+          "leather"
+        ],
+        "surface": "SMOOTH",
+        "formality": 4,
+        "warmth": 2,
+        "seasons": [
+          "SPRING",
+          "SUMMER",
+          "FALL",
+          "WINTER"
+        ],
+        "fit": "REGULAR",
+        "lastWornOn": null,
+        "daysSinceIntake": 30,
+        "isFavorite": true,
+        "wantToWearMore": false,
+        "comfortIssue": false,
+        "setId": null,
+        "keepTogether": false
+      }
+    ],
+    "anchorGarmentId": null,
+    "lockedAssignments": [],
+    "boldness": "FAMILIAR",
+    "profile": {
+      "version": 1,
+      "summaryText": "Landscape architect who splits the week between site visits and studio reviews; wants tidy, layered outfits for standard work days.",
+      "age": 34,
+      "profession": "Landscape architect",
+      "workEnvironment": "SMART_CASUAL",
+      "presentationGoals": [
+        "Spend less time deciding in the morning"
+      ],
+      "comfortConstraints": [
+        "Shoes must handle uneven ground on site days"
+      ],
+      "experimentationLevel": 2,
+      "activeRules": []
+    },
+    "context": {
+      "occasion": "CASUAL_DAY",
+      "occasionFormality": 2,
+      "temperatureBand": "MILD",
+      "precipitation": false,
+      "timeOfDay": "MORNING",
+      "freeTextNote": null,
+      "capturedAt": "2026-09-18T09:00:00-07:00"
+    },
+    "options": {
+      "requireSlots": [
+        "TOP",
+        "BOTTOM",
+        "FOOTWEAR"
+      ],
+      "accessoryPolicy": "OPEN"
+    }
+  },
+  "hard_filters_applied": [
+    "availability",
+    "readiness"
+  ],
+  "expected": {
+    "kind": "complete_outfit",
+    "complete_outfit": {
+      "TOP": "a1000001-0001-4000-8000-000000000001",
+      "BOTTOM": "a1000005-0005-4000-8000-000000000001",
+      "FOOTWEAR": "a1000006-0006-4000-8000-000000000001"
+    },
+    "must_include": [
+      "a1000006-0006-4000-8000-000000000001"
+    ],
+    "must_exclude_slots": [
+      "OUTERWEAR",
+      "JACKET",
+      "MID_LAYER"
+    ],
+    "no_optional_slot_demanded": true
+  },
+  "notes": "PRD §10.2 #14 / §7.2 minimum (2 TOP, 2 BOTTOM, 1 FOOTWEAR). Complete outfit; no optional slot demanded."
+}

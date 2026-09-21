@@ -1,0 +1,51 @@
+{
+  "weightsVersion": "1.0.0",
+  "weights": {
+    "w_color": 0.25,
+    "w_texture": 0.15,
+    "w_form": 0.2,
+    "w_neglect": 0.15,
+    "w_fav": 0.05,
+    "w_weather": 0.1,
+    "w_recent": 0.2,
+    "w_repeat": 0.1
+  },
+  "shortlist": {
+    "defaultCap": 8,
+    "minCap": 6,
+    "maxCap": 10,
+    "boldnessCaps": {
+      "FAMILIAR": 4,
+      "SLIGHT_STRETCH": 8,
+      "BOLD": 10
+    },
+    "ensureColourFamilyCoverage": true
+  },
+  "neglect": {
+    "horizonDays": 90,
+    "wantToWearMoreMultiplier": 1.5
+  },
+  "recency": {
+    "windowDays": 7
+  },
+  "repeatPair": {
+    "windowDays": 14
+  },
+  "color": {
+    "neutrals": ["navy", "grey", "charcoal", "white", "black", "cream", "tan", "olive"],
+    "analogousGroups": [
+      ["navy", "blue", "light_blue", "indigo"],
+      ["burgundy", "brown", "tan", "cream"],
+      ["olive", "green", "khaki"],
+      ["grey", "charcoal", "black", "white"]
+    ],
+    "complementaryPairs": [
+      ["navy", "cream"],
+      ["blue", "tan"],
+      ["burgundy", "olive"]
+    ]
+  },
+  "formality": {
+    "maxSpreadBeforeNearZero": 2
+  }
+}

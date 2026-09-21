@@ -1,0 +1,19 @@
+{
+  "id": "b6473df6-3426-4d92-83f8-573643474ede",
+  "age": 34,
+  "profession": "Landscape architect",
+  "workEnvironment": "SMART_CASUAL",
+  "workEnvironmentLabel": "Neat but casual; site visits some days, studio reviews on others",
+  "typicalWeekNotes": "Two site days, three studio days, and a community presentation about once a month",
+  "goals": [
+    "spend less time deciding",
+    "wear more of what I own",
+    "learn what goes together"
+  ],
+  "constraintsNotes": "Needs shoes that handle uneven ground; prefers layers that survive a windy site visit and still look tidy indoors",
+  "experimentationLevel": 2,
+  "summary": "Sample profile: a 34-year-old landscape architect who splits the week between outdoor site visits and studio reviews. They want quicker morning decisions, more use out of the knitwear and overshirts they already own, and a clearer sense of which colours and textures work together. This persona is synthetic and ships only as demo data.",
+  "version": 1,
+  "confirmedAt": null,
+  "seedSource": "synthetic-sample"
+}
