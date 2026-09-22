@@ -158,6 +158,186 @@ final class DeviceTokenStoreTests: XCTestCase {
         XCTAssertTrue(items.values.isEmpty)
     }
 
+    // MARK: - Serialization (one lock per complete load / save / clear)
+
+    func testClearDuringMigrationDoesNotResurrectToken() throws {
+        let items = MemoryItems()
+        let (derived, legacy) = makeMigrationServices()
+        XCTAssertTrue(items.write("legacy-opaque-token", service: legacy))
+        items.log = []
+        let keychain = DeviceTokenStore.Keychain(service: derived, legacyService: legacy, items: items, lock: NSLock())
+
+        // Pause the load right after it has captured the legacy token, before it writes.
+        let pause = MemoryItems.Pause(afterReadOf: legacy)
+        items.pause = pause
+        let loadDone = DispatchSemaphore(value: 0)
+        let loaded = Box<String?>(nil)
+        DispatchQueue.global().async {
+            loaded.value = keychain.load()
+            loadDone.signal()
+        }
+        try require(pause.reached.wait(timeout: .now() + 5), "load must reach the legacy read")
+        items.pause = nil
+
+        // clear() must block on the store lock while the migration is in progress.
+        let clearDone = DispatchSemaphore(value: 0)
+        let cleared = Box(false)
+        DispatchQueue.global().async {
+            cleared.value = keychain.clear()
+            clearDone.signal()
+        }
+        XCTAssertEqual(clearDone.wait(timeout: .now() + 0.3), .timedOut, "clear must wait for the in-flight load")
+
+        pause.resume.signal()
+        try require(loadDone.wait(timeout: .now() + 5), "load must finish")
+        try require(clearDone.wait(timeout: .now() + 5), "clear must finish once the load released the lock")
+
+        XCTAssertEqual(loaded.value, "legacy-opaque-token", "the load that started before clear still returns the token")
+        XCTAssertTrue(cleared.value)
+        XCTAssertTrue(items.values.isEmpty, "no copy may survive a clear that ran after the load")
+        XCTAssertEqual(items.log, [
+            .read(derived), .read(legacy), .write(derived), .delete(legacy),
+            .delete(derived), .delete(legacy),
+        ], "the whole migration completes before clear's deletes")
+        XCTAssertNil(keychain.load(), "nothing resurrects on the next load")
+    }
+
+    func testConcurrentLoadsMigrateExactlyOnce() throws {
+        let items = MemoryItems()
+        let (derived, legacy) = makeMigrationServices()
+        XCTAssertTrue(items.write("legacy-opaque-token", service: legacy))
+        items.log = []
+        let keychain = DeviceTokenStore.Keychain(service: derived, legacyService: legacy, items: items, lock: NSLock())
+
+        let pause = MemoryItems.Pause(afterReadOf: legacy)
+        items.pause = pause
+        let firstDone = DispatchSemaphore(value: 0)
+        let first = Box<String?>(nil)
+        DispatchQueue.global().async {
+            first.value = keychain.load()
+            firstDone.signal()
+        }
+        try require(pause.reached.wait(timeout: .now() + 5), "first load must reach the legacy read")
+        items.pause = nil
+
+        let secondDone = DispatchSemaphore(value: 0)
+        let second = Box<String?>(nil)
+        DispatchQueue.global().async {
+            second.value = keychain.load()
+            secondDone.signal()
+        }
+        XCTAssertEqual(secondDone.wait(timeout: .now() + 0.3), .timedOut, "second load must wait for the first")
+
+        pause.resume.signal()
+        try require(firstDone.wait(timeout: .now() + 5), "first load must finish")
+        try require(secondDone.wait(timeout: .now() + 5), "second load must finish")
+
+        XCTAssertEqual(first.value, "legacy-opaque-token")
+        XCTAssertEqual(second.value, "legacy-opaque-token")
+        XCTAssertEqual(items.values, [derived: "legacy-opaque-token"], "exactly one derived item, legacy gone")
+        XCTAssertEqual(items.log.filter { $0 == .write(derived) }.count, 1, "the token is copied once")
+        XCTAssertEqual(items.log, [
+            .read(derived), .read(legacy), .write(derived), .delete(legacy),
+            .read(derived),
+        ], "the second load is served from the derived item and touches nothing else")
+    }
+
+    func testConcurrentLoadsWithFailingWriteNeverLeaveZeroCopies() throws {
+        let items = MemoryItems()
+        let (derived, legacy) = makeMigrationServices()
+        XCTAssertTrue(items.write("legacy-opaque-token", service: legacy))
+        items.rejectWrites = true
+        items.log = []
+        let keychain = DeviceTokenStore.Keychain(service: derived, legacyService: legacy, items: items, lock: NSLock())
+
+        let pause = MemoryItems.Pause(afterReadOf: legacy)
+        items.pause = pause
+        let firstDone = DispatchSemaphore(value: 0)
+        let first = Box<String?>(nil)
+        DispatchQueue.global().async {
+            first.value = keychain.load()
+            firstDone.signal()
+        }
+        try require(pause.reached.wait(timeout: .now() + 5), "first load must reach the legacy read")
+        items.pause = nil
+
+        let secondDone = DispatchSemaphore(value: 0)
+        let second = Box<String?>(nil)
+        DispatchQueue.global().async {
+            second.value = keychain.load()
+            secondDone.signal()
+        }
+        pause.resume.signal()
+        try require(firstDone.wait(timeout: .now() + 5), "first load must finish")
+        try require(secondDone.wait(timeout: .now() + 5), "second load must finish")
+
+        XCTAssertEqual(first.value, "legacy-opaque-token")
+        XCTAssertEqual(second.value, "legacy-opaque-token")
+        XCTAssertEqual(items.values, [legacy: "legacy-opaque-token"], "the legacy copy survives every failed write")
+        XCTAssertFalse(items.log.contains(.delete(legacy)), "legacy is never deleted while no derived copy exists")
+
+        // Once writes succeed again the next load completes the migration.
+        items.rejectWrites = false
+        XCTAssertEqual(keychain.load(), "legacy-opaque-token")
+        XCTAssertEqual(items.values, [derived: "legacy-opaque-token"])
+    }
+
+    func testSaveAndClearSerializeWithEachOther() throws {
+        let items = MemoryItems()
+        let (derived, legacy) = makeMigrationServices()
+        let keychain = DeviceTokenStore.Keychain(service: derived, legacyService: legacy, items: items, lock: NSLock())
+
+        // Hold the lock from the test thread; save and clear on other threads must both wait.
+        keychain.lock.lock()
+        let saveDone = DispatchSemaphore(value: 0)
+        let clearDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            _ = keychain.save("fresh-token")
+            saveDone.signal()
+        }
+        DispatchQueue.global().async {
+            _ = keychain.clear()
+            clearDone.signal()
+        }
+        XCTAssertEqual(saveDone.wait(timeout: .now() + 0.3), .timedOut, "save must wait for the lock")
+        XCTAssertEqual(clearDone.wait(timeout: .now() + 0.3), .timedOut, "clear must wait for the lock")
+        XCTAssertTrue(items.log.isEmpty, "no item is touched while the lock is held elsewhere")
+        keychain.lock.unlock()
+        try require(saveDone.wait(timeout: .now() + 5), "save must finish")
+        try require(clearDone.wait(timeout: .now() + 5), "clear must finish")
+
+        // Whichever order the scheduler picked, the result is one of the two serial outcomes.
+        let outcome = items.values
+        XCTAssertTrue(outcome.isEmpty || outcome == [derived: "fresh-token"], "interleaving produced \(outcome)")
+    }
+
+    func testProductionKeychainUsesTheSharedStoreLock() {
+        XCTAssertTrue(DeviceTokenStore.keychain.lock === DeviceTokenStore.keychainLock)
+        XCTAssertTrue(DeviceTokenStore.Keychain(bundleIdentifier: "com.example.alt").lock === DeviceTokenStore.keychainLock)
+    }
+
+    /// Fails and aborts the test when a semaphore wait timed out, so a broken interleaving
+    /// can never hang the suite.
+    private func require(_ result: DispatchTimeoutResult, _ message: String) throws {
+        if result == .timedOut {
+            XCTFail("Timed out: \(message)")
+            throw TimedOut()
+        }
+    }
+
+    private struct TimedOut: Error {}
+
+    /// Reference cell for results written from a background queue.
+    private final class Box<Value> {
+        private let lock = NSLock()
+        private var stored: Value
+        init(_ value: Value) { stored = value }
+        var value: Value {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+    }
+
     func testSecurityItemsRoundTrip() throws {
         let items = DeviceTokenStore.SecurityItems()
         let service = makeService("security")
@@ -183,7 +363,8 @@ final class DeviceTokenStoreTests: XCTestCase {
         return service
     }
 
-    /// In-memory `DeviceTokenStore.Items` that records every primitive call in order.
+    /// In-memory `DeviceTokenStore.Items` that records every primitive call in order. Thread-safe,
+    /// and can pause the caller after one specific read so tests can interleave operations.
     private final class MemoryItems: DeviceTokenStore.Items {
         enum Call: Equatable {
             case read(String)
@@ -191,26 +372,65 @@ final class DeviceTokenStoreTests: XCTestCase {
             case delete(String)
         }
 
-        var values: [String: String] = [:]
-        var log: [Call] = []
-        var rejectWrites = false
+        /// Pauses the thread that reads `service`: it signals `reached`, then blocks on `resume`
+        /// (bounded, so a broken test cannot hang the suite).
+        final class Pause {
+            let service: String
+            let reached = DispatchSemaphore(value: 0)
+            let resume = DispatchSemaphore(value: 0)
+            init(afterReadOf service: String) { self.service = service }
+        }
+
+        private let state = NSLock()
+        private var storedValues: [String: String] = [:]
+        private var storedLog: [Call] = []
+        private var storedRejectWrites = false
+        private var storedPause: Pause?
+
+        var values: [String: String] {
+            get { state.withLock { storedValues } }
+            set { state.withLock { storedValues = newValue } }
+        }
+        var log: [Call] {
+            get { state.withLock { storedLog } }
+            set { state.withLock { storedLog = newValue } }
+        }
+        var rejectWrites: Bool {
+            get { state.withLock { storedRejectWrites } }
+            set { state.withLock { storedRejectWrites = newValue } }
+        }
+        var pause: Pause? {
+            get { state.withLock { storedPause } }
+            set { state.withLock { storedPause = newValue } }
+        }
 
         func read(service: String) -> String? {
-            log.append(.read(service))
-            return values[service]
+            let (value, pause): (String?, Pause?) = state.withLock {
+                storedLog.append(.read(service))
+                return (storedValues[service], storedPause?.service == service ? storedPause : nil)
+            }
+            if let pause {
+                pause.reached.signal()
+                _ = pause.resume.wait(timeout: .now() + 5)
+            }
+            return value
         }
 
         func write(_ token: String, service: String) -> Bool {
-            log.append(.write(service))
-            if rejectWrites { return false }
-            values[service] = token
-            return true
+            state.withLock {
+                storedLog.append(.write(service))
+                if storedRejectWrites { return false }
+                storedValues[service] = token
+                return true
+            }
         }
 
         func delete(service: String) -> Bool {
-            log.append(.delete(service))
-            values[service] = nil
-            return true
+            state.withLock {
+                storedLog.append(.delete(service))
+                storedValues[service] = nil
+                return true
+            }
         }
     }
 

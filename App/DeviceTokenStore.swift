@@ -22,6 +22,11 @@ enum DeviceTokenStore {
     /// token across updates. Default build: `com.example.PersonalStylist.device-token`.
     static let service = keychain.service
 
+    /// One lock for every load / save / clear, including the whole migration sequence, so a
+    /// load that has read the legacy item cannot interleave with a clear or another load.
+    /// Only synchronous SecItem calls run under it; it is never held across an `await`.
+    static let keychainLock = NSLock()
+
     /// Production Keychain binding for the running app.
     static let keychain = Keychain(bundleIdentifier: Bundle.main.bundleIdentifier)
 
@@ -161,23 +166,34 @@ enum DeviceTokenStore {
         let service: String
         let legacyService: String
         let items: any Items
+        /// Serializes complete operations. Production shares `DeviceTokenStore.keychainLock`;
+        /// tests may pass their own.
+        let lock: NSLock
 
         init(
             bundleIdentifier: String?,
             legacyService: String = DeviceTokenStore.legacyService,
-            items: any Items = SecurityItems()
+            items: any Items = SecurityItems(),
+            lock: NSLock = DeviceTokenStore.keychainLock
         ) {
             self.init(
                 service: DeviceTokenStore.service(forBundleIdentifier: bundleIdentifier),
                 legacyService: legacyService,
-                items: items
+                items: items,
+                lock: lock
             )
         }
 
-        init(service: String, legacyService: String, items: any Items = SecurityItems()) {
+        init(
+            service: String,
+            legacyService: String,
+            items: any Items = SecurityItems(),
+            lock: NSLock = DeviceTokenStore.keychainLock
+        ) {
             self.service = service
             self.legacyService = legacyService
             self.items = items
+            self.lock = lock
         }
 
         /// True when the derived service differs from the legacy one, i.e. a legacy item can exist.
@@ -186,28 +202,34 @@ enum DeviceTokenStore {
         /// Reads the token under the derived service. When none exists and the derived service
         /// differs from the legacy one, a legacy item is copied to the derived service; the legacy
         /// item is deleted only after that copy succeeded. The token is returned either way, so a
-        /// failed copy is retried on the next load instead of losing the session.
+        /// failed copy is retried on the next load instead of losing the session. The whole
+        /// sequence runs under the lock, so a concurrent clear or load sees either the state
+        /// before or the state after it, never the middle.
         func load() -> String? {
-            if let token = items.read(service: service) { return token }
-            guard migratesFromLegacy, let legacy = items.read(service: legacyService) else { return nil }
-            if items.write(legacy, service: service) {
-                _ = items.delete(service: legacyService)
+            lock.withLock {
+                if let token = items.read(service: service) { return token }
+                guard migratesFromLegacy, let legacy = items.read(service: legacyService) else { return nil }
+                if items.write(legacy, service: service) {
+                    _ = items.delete(service: legacyService)
+                }
+                return legacy
             }
-            return legacy
         }
 
         @discardableResult
         func save(_ token: String) -> Bool {
-            items.write(token, service: service)
+            lock.withLock { items.write(token, service: service) }
         }
 
         /// Removes the derived item and, when it differs, the legacy item too, so a cleared
         /// token cannot resurface through migration on the next load.
         @discardableResult
         func clear() -> Bool {
-            let cleared = items.delete(service: service)
-            guard migratesFromLegacy else { return cleared }
-            return items.delete(service: legacyService) && cleared
+            lock.withLock {
+                let cleared = items.delete(service: service)
+                guard migratesFromLegacy else { return cleared }
+                return items.delete(service: legacyService) && cleared
+            }
         }
     }
 }
