@@ -36,6 +36,12 @@ if [[ "$BASE_URL" != https://* ]]; then
   echo "OUTFIT_ENGINE_BASE_URL must be an https:// URL for device builds." >&2
   exit 1
 fi
+# The bundle identifier is written verbatim into an xcconfig build setting; only accept
+# the characters a bundle identifier may contain. The value itself is never echoed.
+if [[ -n "$BUNDLE_ID" && ! "$BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "PRODUCT_BUNDLE_IDENTIFIER must match ^[A-Za-z0-9.-]+$ (letters, digits, dots, hyphens)." >&2
+  exit 1
+fi
 
 mkdir -p "$ROOT/Config"
 # Xcode xcconfig: escape // in https:// as https:/$()/
