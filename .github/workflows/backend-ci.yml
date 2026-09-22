@@ -15,6 +15,7 @@ on:
       - 'fixtures/**'
       - 'docs/openapi.yaml'
       - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
 
 # Least privilege: jobs only read the repository.
 permissions:
