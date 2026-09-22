@@ -55,12 +55,29 @@ final class PhotoReplaceHostedTests: XCTestCase {
         XCTAssertEqual(beforeSave.first?.imagePath, original)
 
         XCTAssertTrue(rig.tapVisible(PhotoReplaceCopy.save))
-        try await waitUntil(rig, timeout: 6) { !rig.hasVisiblePreviewControls() }
+        // Product contract: Save dismisses the preview first (`.previewSave` clears the cover
+        // and raises `commitInFlight`); the commit effect is only issued from the real
+        // `fullScreenCover(onDismiss:)` (`.coverDismissed` -> `.commitPending`) and then runs
+        // in a Task. The preview controls therefore leave the screen before the store is
+        // written, so the wait must also cover `commitInFlight`, which only clears on
+        // `.commitSucceeded` / `.commitFailed`.
+        try await waitUntil(rig, timeout: 6) {
+            !rig.hasVisiblePreviewControls() && !rig.session.state.commitInFlight
+        }
+        XCTAssertFalse(rig.session.state.commitInFlight, "commit must have completed")
+        XCTAssertNil(rig.session.state.alert, "a successful save must not raise a persist alert")
+        XCTAssertNil(rig.session.state.cover)
+        XCTAssertNil(rig.session.state.pending, "a committed staging handle must be released")
         let savedGarments = await rig.store.fetchGarments()
         let stored = try XCTUnwrap(savedGarments.first)
         XCTAssertEqual(stored.id, rig.garmentId)
         XCTAssertNotEqual(stored.imagePath, original)
         XCTAssertEqual(stored.displayName, "Hosted Shirt")
+        XCTAssertEqual(
+            rig.model.garments.first(where: { $0.id == rig.garmentId })?.imagePath,
+            stored.imagePath,
+            "model must reflect the committed photo path"
+        )
         XCTAssertFalse(rig.hasVisiblePreviewControls())
         rig.assertNoBlankProductCover()
     }
