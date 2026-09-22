@@ -53,9 +53,11 @@ targets:
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig
+    # PRODUCT_BUNDLE_IDENTIFIER is defined in Config/{Debug,Release}.xcconfig so the
+    # untracked Config/LocalSecrets.xcconfig can override it; a target-level value
+    # here would take precedence over every xcconfig.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.PersonalStylist
         CODE_SIGN_STYLE: Automatic
   PersonalStylistTests:
     type: bundle.unit-test

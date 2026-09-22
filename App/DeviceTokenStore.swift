@@ -4,7 +4,13 @@ import Security
 /// Keychain-backed device token for Backend device-token auth (D-46 / #168).
 /// Opaque device token only — never an OpenRouter key, never from Info.plist.
 enum DeviceTokenStore {
-    private static let service = "com.example.PersonalStylist.device-token"
+    /// Fallback only for the placeholder build; a signed app always has a bundle identifier.
+    static let fallbackBundleIdentifier = "com.example.PersonalStylist"
+
+    /// Keychain service follows the bundle identifier the app was built with, so a build
+    /// with an overridden `PRODUCT_BUNDLE_IDENTIFIER` keeps finding the token it stored
+    /// before an update. Default build: `com.example.PersonalStylist.device-token`.
+    static let service = (Bundle.main.bundleIdentifier ?? fallbackBundleIdentifier) + ".device-token"
     private static let account = "device"
 
     /// Non-nil enables in-memory storage for unit tests (unsigned CI cannot write Keychain).

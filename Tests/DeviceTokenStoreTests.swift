@@ -17,6 +17,14 @@ final class DeviceTokenStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testKeychainServiceFollowsHostBundleIdentifier() throws {
+        // Hosted unit tests run inside the app, so Bundle.main is the app bundle.
+        let bundleID = try XCTUnwrap(Bundle.main.bundleIdentifier)
+        XCTAssertEqual(DeviceTokenStore.service, bundleID + ".device-token")
+        XCTAssertTrue(DeviceTokenStore.service.hasSuffix(".device-token"))
+        XCTAssertFalse(DeviceTokenStore.service.hasPrefix("."))
+    }
+
     func testSaveLoadClearRoundTrip() {
         XCTAssertFalse(DeviceTokenStore.hasToken)
         XCTAssertTrue(DeviceTokenStore.save("opaque-test-token"))

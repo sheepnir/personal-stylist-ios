@@ -115,7 +115,7 @@ are gitignored:
 | What | Where | Notes |
 |---|---|---|
 | Apple Team ID | `Config/LocalSecrets.xcconfig` → `DEVELOPMENT_TEAM = <TEAMID>` | Only needed to run on a device. Simulator builds work without it. |
-| Bundle identifier | `project.yml` ships `com.example.PersonalStylist` | Change locally if you sign the app; re-run `xcodegen generate`. |
+| Bundle identifier | `Config/LocalSecrets.xcconfig` → `PRODUCT_BUNDLE_IDENTIFIER = <your bundle id>` | Tracked default is `com.example.PersonalStylist`, set in `Config/Debug.xcconfig` / `Config/Release.xcconfig` (not in `project.yml`, so no `xcodegen generate` is needed to override it). A release build must use the identifier of its App Store Connect record. The Keychain service for the device token follows it (`<bundle id>.device-token`), so an updated build finds the token it stored earlier. |
 | Worker URL | `Config/LocalSecrets.xcconfig` → `OUTFIT_ENGINE_BASE_URL = https:/$()/<your-worker-host>` | xcconfig needs `//` escaped as `/$()/`. `scripts/sync-local-secrets.sh` writes this file for you. Tracked defaults: **Debug ships an empty URL** (Simulator → local bridge `127.0.0.1:8787`; a device falls back to the compiled placeholder), Release ships the placeholder `stylist-backend.example.invalid`. |
 | Worker name, KV / rate-limit ids, environments | gitignored `backend/workers/wrangler.local.toml` | The committed `wrangler.toml` is a sample only. The single recipe is in `backend/workers/README.md` ("Configure and run wrangler"). This repository ships no deployment automation. |
 | Worker secrets | `wrangler secret put` — see the same recipe | Never stored in the repo; per environment. For `wrangler dev`, use an untracked `.dev.vars`. |
