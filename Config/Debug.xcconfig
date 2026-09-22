@@ -6,4 +6,7 @@
 OUTFIT_ENGINE_BASE_URL =
 // Apple Team ID: intentionally empty. Set DEVELOPMENT_TEAM in the untracked LocalSecrets.xcconfig.
 DEVELOPMENT_TEAM =
+// Placeholder bundle identifier. LocalSecrets.xcconfig may override it; the Keychain
+// service used by DeviceTokenStore follows whatever identifier the app is built with.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.PersonalStylist
 #include? "LocalSecrets.xcconfig"

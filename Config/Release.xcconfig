@@ -3,4 +3,7 @@
 OUTFIT_ENGINE_BASE_URL = https:/$()/stylist-backend.example.invalid
 // Apple Team ID: intentionally empty. Set DEVELOPMENT_TEAM in the untracked LocalSecrets.xcconfig.
 DEVELOPMENT_TEAM =
+// Placeholder bundle identifier. LocalSecrets.xcconfig must override it for a release
+// build; the Keychain service used by DeviceTokenStore follows the built identifier.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.PersonalStylist
 #include? "LocalSecrets.xcconfig"

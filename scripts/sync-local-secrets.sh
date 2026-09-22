@@ -8,8 +8,10 @@
 #   or ENROLLMENT_SECRET=<wrangler secret> (Debug auto-enrolls against HTTPS)
 #
 # Inputs (environment variables, or a KEY=VALUE env file named by PS_ENV_FILE):
-#   OUTFIT_ENGINE_BASE_URL   required, e.g. https://<your-worker-host>
-#   DEVELOPMENT_TEAM         optional, your 10-character Apple Team ID
+#   OUTFIT_ENGINE_BASE_URL       required, e.g. https://<your-worker-host>
+#   DEVELOPMENT_TEAM             optional, your 10-character Apple Team ID
+#   PRODUCT_BUNDLE_IDENTIFIER    optional, overrides the placeholder com.example.PersonalStylist
+#                                (release builds: must match the App Store Connect record)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/Config/LocalSecrets.xcconfig"
@@ -24,6 +26,7 @@ read_env_key() {
 
 BASE_URL="${OUTFIT_ENGINE_BASE_URL:-$(read_env_key OUTFIT_ENGINE_BASE_URL)}"
 TEAM="${DEVELOPMENT_TEAM:-$(read_env_key DEVELOPMENT_TEAM)}"
+BUNDLE_ID="${PRODUCT_BUNDLE_IDENTIFIER:-$(read_env_key PRODUCT_BUNDLE_IDENTIFIER)}"
 
 if [[ -z "$BASE_URL" ]]; then
   echo "Set OUTFIT_ENGINE_BASE_URL (or PS_ENV_FILE pointing at a file that defines it)." >&2
@@ -31,6 +34,12 @@ if [[ -z "$BASE_URL" ]]; then
 fi
 if [[ "$BASE_URL" != https://* ]]; then
   echo "OUTFIT_ENGINE_BASE_URL must be an https:// URL for device builds." >&2
+  exit 1
+fi
+# The bundle identifier is written verbatim into an xcconfig build setting; only accept
+# the characters a bundle identifier may contain. The value itself is never echoed.
+if [[ -n "$BUNDLE_ID" && ! "$BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "PRODUCT_BUNDLE_IDENTIFIER must match ^[A-Za-z0-9.-]+$ (letters, digits, dots, hyphens)." >&2
   exit 1
 fi
 
@@ -43,6 +52,9 @@ XC_BASE="${BASE_URL/https:\/\//https:\/\$()\/}"
   echo "OUTFIT_ENGINE_BASE_URL = ${XC_BASE}"
   if [[ -n "$TEAM" ]]; then
     echo "DEVELOPMENT_TEAM = ${TEAM}"
+  fi
+  if [[ -n "$BUNDLE_ID" ]]; then
+    echo "PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}"
   fi
 } > "$OUT"
 echo "Wrote Config/LocalSecrets.xcconfig"
