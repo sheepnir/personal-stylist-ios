@@ -27,6 +27,7 @@ on:
       - 'Assets.xcassets/**'
       - 'fixtures/**'
       - '.github/workflows/ios-ci.yml'
+  workflow_dispatch:
 
 # Least privilege: jobs only read the repository.
 permissions:

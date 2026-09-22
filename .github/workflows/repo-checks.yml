@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 # Least privilege: jobs only read the repository.
 permissions:
