@@ -1,8 +1,17 @@
 # Hash-pinned Python dependencies for scripts/verify-openapi-contract-examples.py.
 # Install with: pip3 install --require-hashes -r scripts/ci-requirements.txt
-# Hashes cover every file (sdist and wheels) published on PyPI for each pinned
-# release, so the install resolves on any runner platform. Regenerate hashes when
-# bumping a version (e.g. from the release's PyPI JSON metadata or pip3 hash).
+#
+# Coverage: the direct packages plus the full transitive closure for every
+# supported interpreter. Hashes list every file (sdist and all wheels) published
+# on PyPI for each pinned release, so the install resolves on the CI runner
+# (ubuntu-latest, CPython 3.12, manylinux x86_64) as well as on other platforms
+# and Python versions. typing-extensions is only required by referencing on
+# Python < 3.13; it is pinned here unconditionally so the closure is complete on
+# the runner's 3.12 (pip evaluates markers against the interpreter it runs
+# under, so a resolve on a newer local Python does not surface it).
+#
+# Regenerate when bumping a version: take the release's file digests from PyPI
+# (or `pip3 download` + `pip3 hash`) and update every affected entry together.
 
 # direct: scripts/verify-openapi-contract-examples.py
 pyyaml==6.0.3 \
