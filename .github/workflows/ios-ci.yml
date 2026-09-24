@@ -79,8 +79,27 @@ jobs:
             exit 1
           }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen (pinned, checksum-verified)
+        # Pinned to a specific release artifact instead of `brew install xcodegen`
+        # (mutable formula). The SHA-256 is the digest of the release zip; the step
+        # fails if the downloaded archive does not match it. Bump both values together.
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen-${XCODEGEN_VERSION}.zip"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  ${archive}" | shasum -a 256 -c - || {
+            echo "XcodeGen ${XCODEGEN_VERSION} checksum mismatch — refusing to use the download"
+            shasum -a 256 "$archive"
+            exit 1
+          }
+          install_dir="$RUNNER_TEMP/xcodegen-${XCODEGEN_VERSION}"
+          unzip -q "$archive" -d "$install_dir"
+          echo "$install_dir/xcodegen/bin" >> "$GITHUB_PATH"
+          "$install_dir/xcodegen/bin/xcodegen" --version
 
       - name: Generate Xcode project
         run: xcodegen generate

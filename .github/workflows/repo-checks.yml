@@ -41,7 +41,19 @@ jobs:
       - name: Generate-failure copy (no raw HTTP/URL errors)
         run: python3 scripts/verify-generate-failure-copy.py
 
+      - name: Install pinned Python dependencies (hash-verified)
+        # Installed unconditionally into a private target directory so the pinned,
+        # hash-verified versions are the ones that actually run (a runner image that
+        # already ships these modules must not silently substitute its own copies).
+        # `--target` also sidesteps PEP 668 "externally managed" refusals on system pythons.
+        run: |
+          set -euo pipefail
+          pip3 install --require-hashes --target "$RUNNER_TEMP/pydeps" \
+            -r scripts/ci-requirements.txt
+          echo "PYTHONPATH=$RUNNER_TEMP/pydeps" >> "$GITHUB_ENV"
+
       - name: OpenAPI contract examples (#220)
         run: |
-          python3 -c "import yaml, jsonschema" 2>/dev/null || pip3 install --user pyyaml==6.0.3 jsonschema==4.26.0
+          set -euo pipefail
+          python3 -c 'from importlib.metadata import version; import yaml; print("pyyaml", version("pyyaml"), "jsonschema", version("jsonschema"), "from", yaml.__file__)'
           python3 scripts/verify-openapi-contract-examples.py

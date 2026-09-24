@@ -16,6 +16,7 @@ on:
       - 'Design/AssetLibrary.swift'
       - 'Design/AvailabilityToken.swift'
       - 'scripts/check-asset-library.py'
+      - '.github/workflows/asset-library-check.yml'
   workflow_dispatch:
 
 # Least privilege: jobs only read the repository.
