@@ -11,6 +11,7 @@ import {
   MAX_BODY_BYTES,
   RATE_LIMIT_MAX,
 } from '../src/validation.js';
+import { isAllowedWardrobeImagesAcceptedAtRfc3339 } from '../src/imageGuardConsent.js';
 import type { Env } from '../src/types.js';
 
 const ctx = {} as ExecutionContext;
@@ -76,6 +77,26 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     expect(res?.status).toBe(415);
   });
 
+  it('rejects openapi image and thumbnails keys (#36 AC6)', () => {
+    expect(rejectImagePayload({ thumbnails: [] })?.status).toBe(415);
+    expect(rejectImagePayload({ image: { data: 'x', mediaType: 'image/png' } })?.status).toBe(415);
+  });
+
+  it('rejects all-lowercase compound keys (#36)', () => {
+    expect(rejectImagePayload({ imagepath: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ imageblob: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ wardrobe: [{ garmentimages: [] }] })?.status).toBe(415);
+    expect(rejectImagePayload({ pixelData: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ image_blob: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ 'image-blob': 'x' })?.status).toBe(415);
+  });
+
+  it('rejects imagery, photography, and thumbs_up spellings (#36)', () => {
+    expect(rejectImagePayload({ imagery: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ photography: true })?.status).toBe(415);
+    expect(rejectImagePayload({ thumbs_up: 1 })?.status).toBe(415);
+  });
+
   it('rejects a nested thumbnail key', () => {
     const res = rejectImagePayload({ context: { garment: { thumbnail: 'x' } } });
     expect(res?.status).toBe(415);
@@ -84,6 +105,99 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
   it('rejects a data: image URL value', () => {
     const res = rejectImagePayload({ note: 'data:image/png;base64,iVBORw0KGgo=' });
     expect(res?.status).toBe(415);
+  });
+
+  it('never applies the consent exception under any array ancestor (#36)', () => {
+    expect(
+      rejectImagePayload([{ privacyConsent: { wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z', policyVersion: '1' } }])
+        ?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({
+        wardrobe: [{ privacyConsent: { wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z', policyVersion: '1' } }],
+      })?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({ 'privacyConsent.wardrobeImagesAcceptedAt': '2026-09-20T12:00:00Z' })?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: [{ wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z' }],
+      })?.status
+    ).toBe(415);
+  });
+
+  it('rejects strict RFC 3339 violations at the consent path (#36)', () => {
+    const consent = (value: string) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent('Tue Sep 20 2026 12:00:00 GMT'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('T 2026'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('Sun, 20 Sep 2026 18:30:00 GMT'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('2026-02-31T12:00:00Z'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('2026-09-20t12:00:00Z'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('２026-09-20T12:00:00Z'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('2026-09-20T12:00:00Z\n'))?.status).toBe(415);
+  });
+
+  it('rejects consent timestamp when length exceeds 64 characters (#36)', () => {
+    const value = `${'2026-09-20T12:00:00Z'}${'0'.repeat(45)}`;
+    expect(value.length).toBe(65);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339(value)).toBe(false);
+    expect(
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+      })?.status
+    ).toBe(415);
+  });
+
+  it('allows RFC 3339 consent timestamps with Z, offset, fractional seconds, and year 0050 (#36)', () => {
+    const allow = (value: string) =>
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+        wardrobe: [{ id: '1', slot: 'TOP' }],
+      });
+    expect(allow('2026-09-20T12:00:00Z')).toBeNull();
+    expect(allow('2026-09-20T12:00:00+05:30')).toBeNull();
+    expect(allow('2026-09-20T12:00:00.123456789Z')).toBeNull();
+    expect(allow('0050-06-15T12:00:00Z')).toBeNull();
+  });
+
+  it('rejects consent timestamp at the wrong path or with bad values (#36)', () => {
+    expect(rejectImagePayload({ wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z' })?.status).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: 'not-a-date', policyVersion: '1' },
+      })?.status
+    ).toBe(415);
+  });
+
+  it('rejects null, number, and object at the consent path with 415 (#36)', () => {
+    const consent = (value: unknown) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent(null))?.status).toBe(415);
+    expect(rejectImagePayload(consent(1_700_000_000))?.status).toBe(415);
+    expect(rejectImagePayload(consent({ at: '2026-09-20T12:00:00Z' }))?.status).toBe(415);
+  });
+
+  it('rejects other non-string consent values with 415 (#36)', () => {
+    const consent = (value: unknown) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent(true))?.status).toBe(415);
+    expect(rejectImagePayload(consent(['2026-09-20T12:00:00Z']))?.status).toBe(415);
+  });
+
+  it('allows the named consent exception on the full path (#36)', () => {
+    const res = rejectImagePayload({
+      privacyConsent: {
+        wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z',
+        policyVersion: '2026-09-01',
+      },
+      wardrobe: [{ garmentId: '1', slot: 'TOP', color: 'navy' }],
+    });
+    expect(res).toBeNull();
   });
 
   it('allows a clean wardrobe payload', () => {
@@ -140,6 +254,15 @@ describe('review regressions', () => {
   });
   it.each(['null', '[]', '123', '"hello"'])('rejects non-object root %s', async (body) => {
     expect((await readJsonWithLimit(post(body)) as Response).status).toBe(400);
+  });
+  it('scans deeply nested objects without quadratic path copying', () => {
+    let inner: Record<string, unknown> = { id: '1' };
+    for (let i = 0; i < 100_000; i++) {
+      inner = { [`n${i}`]: inner };
+    }
+    const started = performance.now();
+    expect(rejectImagePayload({ root: inner })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(3000);
   });
   it('rejects deep image payloads and camel-case image keys', () => {
     let body: unknown = { imageUrl: 'https://example.test/x.png' };

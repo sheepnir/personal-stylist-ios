@@ -69,10 +69,11 @@ targets:
         excludes:
           - "**/*.md"
           - "Fixtures/LegacyStores/**"
-    resources:
       - path: Tests/Fixtures/LegacyStores
+        buildPhase: resources
         excludes:
           - "**/*.md"
+      - path: fixtures/image-guard/corpus.json
         buildPhase: resources
     dependencies:
       - target: PersonalStylist
