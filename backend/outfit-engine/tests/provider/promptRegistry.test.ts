@@ -32,11 +32,47 @@ const FORBIDDEN_NORMALIZED_TERMS = [
   "gapreason",
   "chat",
   "conversation",
+  "rationale",
+  "explanation",
+  "placeholder",
 ] as const;
 
-function collectStringValues(value: unknown, out: string[], seen = new WeakSet<object>()): void {
+function rawStringHasGarmentPlaceholderPattern(raw: string): boolean {
+  return raw.toLowerCase().includes("{g_");
+}
+
+type HashedFieldFragment = { kind: "key" | "value"; text: string };
+
+function fragmentViolatesForbiddenTerms(fragment: HashedFieldFragment): boolean {
+  const { text, kind } = fragment;
+  if (rawStringHasGarmentPlaceholderPattern(text)) {
+    return true;
+  }
+  const normalized = normalizeForForbiddenTermScan(text);
+  if (kind === "key") {
+    return FORBIDDEN_NORMALIZED_TERMS.some((term) => normalized.includes(term));
+  }
+  if (
+    (["freetext", "gapreason", "chat", "conversation"] as const).some((term) =>
+      normalized.includes(term),
+    )
+  ) {
+    return true;
+  }
+  const words = text.toLowerCase().split(/[^a-z0-9_{}]+/).filter(Boolean);
+  return (["rationale", "explanation", "placeholder", "gapreason"] as const).some(
+    (term) => words.some((word) => normalizeForForbiddenTermScan(word) === term),
+  );
+}
+
+/** Walk keys and string values at every depth (hashed prompt fields). */
+function collectKeysAndStringValues(
+  value: unknown,
+  out: HashedFieldFragment[],
+  seen = new WeakSet<object>(),
+): void {
   if (typeof value === "string") {
-    out.push(value);
+    out.push({ kind: "value", text: value });
     return;
   }
   if (value === null || typeof value !== "object") {
@@ -49,13 +85,14 @@ function collectStringValues(value: unknown, out: string[], seen = new WeakSet<o
 
   if (Array.isArray(value)) {
     for (const entry of value) {
-      collectStringValues(entry, out, seen);
+      collectKeysAndStringValues(entry, out, seen);
     }
     return;
   }
 
-  for (const nested of Object.values(value as Record<string, unknown>)) {
-    collectStringValues(nested, out, seen);
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    out.push({ kind: "key", text: key });
+    collectKeysAndStringValues(nested, out, seen);
   }
 }
 
@@ -64,16 +101,13 @@ function assertHashedPromptFieldsAvoidForbiddenTerms(
   optionDescriptions: unknown,
   answerTypes: unknown,
 ): void {
-  const strings: string[] = [];
-  collectStringValues(
+  const fragments: HashedFieldFragment[] = [];
+  collectKeysAndStringValues(
     { instructionText, optionDescriptions, answerTypes },
-    strings,
+    fragments,
   );
-  for (const raw of strings) {
-    const normalized = normalizeForForbiddenTermScan(raw);
-    for (const term of FORBIDDEN_NORMALIZED_TERMS) {
-      expect(normalized.includes(term)).toBe(false);
-    }
+  for (const fragment of fragments) {
+    expect(fragmentViolatesForbiddenTerms(fragment)).toBe(false);
   }
 }
 
@@ -82,20 +116,12 @@ function hashedFieldsContainForbiddenTerm(
   optionDescriptions: unknown,
   answerTypes: unknown,
 ): boolean {
-  const strings: string[] = [];
-  collectStringValues(
+  const fragments: HashedFieldFragment[] = [];
+  collectKeysAndStringValues(
     { instructionText, optionDescriptions, answerTypes },
-    strings,
+    fragments,
   );
-  for (const raw of strings) {
-    const normalized = normalizeForForbiddenTermScan(raw);
-    for (const term of FORBIDDEN_NORMALIZED_TERMS) {
-      if (normalized.includes(term)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return fragments.some((fragment) => fragmentViolatesForbiddenTerms(fragment));
 }
 
 const FORBIDDEN_CHAT_KEYS = new Set([
@@ -186,11 +212,13 @@ describe("prompt registry (ADR-0001 §8)", () => {
 
   it("uses Decisions typed answers, not chat completion messages", () => {
     assertNoChatCompletionFields(outfitT2D1);
-    expect(outfitT2D1.instructionText).not.toMatch(/\{g_/);
     assertHashedPromptFieldsAvoidForbiddenTerms(
       outfitT2D1.instructionText,
       outfitT2D1.optionDescriptions,
       outfitT2D1.answerTypes,
+    );
+    expect(REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"]).toBe(
+      "e1a68370ddf74288fae7c4c97cfa71b9190c31df34e3a3bab468bd97d15ba5c9",
     );
   });
 
@@ -211,6 +239,37 @@ describe("prompt registry (ADR-0001 §8)", () => {
         outfitT2D1.answerTypes,
       ),
     ).toThrow();
+  });
+
+  it("forbidden-term scanner catches keys and nested forbidden fragments", () => {
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { gapReason: "x" },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { rationale: "x" },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { meta: { gap_reason: "x" } },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        "Use token {g_1} in summary",
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toBe(true);
   });
 
   it("answerTypes keys mirror A-2 slot_<SLOT> contract (no accessory ids)", () => {
