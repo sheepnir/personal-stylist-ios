@@ -405,7 +405,7 @@ describe('ledgerCore retention', () => {
     expect(state.days[DAY]?.spentMicro).toBe(1_000_000);
     expect(state.days[tomorrow]).toBeDefined();
     expect(state.days[tomorrow]?.spentMicro).toBe(500);
-    expect(state.days[staleOpenKey]).toBeDefined();
+    expect(state.days[staleOpenKey]).toBeUndefined();
   });
 });
 

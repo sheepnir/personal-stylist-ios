@@ -4,8 +4,10 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  ageLedger,
   countSettledBucketsOutsideEvictionWindow,
   emptyLedgerState,
+  MAX_ATTEMPTS_PER_DAY,
   pruneOldDays,
   reconcileAttempt,
   reserveAttempt,
@@ -118,5 +120,76 @@ describe('bucket limit lockout regressions', () => {
     pruneOldDays(state, NOW);
     expect(countSettledBucketsOutsideEvictionWindow(state, NOW)).toBe(0);
     expect(Object.keys(state.days).length).toBeLessThanOrEqual(LEDGER_DAY_BUCKETS + 1);
+  });
+});
+
+describe('ledger storage bounds', () => {
+  it('one open hold per day for 65 simulated UTC days keeps buckets within the window', () => {
+    const state = emptyLedgerState();
+    let now = new Date('2026-01-01T12:00:00.000Z');
+    for (let i = 0; i < 65; i += 1) {
+      const dayKey = now.toISOString().split('T')[0];
+      expect(reserveAttempt(state, `open-${i}`, 0.01, dayKey, CONFIG, 'generate', now)).toEqual({
+        ok: true,
+      });
+      ageLedger(state, now);
+      now = new Date(now.getTime() + 86_400_000);
+    }
+    ageLedger(state, now);
+    expect(Object.keys(state.days).length).toBeLessThanOrEqual(LEDGER_DAY_BUCKETS + 1);
+    let attemptRecords = 0;
+    for (const day of Object.values(state.days)) {
+      attemptRecords += Object.keys(day.attempts).length;
+    }
+    expect(attemptRecords).toBeLessThanOrEqual((LEDGER_DAY_BUCKETS + 1) * MAX_ATTEMPTS_PER_DAY);
+  });
+
+  it('expires stale open holds at the full reserved upper bound then prunes the bucket', () => {
+    const state = emptyLedgerState();
+    const staleKey = utcDayKeyMinusDays(DAY, 35);
+    state.days[staleKey] = openDay(staleKey, 'stale-reserved');
+    expect(state.days[staleKey].reservedMicro).toBe(50_000);
+    expect(pruneOldDays(state, NOW)).toBe(true);
+    expect(state.days[staleKey]).toBeUndefined();
+  });
+
+  it('late reconcile after expiry and prune returns not_found without mutating state', () => {
+    const state = emptyLedgerState();
+    const staleKey = utcDayKeyMinusDays(DAY, 35);
+    state.days[staleKey] = openDay(staleKey, 'gone');
+    pruneOldDays(state, NOW);
+    const snapshot = JSON.stringify(state);
+    expect(reconcileAttempt(state, 'gone', 0.01)).toEqual({ ok: false, reason: 'not_found' });
+    expect(JSON.stringify(state)).toBe(snapshot);
+  });
+
+  it('attempt_limit blocks new holds while idempotent retry stays ok and summary agrees', () => {
+    const state = emptyLedgerState();
+    const day = state.days[DAY] ?? {
+      date: DAY,
+      spentMicro: 0,
+      reservedMicro: 0,
+      overReservationCount: 0,
+      attempts: Object.create(null),
+      tasks: Object.create(null),
+    };
+    state.days[DAY] = day;
+    for (let i = 0; i < MAX_ATTEMPTS_PER_DAY - 1; i += 1) {
+      day.attempts[`fill-${i}`] = {
+        attemptId: `fill-${i}`,
+        upperBoundMicro: 1,
+        actualMicro: 1,
+        task: 'generate',
+        state: 'reconciled',
+        createdAt: NOW.toISOString(),
+      };
+    }
+    expect(reserveAttempt(state, 'keep', 0.000001, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
+    expect(summarizeDay(state, DAY, CONFIG).attemptLimitReached).toBe(true);
+    expect(reserveAttempt(state, 'extra', 0.000001, DAY, CONFIG, 'generate', NOW)).toEqual({
+      ok: false,
+      reason: 'attempt_limit',
+    });
+    expect(reserveAttempt(state, 'keep', 0.000001, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
   });
 });

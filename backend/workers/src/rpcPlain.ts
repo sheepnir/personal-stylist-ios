@@ -28,6 +28,7 @@ export function toRpcDaySummary(summary: DaySummary): DaySummary {
     reservedUSD: summary.reservedUSD,
     softThresholdReached: summary.softThresholdReached,
     hardCapReached: summary.hardCapReached,
+    attemptLimitReached: summary.attemptLimitReached,
     overReservationCount: summary.overReservationCount,
     byTask: toRpcPlainRecord(summary.byTask),
   };
