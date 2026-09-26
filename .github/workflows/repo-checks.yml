@@ -1,6 +1,7 @@
 name: Repo Checks
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches:
@@ -10,12 +11,6 @@ on:
 # Least privilege: jobs only read the repository.
 permissions:
   contents: read
-
-# A new push to a PR cancels that PR's superseded run. Groups are per PR, so
-# PRs never cancel each other; pushes to main get a unique group and always finish.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   repo-checks:
