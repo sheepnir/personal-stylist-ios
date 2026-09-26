@@ -1514,7 +1514,7 @@ components:
         softThresholdUSD:
           type: [number, 'null']
           minimum: 0
-          description: Above this, the secondary model is used. Null when caps are unavailable.
+          description: Informational soft-spend hint for usage UI. Does not change routing or models. Null when caps are unavailable.
         spentTodayUSD: { type: number, minimum: 0 }
         reservedTodayUSD:
           type: number
