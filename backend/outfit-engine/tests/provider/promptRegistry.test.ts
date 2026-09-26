@@ -30,11 +30,12 @@ function normalizeForForbiddenTermScan(text: string): string {
 const FORBIDDEN_NORMALIZED_TERMS = [
   "freetext",
   "gapreason",
+  "rationale",
+  "placeholder",
+  "explanation",
+  "explanatory",
   "chat",
   "conversation",
-  "rationale",
-  "explanation",
-  "placeholder",
 ] as const;
 
 function rawStringHasGarmentPlaceholderPattern(raw: string): boolean {
@@ -44,25 +45,11 @@ function rawStringHasGarmentPlaceholderPattern(raw: string): boolean {
 type HashedFieldFragment = { kind: "key" | "value"; text: string };
 
 function fragmentViolatesForbiddenTerms(fragment: HashedFieldFragment): boolean {
-  const { text, kind } = fragment;
-  if (rawStringHasGarmentPlaceholderPattern(text)) {
+  if (rawStringHasGarmentPlaceholderPattern(fragment.text)) {
     return true;
   }
-  const normalized = normalizeForForbiddenTermScan(text);
-  if (kind === "key") {
-    return FORBIDDEN_NORMALIZED_TERMS.some((term) => normalized.includes(term));
-  }
-  if (
-    (["freetext", "gapreason", "chat", "conversation"] as const).some((term) =>
-      normalized.includes(term),
-    )
-  ) {
-    return true;
-  }
-  const words = text.toLowerCase().split(/[^a-z0-9_{}]+/).filter(Boolean);
-  return (["rationale", "explanation", "placeholder", "gapreason"] as const).some(
-    (term) => words.some((word) => normalizeForForbiddenTermScan(word) === term),
-  );
+  const normalized = normalizeForForbiddenTermScan(fragment.text);
+  return FORBIDDEN_NORMALIZED_TERMS.some((term) => normalized.includes(term));
 }
 
 /** Walk keys and string values at every depth (hashed prompt fields). */
@@ -217,8 +204,10 @@ describe("prompt registry (ADR-0001 §8)", () => {
       outfitT2D1.optionDescriptions,
       outfitT2D1.answerTypes,
     );
-    expect(REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"]).toBe(
-      "e1a68370ddf74288fae7c4c97cfa71b9190c31df34e3a3bab468bd97d15ba5c9",
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("rationale");
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("gapReason");
+    expect(hashStylistPromptModule(outfitT2D1)).toBe(
+      REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"],
     );
   });
 

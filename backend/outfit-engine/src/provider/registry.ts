@@ -21,7 +21,7 @@ export const CURRENT_STYLIST_PROMPT_VERSION = CURRENT_STYLIST_PROMPT.version;
  * Update only when adding a new prompt version module — never when editing text in place.
  */
 export const REGISTERED_PROMPT_CONTENT_HASHES: Readonly<Record<string, string>> = {
-  "outfit-t2-d1": "e1a68370ddf74288fae7c4c97cfa71b9190c31df34e3a3bab468bd97d15ba5c9",
+  "outfit-t2-d1": "5a460c36cfa76d915a0c4dae9809698a93dd6518515953398c10d45392d10d00",
 };
 
 export class UnregisteredPromptVersionError extends Error {

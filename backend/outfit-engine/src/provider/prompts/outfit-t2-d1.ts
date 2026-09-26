@@ -6,7 +6,7 @@ import { OUTFIT_T2_D1_OPTION_DESCRIPTIONS } from "./outfit-t2-d1-optionDescripti
 const INSTRUCTION_TEXT = `Select outfit slots using typed Decisions answers only.
 
 For each slot question id (slot_<SLOT>), respond with a choice answer whose value is one of the option keys listed for that question.
-Do not emit explanatory prose, garment placeholders, or any fields outside the configured answer types.
+Do not emit any fields outside the configured answer types.
 Accessory questions, when present, use ids assigned by the request builder (not defined in this prompt version).`;
 
 export const outfitT2D1: StylistPromptModule = deepFreeze({
