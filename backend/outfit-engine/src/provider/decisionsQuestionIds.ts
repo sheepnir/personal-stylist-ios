@@ -1,4 +1,4 @@
-import type { Slot } from "../types.js";
+import { ALL_SLOTS, type Slot } from "../types.js";
 import { ownHas } from "./safeOwn.js";
 import type { ProviderQuestion } from "./types.js";
 
@@ -10,10 +10,17 @@ export function slotChoiceQuestionId(slot: Slot): string {
   return `slot_${slot}`;
 }
 
+const KNOWN_SLOTS = new Set<string>(ALL_SLOTS);
+
 export function parseSlotChoiceQuestionId(id: string): Slot | null {
   if (!id.startsWith("slot_")) return null;
-  const slot = id.slice("slot_".length) as Slot;
-  return slot.length > 0 ? slot : null;
+  const suffix = id.slice("slot_".length);
+  if (suffix.length === 0 || suffix !== suffix.trim()) return null;
+  if (!KNOWN_SLOTS.has(suffix)) return null;
+  for (const slot of ALL_SLOTS) {
+    if (slot === suffix) return slot;
+  }
+  return null;
 }
 
 /** Reject malformed question ids before parsing provider answers. */
