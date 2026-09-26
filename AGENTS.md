@@ -167,6 +167,11 @@ python3 scripts/check-asset-library.py
 
 ## Workflow hygiene
 
+- **Sprint 6 coordination** is recorded in
+  `docs/architect/decisions/0002-sprint-6-cursor-coordination.md`. Follow that
+  decision for who coordinates, which models may be used, and what it does not
+  approve. ADR-0001 remains the product rule for provider work.
+
 - **CI workflows:** every workflow declares `permissions: contents: read`, a per-PR
   `concurrency` group, `persist-credentials: false` on checkout, and actions pinned to a full
   commit SHA with a `# vX.Y.Z` comment — bump both together.
