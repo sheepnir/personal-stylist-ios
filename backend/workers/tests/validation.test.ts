@@ -131,6 +131,17 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     ).toBe(415);
   });
 
+  it('rejects non-string wardrobeImagesAcceptedAt at the consent path (#36)', () => {
+    const consent = (value: unknown) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent(null))?.status).toBe(415);
+    expect(rejectImagePayload(consent(1_700_000_000))?.status).toBe(415);
+    expect(rejectImagePayload(consent(true))?.status).toBe(415);
+    expect(rejectImagePayload(consent({ at: '2026-09-20T12:00:00Z' }))?.status).toBe(415);
+    expect(rejectImagePayload(consent(['2026-09-20T12:00:00Z']))?.status).toBe(415);
+  });
+
   it('allows the named consent exception on the full path (#36)', () => {
     const res = rejectImagePayload({
       privacyConsent: {

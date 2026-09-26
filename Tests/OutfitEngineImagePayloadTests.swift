@@ -142,6 +142,20 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         XCTAssertEqual(sent["readiness"] as? String, garment.readiness.rawValue)
     }
 
+    func testImageryPhotographyThumbsUpAreRejectedNotRetainedInPayloads() {
+        for key in ["imagery", "photography", "thumbs_up"] {
+            XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), "segment must be image-bearing: \(key)")
+            let body: [String: Any] = [
+                "wardrobe": [[key: "value", "id": "g1", "slot": "TOP"]],
+            ]
+            XCTAssertNotNil(Self.workerImageFinding(in: body), "Worker must reject \(key)")
+            let cleaned = OutfitEngineClient.strippingImagePayload(body)
+            let row = (cleaned["wardrobe"] as? [[String: Any]])?.first ?? [:]
+            XCTAssertNil(row[key], "\(key) must not survive stripping")
+            XCTAssertEqual(row["id"] as? String, "g1")
+        }
+    }
+
     // MARK: (b) nested objects and arrays are cleaned
 
     func testStrippingIsRecursiveAcrossObjectsAndArrays() {
@@ -224,6 +238,30 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             "privacyConsent": ["wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1"],
         ])
         XCTAssertNil(bad["privacyConsent"])
+    }
+
+    func testConsentNonStringValuesAreRejectedOnWorkerPath() {
+        let cases: [Any] = [
+            NSNull(),
+            1_700_000_000,
+            true,
+            ["2026-09-20T12:00:00Z"],
+            ["at": "2026-09-20T12:00:00Z"],
+        ]
+        for value in cases {
+            let body: [String: Any] = [
+                "privacyConsent": [
+                    "wardrobeImagesAcceptedAt": value,
+                    "policyVersion": "1",
+                ],
+            ]
+            XCTAssertNotNil(Self.workerImageFinding(in: body), "expected reject for \(value)")
+            let cleaned = OutfitEngineClient.strippingImagePayload(body)
+            XCTAssertNil(
+                (cleaned["privacyConsent"] as? [String: Any])?["wardrobeImagesAcceptedAt"],
+                "non-string consent timestamp must not be retained"
+            )
+        }
     }
 
     // MARK: (c) image-looking values are dropped

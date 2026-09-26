@@ -88,6 +88,11 @@
     { "label": "garmentimages", "body": { "wardrobe": [{ "id": "1", "garmentimages": [] }] } },
     { "label": "consent field wrong path", "body": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z" } },
     { "label": "consent non-date string", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1" } } },
+    { "label": "consent non-string null", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": null, "policyVersion": "1" } } },
+    { "label": "consent non-string number", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": 1700000000, "policyVersion": "1" } } },
+    { "label": "consent non-string boolean", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": true, "policyVersion": "1" } } },
+    { "label": "consent non-string object", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": { "at": "2026-09-20T12:00:00Z" }, "policyVersion": "1" } } },
+    { "label": "consent non-string array", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": ["2026-09-20T12:00:00Z"], "policyVersion": "1" } } },
     { "label": "consent oversized value", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z000000000000000000000000000000000000000000000000000000000000", "policyVersion": "1" } } },
     { "label": "nested imagery", "body": { "context": { "tags": { "imagery": "x" } } } },
     { "label": "clean generate plus nested photo key", "body": { "wardrobe": [{ "garmentId": "1", "slot": "TOP" }], "context": { "photography": true } } }
