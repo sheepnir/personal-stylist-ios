@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { rationaleWithinLimits } from "../../src/provider/composeProviderRationale.js";
-import { assignmentsGapReasonValid } from "../../src/provider/composeProviderRationale.js";
 import { slotChoiceQuestionId } from "../../src/provider/decisionsQuestionIds.js";
 import { validateProviderOutput } from "../../src/provider/validateProviderOutput.js";
 import type {
@@ -20,6 +19,10 @@ const SUIT_JACKET = "a1000003-0003-4000-8000-000000000003";
 const SUIT_TROUSERS = "a1000005-0005-4000-8000-000000000004";
 const JEANS = "a1000005-0005-4000-8000-000000000001";
 const FAKE_ID = "ffffffff-ffff-4000-8000-000000000099";
+const BELT = "a1000007-0007-4000-8000-000000000001";
+const TIE = "a1000007-0007-4000-8000-000000000002";
+const SCARF = "a1000007-0007-4000-8000-000000000003";
+const WATCH = "a1000007-0007-4000-8000-000000000004";
 
 function decisionsBody(
   answers: Record<string, unknown>,
@@ -36,6 +39,57 @@ function decisionsBody(
 
 function choiceAnswer(choice: string) {
   return { type: "choice", choice, confidence: 0.9, probabilities: {} };
+}
+
+function noulAnswer(noul = 0.9) {
+  return { type: "noul", noul, confidence: 0.8 };
+}
+
+function withAccessoryNouls(
+  input: ValidateProviderOutputInput,
+  specs: { questionId: string; garmentToken: string; garmentId: string }[],
+): ValidateProviderOutputInput {
+  const parsed = JSON.parse(input.responseBody) as {
+    answers: Record<string, unknown>;
+  };
+  const questions = [...input.questions];
+  const tokenToGarmentId = { ...input.tokenToGarmentId };
+  const accessoryIds = specs.map((s) => s.garmentId);
+  for (const spec of specs) {
+    tokenToGarmentId[spec.garmentToken] = spec.garmentId;
+    questions.push({
+      id: spec.questionId,
+      type: "noul",
+      garmentToken: spec.garmentToken,
+    });
+    parsed.answers[spec.questionId] = noulAnswer();
+  }
+  const candidateAccessory = [
+    ...(input.stage4.candidateIds?.ACCESSORY ?? []),
+    ...accessoryIds.filter(
+      (id) => !input.stage4.candidateIds?.ACCESSORY?.includes(id),
+    ),
+  ];
+  return {
+    ...input,
+    questions,
+    tokenToGarmentId,
+    responseBody: JSON.stringify({
+      ...JSON.parse(input.responseBody),
+      answers: parsed.answers,
+    }),
+    stage4: {
+      ...input.stage4,
+      candidateIds: {
+        ...input.stage4.candidateIds,
+        ACCESSORY: candidateAccessory,
+      },
+      options: {
+        ...input.stage4.options,
+        accessoryPolicy: "OPEN",
+      },
+    },
+  };
 }
 
 function garmentToken(
@@ -254,15 +308,65 @@ describe("validateProviderOutput — Decisions shape (ADR §7.1.3)", () => {
   });
 
 
-  it("gapReason on a filled row is OUTPUT_SCHEMA (assignmentsGapReasonValid)", () => {
+  it("rejects duplicate answer keys in raw JSON with OUTPUT_PARSE", () => {
     const input = baseFromScenario("T2-01-sportcoat-mild-work");
+    const topId = slotChoiceQuestionId("TOP");
+    input.responseBody = `{
+      "model": "mock/stylist-v0",
+      "usage": { "input_tokens": 10, "output_tokens": 5 },
+      "answers": {
+        "${topId}": { "type": "choice", "choice": "g_aaaa" },
+        "${topId}": { "type": "choice", "choice": "g_bbbb" }
+      }
+    }`;
     const result = validateProviderOutput(input);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const invalid = result.assignments.map((a) =>
-      a.garmentId ? { ...a, gapReason: "must not appear on filled rows" } : a,
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_PARSE");
+  });
+
+  it("rejects duplicate question ids with OUTPUT_SCHEMA", () => {
+    const input = baseFromScenario("T2-01-sportcoat-mild-work");
+    const topQ = input.questions.find(
+      (q) => q.type === "choice" && q.slot === "TOP",
     );
-    expect(assignmentsGapReasonValid(invalid)).toBe(false);
+    if (!topQ) return;
+    if (topQ.type !== "choice") return;
+    input.questions = [
+      topQ,
+      {
+        id: topQ.id,
+        type: "choice",
+        slot: "BOTTOM",
+        options: { g_dup: {} },
+      },
+    ];
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_SCHEMA");
+  });
+
+  it("validateProviderOutput returns OUTPUT_SCHEMA when mapped assignments have gapReason on a filled row", async () => {
+    const mapModule = await import(
+      "../../src/provider/mapDecisionsToAssignments.js"
+    );
+    const input = baseFromScenario("T2-01-sportcoat-mild-work");
+    const spy = vi.spyOn(mapModule, "mapDecisionsToAssignments").mockReturnValue({
+      assignments: [
+        {
+          slot: "TOP",
+          garmentId: "a1000001-0001-4000-8000-000000000001",
+          gapReason: "invalid on filled row",
+        },
+      ],
+      unknownTokens: [],
+    });
+    const result = validateProviderOutput(input);
+    spy.mockRestore();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_SCHEMA");
   });
 
   it("rejects choice question id that breaks slot_<SLOT> contract as OUTPUT_SCHEMA", () => {
@@ -304,6 +408,61 @@ describe("validateProviderOutput — Decisions shape (ADR §7.1.3)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.cause).toBe("OUTPUT_EXCLUDED_SET");
+  });
+});
+
+describe("validateProviderOutput — accessory noul mapping (fail closed via Stage 4)", () => {
+  it("OUTPUT_STAGE4 ACCESSORY_LIMIT when four accessories are selected", () => {
+    const base = baseFromScenario("T2-01-sportcoat-mild-work");
+    const input = withAccessoryNouls(base, [
+      { questionId: "noul_belt", garmentToken: "g_belt", garmentId: BELT },
+      { questionId: "noul_tie", garmentToken: "g_tie", garmentId: TIE },
+      { questionId: "noul_scarf", garmentToken: "g_scarf", garmentId: SCARF },
+      { questionId: "noul_watch", garmentToken: "g_watch", garmentId: WATCH },
+    ]);
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_STAGE4");
+    expect(result.stage4ViolationCodes).toContain("ACCESSORY_LIMIT");
+  });
+
+  it("OUTPUT_STAGE4 DUPLICATE_GARMENT when the same accessory is selected twice", () => {
+    const base = baseFromScenario("T2-01-sportcoat-mild-work");
+    const input = withAccessoryNouls(base, [
+      { questionId: "noul_belt_a", garmentToken: "g_belt", garmentId: BELT },
+      { questionId: "noul_belt_b", garmentToken: "g_belt", garmentId: BELT },
+    ]);
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_STAGE4");
+    expect(result.stage4ViolationCodes).toContain("DUPLICATE_GARMENT");
+  });
+
+  it("OUTPUT_STAGE4 ACCESSORY_LIMIT when two accessories share a category", () => {
+    const base = baseFromScenario("T2-01-sportcoat-mild-work");
+    const belt2 = "a1000007-0007-4000-8000-000000000099";
+    const input = withAccessoryNouls(base, [
+      { questionId: "noul_belt1", garmentToken: "g_belt1", garmentId: BELT },
+      { questionId: "noul_belt2", garmentToken: "g_belt2", garmentId: belt2 },
+    ]);
+    input.stage4.wardrobe = [
+      ...input.stage4.wardrobe,
+      {
+        id: belt2,
+        displayName: "Second Belt",
+        slot: "ACCESSORY",
+        category: "belt",
+        availability: "AVAILABLE",
+        readiness: "READY",
+      },
+    ];
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_STAGE4");
+    expect(result.stage4ViolationCodes).toContain("ACCESSORY_LIMIT");
   });
 });
 

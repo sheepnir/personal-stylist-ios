@@ -28,10 +28,6 @@ function wardrobeById(
   return new Map(wardrobe.map((g) => [g.id, g]));
 }
 
-function accessoryCategory(g: GarmentSummary): string {
-  return (g.category ?? g.slot).toLowerCase();
-}
-
 export interface MapDecisionsResult {
   assignments: OutfitAssignment[];
   /** Tokens referenced that are not in tokenToGarmentId (before set expansion). */
@@ -173,24 +169,9 @@ export function mapDecisionsToAssignments(params: {
     });
   }
 
-  const accessorySeen = new Set<string>();
-  const accessoryCategories = new Set<string>();
-  const trimmedAccessories: OutfitAssignment[] = [];
-  for (const a of accessoryAssignments) {
-    const id = a.garmentId;
-    if (!id || accessorySeen.has(id)) continue;
-    const g = byWardrobe.get(id);
-    const cat = g ? accessoryCategory(g) : id;
-    if (accessoryCategories.has(cat)) continue;
-    if (trimmedAccessories.length >= 3) break;
-    accessorySeen.add(id);
-    accessoryCategories.add(cat);
-    trimmedAccessories.push(a);
-  }
-
   const assignments = [
     ...assignmentBySlot.values(),
-    ...trimmedAccessories,
+    ...accessoryAssignments,
   ];
 
   return { assignments, unknownTokens };

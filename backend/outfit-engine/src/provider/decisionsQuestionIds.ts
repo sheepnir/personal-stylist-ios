@@ -19,7 +19,10 @@ export function parseSlotChoiceQuestionId(id: string): Slot | null {
 export function providerQuestionsMatchSlotIdContract(
   questions: ProviderQuestion[],
 ): boolean {
+  const seen = new Set<string>();
   for (const q of questions) {
+    if (seen.has(q.id)) return false;
+    seen.add(q.id);
     if (q.type === "choice") {
       if (q.id !== slotChoiceQuestionId(q.slot)) return false;
     }

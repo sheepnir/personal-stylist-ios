@@ -1,3 +1,4 @@
+import { answersObjectHasDuplicateKeys } from "./parseDecisionsDuplicateKeys.js";
 import type {
   DecisionsAnswer,
   DecisionsUsage,
@@ -42,6 +43,9 @@ function parseAnswer(raw: unknown): DecisionsAnswer | null {
 export function parseDecisionsResponseBody(
   body: string,
 ): ParsedDecisionsResponse | null {
+  if (answersObjectHasDuplicateKeys(body)) {
+    return null;
+  }
   let json: unknown;
   try {
     json = JSON.parse(body);
@@ -72,7 +76,11 @@ export function validateDecisionsAnswersAgainstQuestions(
   answers: Record<string, DecisionsAnswer>,
   questions: ProviderQuestion[],
 ): boolean {
-  const questionIds = new Set(questions.map((q) => q.id));
+  const questionIdList = questions.map((q) => q.id);
+  const questionIds = new Set(questionIdList);
+  if (questionIds.size !== questionIdList.length) {
+    return false;
+  }
   const answerIds = new Set(Object.keys(answers));
   if (questionIds.size !== answerIds.size) return false;
   for (const id of questionIds) {
