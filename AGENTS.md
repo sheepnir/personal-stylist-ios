@@ -101,6 +101,38 @@ python3 scripts/verify-openapi-contract-examples.py
 npx @redocly/cli@2.53.3 lint docs/openapi.yaml   # same lint as CI
 ```
 
+## Cursor Cloud specific instructions
+
+Cloud agents run on Linux with no Xcode. You can edit Swift but cannot run XcodeGen,
+`xcodebuild`, or the Simulator. iOS verification happens only in macOS CI (iOS CI workflow).
+Say so in the PR instead of claiming iOS results.
+
+The environment (`.cursor/environment.json`) provides Node 22, `npm ci` in both backend
+packages, a global `redocly`, and a Python venv at `$HOME/.venvs/ps-ci` with the hash-pinned
+CI dependencies. Never add secrets to the environment or its Build. Never run
+`wrangler deploy` or any wrangler command against a real account.
+
+Verification commands (run from the repo root; no extra install step after a successful
+environment Build):
+
+```bash
+node -v && npm -v && redocly --version && python3 --version
+(cd backend/outfit-engine && npm ci && npm run typecheck && npm test \
+  && CI=true npm run eval -- run --models deterministic --scenarios all --repeats 2 \
+  && CI=true LATENCY_REPEATS=5 npm run latency:gate)
+(cd backend/workers && npm ci 2>&1 | tee /tmp/workers-npm-ci.log && npm run typecheck && npm test)
+! grep -q EBADENGINE /tmp/workers-npm-ci.log
+(cd backend/workers && npm ls wrangler workerd)
+redocly lint docs/openapi.yaml --format=stylish
+./scripts/check-no-founder-literals.sh
+python3 scripts/check-wear-logging.py
+python3 scripts/verify-cost-per-wear-copy.py
+python3 scripts/verify-generate-failure-copy.py
+python3 scripts/check-image-guard-parity.py
+python3 scripts/check-asset-library.py
+"$HOME/.venvs/ps-ci/bin/python" scripts/verify-openapi-contract-examples.py
+```
+
 ## Gotchas
 
 - **CI:** four workflows under `.github/workflows/` — backend (engine + Workers + OpenAPI
