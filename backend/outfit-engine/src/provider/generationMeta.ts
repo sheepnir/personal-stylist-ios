@@ -22,7 +22,7 @@ export interface ProviderSuccessGenerationMeta {
 export interface BuildProviderSuccessGenerationOptions {
   candidateSetHash: string | null;
   latencyMs: number;
-  modelId?: string;
+  modelId: string;
   /** Must match a registered prompt version with a valid pinned hash. */
   promptVersion?: string;
   inputTokens?: number | null;
@@ -41,7 +41,7 @@ export function buildProviderSuccessGeneration(
   const version = options.promptVersion ?? CURRENT_STYLIST_PROMPT_VERSION;
   const prompt = resolveRegisteredStylistPrompt(version);
   return {
-    modelId: options.modelId ?? "mock/stylist-v0",
+    modelId: options.modelId,
     promptVersion: prompt.version,
     candidateSetHash: options.candidateSetHash,
     latencyMs: options.latencyMs,

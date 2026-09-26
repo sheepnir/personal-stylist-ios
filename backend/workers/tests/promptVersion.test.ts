@@ -89,6 +89,7 @@ describe('generation.promptVersion', () => {
     const meta = buildProviderSuccessGeneration({
       candidateSetHash: 'deadbeef',
       latencyMs: 12,
+      modelId: 'mock/stylist-v0',
     });
     expect(meta.promptVersion).toBe(CURRENT_STYLIST_PROMPT_VERSION);
     expect(getStylistPromptByVersion(meta.promptVersion)).toBeDefined();

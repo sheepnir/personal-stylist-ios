@@ -150,21 +150,25 @@ describe("prompt registry (ADR-0001 §8)", () => {
     expect(() => assertPromptRegistryIntegrity()).not.toThrow();
   });
 
-  it("content hash excludes version string", () => {
+  it("content hash is identical when only the module version string changes", () => {
     const base = hashStylistPromptModule(outfitT2D1);
-    const withVersionInContent = hashStylistPromptVersionContent(
-      outfitT2D1.instructionText,
-      outfitT2D1.optionDescriptions,
-      { ...(outfitT2D1.answerTypes as object), version: outfitT2D1.version },
-    );
-    expect(withVersionInContent).not.toBe(base);
+    const sameContentDifferentVersion = {
+      ...outfitT2D1,
+      version: "outfit-t2-d1-shadow",
+    };
+    expect(hashStylistPromptModule(sameContentDifferentVersion)).toBe(base);
+
+    const tamperedAnswerTypes = {
+      ...(outfitT2D1.answerTypes as object),
+      extra: { type: "string" },
+    };
     expect(
       hashStylistPromptVersionContent(
         outfitT2D1.instructionText,
         outfitT2D1.optionDescriptions,
-        outfitT2D1.answerTypes,
+        tamperedAnswerTypes,
       ),
-    ).toBe(base);
+    ).not.toBe(base);
   });
 
   it("fails when template content changes without a version bump", () => {
@@ -261,20 +265,22 @@ describe("prompt registry (ADR-0001 §8)", () => {
     ).toBe(true);
   });
 
-  it("answerTypes keys mirror A-2 slot_<SLOT> contract (no accessory ids)", () => {
+  it("answerTypes keys match canonical slot_<SLOT> question ids (ADR-0001 §7.1.2)", () => {
     const keys = Object.keys(OUTFIT_T2_D1_ANSWER_TYPES).sort();
     const expected = SLOT_CHOICE_QUESTION_SLOTS.map((slot) =>
       slotChoiceQuestionId(slot),
     ).sort();
     expect(keys).toEqual(expected);
-    expect(keys.some((k) => k.startsWith("slot_ACCESSORY"))).toBe(false);
     for (const slot of SLOT_CHOICE_QUESTION_SLOTS) {
-      expect(OUTFIT_T2_D1_ANSWER_TYPES[slotChoiceQuestionId(slot)]).toBeDefined();
+      const questionId = slotChoiceQuestionId(slot);
+      expect(questionId).toBe(`slot_${slot}`);
+      expect(OUTFIT_T2_D1_ANSWER_TYPES[questionId]).toBeDefined();
       const desc = OUTFIT_T2_D1_OPTION_DESCRIPTIONS.find(
-        (d) => d.questionId === slotChoiceQuestionId(slot),
+        (d) => d.questionId === questionId,
       );
       expect(desc).toBeDefined();
     }
+    expect(keys.some((k) => k.startsWith("slot_ACCESSORY"))).toBe(false);
   });
 
   it("prompt exports are deep-frozen", () => {
@@ -316,6 +322,7 @@ describe("generation.promptVersion on every path", () => {
     const meta = buildProviderSuccessGeneration({
       candidateSetHash: "abc123",
       latencyMs: 42,
+      modelId: "mock/stylist-v0",
     });
     expect(meta.promptVersion).toBe("outfit-t2-d1");
     expect(getStylistPromptByVersion(meta.promptVersion)).toBe(outfitT2D1);
@@ -329,6 +336,7 @@ describe("generation.promptVersion on every path", () => {
       buildProviderSuccessGeneration({
         candidateSetHash: "x",
         latencyMs: 1,
+        modelId: "mock/stylist-v0",
         promptVersion: "not-a-real-version",
       }),
     ).toThrow(UnregisteredPromptVersionError);
@@ -349,6 +357,7 @@ describe("generation.promptVersion on every path", () => {
       buildProviderSuccessGeneration({
         candidateSetHash: "x",
         latencyMs: 1,
+        modelId: "mock/stylist-v0",
         promptVersion: "outfit-t2-d1",
       }),
     ).toThrow(PromptRegistryHashMismatchError);
