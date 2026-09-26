@@ -13,7 +13,7 @@ describe("answersObjectHasDuplicateKeys", () => {
       }
     }`;
     expect(answersObjectHasDuplicateKeys(body)).toBe(true);
-    expect(parseDecisionsResponseBody(body)).toBeNull();
+    expect(parseDecisionsResponseBody(body).ok).toBe(false);
   });
 
   it("allows distinct answer keys", () => {

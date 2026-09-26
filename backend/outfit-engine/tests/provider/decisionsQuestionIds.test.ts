@@ -11,6 +11,22 @@ describe("decisionsQuestionIds (ADR §7.1.2 / A-1 SLOT_ENUM)", () => {
     expect(parseSlotChoiceQuestionId("slot_FOOTWEAR")).toBe("FOOTWEAR");
   });
 
+  it("providerQuestionsMatchSlotIdContract rejects none on required slot options", () => {
+    expect(
+      providerQuestionsMatchSlotIdContract(
+        [
+          {
+            id: slotChoiceQuestionId("BOTTOM"),
+            type: "choice",
+            slot: "BOTTOM",
+            options: { none: {}, g_1: {} },
+          },
+        ],
+        new Set(["BOTTOM"]),
+      ),
+    ).toBe(false);
+  });
+
   it("providerQuestionsMatchSlotIdContract rejects duplicate question ids", () => {
     expect(
       providerQuestionsMatchSlotIdContract([

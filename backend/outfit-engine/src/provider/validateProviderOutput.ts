@@ -6,18 +6,23 @@ import {
   composeProviderRationale,
   rationaleWithinLimits,
 } from "./composeProviderRationale.js";
+import { providerQuestionsMatchSlotIdContract } from "./decisionsQuestionIds.js";
 import { matchesExcludedGarmentSet } from "./excludeGarmentSets.js";
 import { mapDecisionsToAssignments } from "./mapDecisionsToAssignments.js";
 import { modelSlugMatches } from "./modelSlug.js";
-import { providerQuestionsMatchSlotIdContract } from "./decisionsQuestionIds.js";
 import {
   parseDecisionsResponseBody,
   validateDecisionsAnswersAgainstQuestions,
+  validateProviderChoiceAnswers,
 } from "./parseDecisionsOutput.js";
 import type {
   ValidateProviderOutputInput,
   ValidateProviderOutputResult,
 } from "./types.js";
+import {
+  validateSetTokens,
+  validateTokenToGarmentId,
+} from "./validateProviderMaps.js";
 
 function filledOutfitMap(
   seedAssignments: ValidateProviderOutputInput["seedAssignments"],
@@ -36,16 +41,33 @@ function filledOutfitMap(
 export function validateProviderOutput(
   input: ValidateProviderOutputInput,
 ): ValidateProviderOutputResult {
-  const parsed = parseDecisionsResponseBody(input.responseBody);
-  if (!parsed) {
-    return { ok: false, cause: "OUTPUT_PARSE" };
+  const parsedResult = parseDecisionsResponseBody(input.responseBody);
+  if (!parsedResult.ok) {
+    return { ok: false, cause: parsedResult.cause };
   }
+  const parsed = parsedResult.value;
 
   if (!modelSlugMatches(parsed.model, input.expectedModelSlug)) {
     return { ok: false, cause: "OUTPUT_MODEL_MISMATCH" };
   }
 
-  if (!providerQuestionsMatchSlotIdContract(input.questions)) {
+  if (!validateTokenToGarmentId(input.tokenToGarmentId)) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
+  }
+  if (!validateSetTokens(input.setTokens ?? [])) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
+  }
+
+  const filledSeed = filledOutfitMap(input.seedAssignments);
+  const requiredSlots = resolveRequiredSlots(
+    input.stage4.context,
+    filledSeed,
+    input.stage4.options,
+  );
+
+  if (
+    !providerQuestionsMatchSlotIdContract(input.questions, requiredSlots)
+  ) {
     return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
 
@@ -58,12 +80,16 @@ export function validateProviderOutput(
     return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
 
-  const filledSeed = filledOutfitMap(input.seedAssignments);
-  const requiredSlots = resolveRequiredSlots(
-    input.stage4.context,
-    filledSeed,
-    input.stage4.options,
-  );
+  if (
+    !validateProviderChoiceAnswers({
+      answers: parsed.answers,
+      questions: input.questions,
+      requiredSlots,
+      setTokens: input.setTokens,
+    })
+  ) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
+  }
 
   const mapped = mapDecisionsToAssignments({
     questions: input.questions,

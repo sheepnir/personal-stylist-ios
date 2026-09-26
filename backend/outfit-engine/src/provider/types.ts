@@ -86,8 +86,6 @@ export interface ValidateProviderOutputInput {
   builderInput: BuilderInput;
   stage2: Stage2Result;
   excludeGarmentSets?: string[][] | null;
-  /** Slots with role lock in fixed (for exclude-set semantics). */
-  lockedSlots?: Slot[];
 }
 
 export interface ProviderRationale {

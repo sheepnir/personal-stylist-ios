@@ -1,4 +1,5 @@
 import type { Slot } from "../types.js";
+import { ownHas } from "./safeOwn.js";
 import type { ProviderQuestion } from "./types.js";
 
 /**
@@ -18,6 +19,7 @@ export function parseSlotChoiceQuestionId(id: string): Slot | null {
 /** Reject malformed question ids before parsing provider answers. */
 export function providerQuestionsMatchSlotIdContract(
   questions: ProviderQuestion[],
+  requiredSlots?: Set<Slot>,
 ): boolean {
   const seen = new Set<string>();
   for (const q of questions) {
@@ -25,6 +27,12 @@ export function providerQuestionsMatchSlotIdContract(
     seen.add(q.id);
     if (q.type === "choice") {
       if (q.id !== slotChoiceQuestionId(q.slot)) return false;
+      if (
+        requiredSlots?.has(q.slot) &&
+        ownHas(q.options, "none")
+      ) {
+        return false;
+      }
     }
   }
   return true;

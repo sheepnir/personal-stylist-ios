@@ -1,10 +1,14 @@
 import { answersObjectHasDuplicateKeys } from "./parseDecisionsDuplicateKeys.js";
+import { MAX_PROVIDER_RESPONSE_BYTES } from "./constants.js";
+import { createOwnRecord, ownHas, ownKeys } from "./safeOwn.js";
 import type {
   DecisionsAnswer,
   DecisionsUsage,
   ParsedDecisionsResponse,
   ProviderQuestion,
+  ProviderSetToken,
 } from "./types.js";
+import type { Slot } from "../types.js";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -27,8 +31,9 @@ function parseUsage(raw: unknown): DecisionsUsage | null {
   return { input_tokens: input, output_tokens: output };
 }
 
-function parseAnswer(raw: unknown): DecisionsAnswer | null {
-  if (!isRecord(raw) || typeof raw.type !== "string") return null;
+function parseAnswerShape(raw: unknown): DecisionsAnswer | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.type !== "string") return null;
   if (raw.type === "choice") {
     if (typeof raw.choice !== "string") return null;
     return { type: "choice", choice: raw.choice };
@@ -40,35 +45,60 @@ function parseAnswer(raw: unknown): DecisionsAnswer | null {
   return null;
 }
 
+function buildAnswersMap(
+  rawAnswers: Record<string, unknown>,
+): Record<string, DecisionsAnswer> | null {
+  const answers = createOwnRecord<DecisionsAnswer>();
+  for (const key of Object.keys(rawAnswers)) {
+    if (!ownHas(rawAnswers, key)) continue;
+    const parsed = parseAnswerShape(rawAnswers[key]);
+    if (!parsed) return null;
+    answers[key] = parsed;
+  }
+  return answers;
+}
+
+export type ParseDecisionsBodyResult =
+  | { ok: true; value: ParsedDecisionsResponse }
+  | { ok: false; cause: "OUTPUT_PARSE" | "OUTPUT_SCHEMA" };
+
 export function parseDecisionsResponseBody(
   body: string,
-): ParsedDecisionsResponse | null {
+): ParseDecisionsBodyResult {
+  if (body.length > MAX_PROVIDER_RESPONSE_BYTES) {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
   if (answersObjectHasDuplicateKeys(body)) {
-    return null;
+    return { ok: false, cause: "OUTPUT_PARSE" };
   }
   let json: unknown;
   try {
     json = JSON.parse(body);
   } catch {
-    return null;
+    return { ok: false, cause: "OUTPUT_PARSE" };
   }
-  if (!isRecord(json)) return null;
-  if (typeof json.model !== "string") return null;
+  if (!isRecord(json)) return { ok: false, cause: "OUTPUT_PARSE" };
+  if (typeof json.model !== "string") {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
   const usage = parseUsage(json.usage);
-  if (!usage) return null;
-  if (!isRecord(json.answers)) return null;
+  if (!usage) return { ok: false, cause: "OUTPUT_PARSE" };
+  if (!isRecord(json.answers)) {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
 
-  const answers: Record<string, DecisionsAnswer> = {};
-  for (const [id, raw] of Object.entries(json.answers)) {
-    const parsed = parseAnswer(raw);
-    if (!parsed) return null;
-    answers[id] = parsed;
+  const answers = buildAnswersMap(json.answers);
+  if (!answers) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
 
   return {
-    model: json.model,
-    usage,
-    answers,
+    ok: true,
+    value: {
+      model: json.model,
+      usage,
+      answers,
+    },
   };
 }
 
@@ -81,10 +111,14 @@ export function validateDecisionsAnswersAgainstQuestions(
   if (questionIds.size !== questionIdList.length) {
     return false;
   }
-  const answerIds = new Set(Object.keys(answers));
-  if (questionIds.size !== answerIds.size) return false;
+
+  const answerKeys = ownKeys(answers);
+  if (answerKeys.length !== questionIds.size) return false;
   for (const id of questionIds) {
-    if (!answerIds.has(id)) return false;
+    if (!ownHas(answers, id)) return false;
+  }
+  for (const key of answerKeys) {
+    if (!questionIds.has(key)) return false;
   }
 
   for (const q of questions) {
@@ -92,11 +126,54 @@ export function validateDecisionsAnswersAgainstQuestions(
     if (!answer) return false;
     if (q.type === "choice") {
       if (answer.type !== "choice") return false;
-      if (!(answer.choice in q.options)) return false;
+      if (!ownHas(q.options, answer.choice)) return false;
     } else if (q.type === "noul") {
       if (answer.type !== "noul") return false;
       if (answer.noul < 0 || answer.noul > 1) return false;
     }
   }
+  return true;
+}
+
+export function validateProviderChoiceAnswers(params: {
+  answers: Record<string, DecisionsAnswer>;
+  questions: ProviderQuestion[];
+  requiredSlots: Set<Slot>;
+  setTokens?: ProviderSetToken[];
+}): boolean {
+  const { answers, questions, requiredSlots, setTokens = [] } = params;
+  const setByToken = new Map(setTokens.map((s) => [s.token, s]));
+
+  for (const q of questions) {
+    if (q.type !== "choice") continue;
+    const answer = answers[q.id];
+    if (!answer || answer.type !== "choice") continue;
+    const choice = answer.choice;
+
+    if (choice === "none") {
+      if (requiredSlots.has(q.slot)) return false;
+      if (!ownHas(q.options, "none")) return false;
+      continue;
+    }
+
+    if (choice.startsWith("s_")) {
+      const setInfo = setByToken.get(choice);
+      if (!setInfo) return false;
+      if (q.slot !== setInfo.firstSlot) return false;
+      if (setInfo.memberGarmentIds.length === 0) return false;
+      if (!ownHas(q.options, choice)) return false;
+      continue;
+    }
+
+    if (!ownHas(q.options, choice)) return false;
+  }
+
+  for (const q of questions) {
+    if (q.type !== "choice") continue;
+    if (requiredSlots.has(q.slot) && ownHas(q.options, "none")) {
+      return false;
+    }
+  }
+
   return true;
 }

@@ -6,19 +6,27 @@ import type {
   Slot,
   TemperatureBand,
 } from "../types.js";
-import { NOUL_ACCESSORY_THRESHOLD } from "./constants.js";
+import { GAP_REASON_MAX_LENGTH, NOUL_ACCESSORY_THRESHOLD } from "./constants.js";
+import {
+  optionKeyIsOffered,
+  resolveGarmentIdFromToken,
+  resolveSetToken,
+} from "./validateProviderMaps.js";
+import { ownHas } from "./safeOwn.js";
 import type {
   DecisionsAnswer,
   ProviderQuestion,
   ProviderSetToken,
 } from "./types.js";
 
+function truncateGapReason(text: string): string {
+  if (text.length <= GAP_REASON_MAX_LENGTH) return text;
+  return text.slice(0, GAP_REASON_MAX_LENGTH - 1) + "…";
+}
+
 function slotAllowsNone(question: ProviderQuestion): boolean {
   return (
-    question.type === "choice" && Object.prototype.hasOwnProperty.call(
-      question.options,
-      "none",
-    )
+    question.type === "choice" && optionKeyIsOffered(question.options, "none")
   );
 }
 
@@ -56,7 +64,6 @@ export function mapDecisionsToAssignments(params: {
   } = params;
 
   const unknownTokens: string[] = [];
-  const setByToken = new Map(setTokens.map((s) => [s.token, s]));
   const ignoredQuestionIds = new Set<string>();
   const byWardrobe = wardrobeById(wardrobe);
 
@@ -75,6 +82,7 @@ export function mapDecisionsToAssignments(params: {
 
   for (const question of questions) {
     if (ignoredQuestionIds.has(question.id)) continue;
+    if (!ownHas(answers, question.id)) continue;
     const answer = answers[question.id];
     if (!answer) continue;
 
@@ -82,7 +90,7 @@ export function mapDecisionsToAssignments(params: {
       if (answer.type !== "noul") continue;
       if (answer.noul < NOUL_ACCESSORY_THRESHOLD) continue;
       const token = question.garmentToken;
-      const garmentId = tokenToGarmentId[token];
+      const garmentId = resolveGarmentIdFromToken(tokenToGarmentId, token);
       if (!garmentId) {
         unknownTokens.push(token);
         continue;
@@ -110,14 +118,16 @@ export function mapDecisionsToAssignments(params: {
           garmentId: null,
           isAnchor: false,
           isLocked: false,
-          gapReason: gapReasonFor(slot, "availability", band),
+          gapReason: truncateGapReason(
+            gapReasonFor(slot, "availability", band),
+          ),
         });
       }
       continue;
     }
 
     if (choice.startsWith("s_")) {
-      const setInfo = setByToken.get(choice);
+      const setInfo = resolveSetToken(setTokens, choice);
       if (!setInfo) {
         unknownTokens.push(choice);
         continue;
@@ -142,7 +152,7 @@ export function mapDecisionsToAssignments(params: {
       continue;
     }
 
-    const garmentId = tokenToGarmentId[choice];
+    const garmentId = resolveGarmentIdFromToken(tokenToGarmentId, choice);
     if (!garmentId) {
       unknownTokens.push(choice);
       continue;
@@ -165,7 +175,7 @@ export function mapDecisionsToAssignments(params: {
       garmentId: null,
       isAnchor: false,
       isLocked: false,
-      gapReason: gapReasonFor(slot, "availability", band),
+      gapReason: truncateGapReason(gapReasonFor(slot, "availability", band)),
     });
   }
 

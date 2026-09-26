@@ -12,3 +12,9 @@ export const RATIONALE_LIMITS = {
   teachingNote: 160,
   caution: 120,
 } as const;
+
+/** OpenAPI `OutfitAssignment.gapReason` maxLength. */
+export const GAP_REASON_MAX_LENGTH = 120;
+
+/** Reject provider bodies before JSON.parse (ADR §7.1.3 hardening). */
+export const MAX_PROVIDER_RESPONSE_BYTES = 64 * 1024;

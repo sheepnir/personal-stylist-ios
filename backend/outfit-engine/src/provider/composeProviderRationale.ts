@@ -8,7 +8,11 @@ import type {
   Stage2Result,
   Stage4Caution,
 } from "../types.js";
-import { PROVIDER_PATH_RATIONALE_SUMMARY, RATIONALE_LIMITS } from "./constants.js";
+import {
+  GAP_REASON_MAX_LENGTH,
+  PROVIDER_PATH_RATIONALE_SUMMARY,
+  RATIONALE_LIMITS,
+} from "./constants.js";
 import type { ProviderRationale } from "./types.js";
 
 function outfitMapFromAssignments(
@@ -30,7 +34,7 @@ function outfitMapFromAssignments(
   return outfit;
 }
 
-function mergeCautionsLikeGenerateLocal(
+export function mergeCautionsLikeGenerateLocal(
   templateCautions: string[] | undefined,
   stage4Cautions: Stage4Caution[],
 ): string[] | undefined {
@@ -121,8 +125,11 @@ export function assignmentsGapReasonValid(
     const hasGarment = a.garmentId != null && a.garmentId !== "";
     const hasGap = a.gapReason != null && a.gapReason !== "";
     if (hasGarment && hasGap) return false;
+    if (!hasGarment && hasGap) {
+      if ((a.gapReason?.length ?? 0) > GAP_REASON_MAX_LENGTH) return false;
+      continue;
+    }
     if (!hasGarment && !hasGap) {
-      // Optional empty slots are omitted entirely; required gaps must carry gapReason.
       continue;
     }
   }
