@@ -29,6 +29,8 @@ export interface UsageSummaryResponse {
   ledgerDayEndsAt: string | null;
   byTask: Record<string, number>;
   ledgerConfigStatus: LedgerConfigStatus;
+  /** Unknown-outcome attempts across retained ledger days (VF-13). */
+  unresolvedAttempts: number;
 }
 
 function spendConfig(env: Env) {
@@ -52,6 +54,7 @@ function failClosedUsageSummary(status: Exclude<LedgerConfigStatus, 'ok'>): Usag
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: {},
     ledgerConfigStatus: status,
+    unresolvedAttempts: 0,
   };
 }
 
@@ -264,10 +267,10 @@ export async function getUsageSummary(
 
   if (access.kind === 'ready') {
     const config = spendConfig(env);
-    const summary = await callLedger(access, (stub) =>
-      stub.summary(getTodayDateString(), config)
-    );
-    if (summary === 'unavailable') {
+    const today = getTodayDateString();
+    const summary = await callLedger(access, (stub) => stub.summary(today, config));
+    const unresolvedAttempts = await callLedger(access, (stub) => stub.unresolvedAttempts());
+    if (summary === 'unavailable' || unresolvedAttempts === 'unavailable') {
       return failClosedUsageSummary('ledger_unavailable');
     }
     if (summary.legacyStorageBlocked) {
@@ -283,6 +286,7 @@ export async function getUsageSummary(
         ledgerDayEndsAt: getEndOfDayISO(),
         byTask: summary.byTask,
         ledgerConfigStatus: 'storage_error',
+        unresolvedAttempts,
       };
     }
     return {
@@ -297,6 +301,7 @@ export async function getUsageSummary(
       ledgerDayEndsAt: getEndOfDayISO(),
       byTask: summary.byTask,
       ledgerConfigStatus: 'ok',
+      unresolvedAttempts,
     };
   }
 
@@ -318,6 +323,7 @@ export async function getUsageSummary(
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: record.tasks,
     ledgerConfigStatus: 'legacy',
+    unresolvedAttempts: 0,
   };
 }
 

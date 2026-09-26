@@ -3,19 +3,26 @@
  * persisted in the Durable Object ledger; summaries use device locator only.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import worker from '../src/index.js';
 import {
   getSpendRecord,
   hashToken,
   reserveSpend,
   reconcileSpend,
   getUsageSummary,
+  markUnknownSpend,
 } from '../src/usage.js';
 import { recordSpend } from './recordSpendHelper.js';
 import { SPEND_CONFIG } from '../src/types.js';
-import { generateDeviceToken } from '../src/tokens.js';
+import { generateDeviceToken, issueDeviceToken } from '../src/tokens.js';
 import type { Env } from '../src/types.js';
-import { spendLedger, emptyLedger } from './helpers.js';
+import { spendLedger, emptyLedger, tokenRegistry } from './helpers.js';
+
+const ctx = {} as ExecutionContext;
+const DAY = '2026-09-26';
+const PRIOR_DAY = '2026-09-25';
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
 
 function envWithSpend(): Env {
   return {
@@ -23,6 +30,18 @@ function envWithSpend(): Env {
     OPENROUTER_API_KEY: 'k',
     USAGE_LEDGER: emptyLedger(),
     SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
+  };
+}
+
+function usageRouteEnv(): Env {
+  return {
+    DEVICE_TOKENS: tokenRegistry() as Env['DEVICE_TOKENS'],
+    SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
+    OPENROUTER_API_KEY: 'k',
+    USAGE_LEDGER: emptyLedger(),
+    REQUEST_RATE_LIMITER: {
+      limit: async () => ({ success: true }),
+    } as Env['REQUEST_RATE_LIMITER'],
   };
 }
 
@@ -79,11 +98,13 @@ describe('usage ledger token privacy (#174)', () => {
           summary: async () => ({
             spentUSD: 0,
             reservedUSD: 0.1,
+            unresolvedAttempts: 0,
             softThresholdReached: false,
             hardCapReached: false,
             overReservationCount: 0,
             byTask: {},
           }),
+          unresolvedAttempts: async () => 0,
         }),
       } as Env['SPEND_LEDGER'],
     };
@@ -105,5 +126,62 @@ describe('usage ledger token privacy (#174)', () => {
       stage: 'reserve',
       reason: 'ledger_unavailable',
     });
+  });
+});
+
+describe('GET /v1/usage unresolvedAttempts (#14)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: FROZEN_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reports one unresolved attempt after markUnknownSpend', async () => {
+    const env = usageRouteEnv();
+    const { deviceToken } = await issueDeviceToken(env);
+    await reserveSpend(deviceToken, 'usage-unknown-1', 0.15, env);
+    await markUnknownSpend(deviceToken, 'usage-unknown-1', env, 'gen-usage-1');
+
+    const response = await worker.fetch(
+      new Request('http://test.com/v1/usage', {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+      }),
+      env,
+      ctx
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      unresolvedAttempts: number;
+      reservedTodayUSD: number;
+    };
+    expect(body.unresolvedAttempts).toBe(1);
+    expect(body.reservedTodayUSD).toBeCloseTo(0.15);
+  });
+
+  it('counts unknown on a previous UTC ledger day in unresolvedAttempts', async () => {
+    const env = usageRouteEnv();
+    const { deviceToken } = await issueDeviceToken(env);
+
+    vi.setSystemTime(new Date(`${PRIOR_DAY}T12:00:00.000Z`));
+    await reserveSpend(deviceToken, 'usage-unknown-prior', 0.12, env, PRIOR_DAY);
+    await markUnknownSpend(deviceToken, 'usage-unknown-prior', env, 'gen-prior');
+    vi.setSystemTime(new Date(`${DAY}T11:00:00.000Z`));
+
+    const response = await worker.fetch(
+      new Request('http://test.com/v1/usage', {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+      }),
+      env,
+      ctx
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      unresolvedAttempts: number;
+      reservedTodayUSD: number;
+    };
+    expect(body.unresolvedAttempts).toBe(1);
+    expect(body.reservedTodayUSD).toBeCloseTo(0);
   });
 });

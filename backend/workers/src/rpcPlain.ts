@@ -26,6 +26,7 @@ export function toRpcDaySummary(summary: DaySummary): DaySummary {
     date: summary.date,
     spentUSD: summary.spentUSD,
     reservedUSD: summary.reservedUSD,
+    unresolvedAttempts: summary.unresolvedAttempts,
     softThresholdReached: summary.softThresholdReached,
     hardCapReached: summary.hardCapReached,
     attemptLimitReached: summary.attemptLimitReached,

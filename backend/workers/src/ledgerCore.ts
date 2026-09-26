@@ -128,6 +128,8 @@ export interface DaySummary {
   date: string;
   spentUSD: number;
   reservedUSD: number;
+  /** Unknown-outcome attempts still awaiting provider reconciliation (VF-13). */
+  unresolvedAttempts: number;
   softThresholdReached: boolean;
   hardCapReached: boolean;
   attemptLimitReached: boolean;
@@ -135,6 +137,26 @@ export interface DaySummary {
   byTask: Record<string, number>;
   /** Set when the monolith `ledger` KV key blocks the whole DO (fail-closed summary). */
   legacyStorageBlocked?: true;
+}
+
+export function countUnresolvedAttempts(state: LedgerState, day: string): number {
+  const record = readDay(state, day);
+  let count = 0;
+  for (const entry of Object.values(record.attempts)) {
+    if (entry.state === 'unknown') count += 1;
+  }
+  return count;
+}
+
+/** Unknown-outcome attempts across all retained day buckets (VF-13 usage rollup). */
+export function countUnresolvedAttemptsAcrossDays(state: LedgerState): number {
+  let count = 0;
+  for (const day of Object.values(state.days)) {
+    for (const entry of Object.values(day.attempts)) {
+      if (entry.state === 'unknown') count += 1;
+    }
+  }
+  return count;
 }
 
 export type CostMicroResult = { ok: true; micro: number } | { ok: false };
@@ -225,6 +247,7 @@ export function failClosedDaySummary(day: string): DaySummary {
     date: day,
     spentUSD: 0,
     reservedUSD: 0,
+    unresolvedAttempts: 0,
     softThresholdReached: true,
     hardCapReached: true,
     attemptLimitReached: true,
@@ -1003,6 +1026,7 @@ export function summarizeDay(
       date: day,
       spentUSD: 0,
       reservedUSD: 0,
+      unresolvedAttempts: 0,
       softThresholdReached: false,
       hardCapReached: false,
       attemptLimitReached: false,
@@ -1031,6 +1055,7 @@ export function summarizeDay(
       date: day,
       spentUSD: microToUsd(record.spentMicro),
       reservedUSD: microToUsd(record.reservedMicro),
+      unresolvedAttempts: countUnresolvedAttempts(state, day),
       softThresholdReached: true,
       hardCapReached: true,
       attemptLimitReached: attemptLimitReachedForDay(record),
@@ -1044,6 +1069,7 @@ export function summarizeDay(
     date: day,
     spentUSD: microToUsd(record.spentMicro),
     reservedUSD: microToUsd(record.reservedMicro),
+    unresolvedAttempts: countUnresolvedAttempts(state, day),
     softThresholdReached: totalCommitted === null ? true : totalCommitted >= softMicro,
     hardCapReached: dayHardCapReached(state, day, capMicro),
     attemptLimitReached: attemptLimitReachedForDay(record),
