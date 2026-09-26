@@ -1,13 +1,29 @@
 /**
  * Usage tracking and spend cap enforcement via per-device Durable Object ledger (#13-a).
- * Hard cap and soft threshold come from `resolveSpendConfig(env)` (sample defaults, env-overridable).
  */
 
 import type { Env, SpendRecord, SpendLedgerAccess } from './types.js';
-import { resolveSpendConfig, spendConfigFromEnv, SPEND_CONFIG } from './types.js';
+import { SPEND_CONFIG } from './types.js';
+import { resolveSpendConfig, spendConfigFromEnv } from './spendConfig.js';
 import { hashToken, deviceLocatorFromToken } from './tokens.js';
 
 export { hashToken };
+
+export type LedgerConfigStatus = 'ok' | 'config_error' | 'ledger_unavailable';
+
+export interface UsageSummaryResponse {
+  last7DaysUSD: number;
+  last30DaysUSD: number;
+  dailyCapUSD: number | null;
+  softThresholdUSD: number | null;
+  spentTodayUSD: number;
+  reservedTodayUSD: number;
+  softThresholdReached: boolean;
+  hardCapReached: boolean;
+  ledgerDayEndsAt: string | null;
+  byTask: Record<string, number>;
+  ledgerConfigStatus: LedgerConfigStatus;
+}
 
 function spendConfig(env: Env) {
   return spendConfigFromEnv(env);
@@ -17,21 +33,19 @@ function envConfigError(env: Env): boolean {
   return resolveSpendConfig(env).configError;
 }
 
-function failClosedUsageSummary(env: Env) {
-  const resolved = resolveSpendConfig(env);
-  const dailyCapUSD = resolved.configError ? SPEND_CONFIG.dailyCapUSD : resolved.dailyCapUSD;
-  const softThresholdUSD = resolved.configError ? SPEND_CONFIG.softThresholdUSD : resolved.softThresholdUSD;
+function failClosedUsageSummary(status: Exclude<LedgerConfigStatus, 'ok'>): UsageSummaryResponse {
   return {
     last7DaysUSD: 0,
     last30DaysUSD: 0,
-    dailyCapUSD,
-    softThresholdUSD,
+    dailyCapUSD: null,
+    softThresholdUSD: null,
     spentTodayUSD: 0,
     reservedTodayUSD: 0,
     softThresholdReached: true,
     hardCapReached: true,
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: {},
+    ledgerConfigStatus: status,
   };
 }
 
@@ -90,13 +104,7 @@ async function callLedger<T>(
   }
 }
 
-/**
- * Get today's spend record for a device token.
- */
-export async function getSpendRecord(
-  deviceToken: string,
-  env: Env
-): Promise<SpendRecord> {
+export async function getSpendRecord(deviceToken: string, env: Env): Promise<SpendRecord> {
   const today = getTodayDateString();
   const tokenHash = await hashToken(deviceToken);
   const access = await accessLedger(deviceToken, env);
@@ -104,11 +112,7 @@ export async function getSpendRecord(
   if (access.kind === 'legacy') {
     return emptySpendRecord(tokenHash, today, 'legacy');
   }
-  if (access.kind === 'unavailable') {
-    return emptySpendRecord(tokenHash, today, 'unavailable');
-  }
-
-  if (envConfigError(env)) {
+  if (access.kind === 'unavailable' || envConfigError(env)) {
     return emptySpendRecord(tokenHash, today, 'unavailable');
   }
 
@@ -128,9 +132,6 @@ export async function getSpendRecord(
   };
 }
 
-/**
- * Reserve an upper bound for a paid attempt (legacy shared tokens only → `no_ledger`).
- */
 export async function reserveSpend(
   deviceToken: string,
   attemptId: string,
@@ -158,9 +159,6 @@ export async function reserveSpend(
   return result;
 }
 
-/**
- * Reconcile a reservation to the actual provider cost.
- */
 export async function reconcileSpend(
   deviceToken: string,
   attemptId: string,
@@ -185,9 +183,6 @@ export async function reconcileSpend(
   return result;
 }
 
-/**
- * @deprecated KV path removed; use {@link reserveSpend} + {@link reconcileSpend}. Kept for tests migrating off KV.
- */
 export async function recordSpend(
   deviceToken: string,
   task: string,
@@ -200,13 +195,7 @@ export async function recordSpend(
   await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
 }
 
-/**
- * Check if hard cap is reached (triggers deterministic fallback).
- */
-export async function isHardCapReached(
-  deviceToken: string,
-  env: Env
-): Promise<boolean> {
+export async function isHardCapReached(deviceToken: string, env: Env): Promise<boolean> {
   const access = await accessLedger(deviceToken, env);
   if (access.kind === 'unavailable' || envConfigError(env)) {
     return true;
@@ -223,13 +212,7 @@ export async function isHardCapReached(
   return summary.hardCapReached;
 }
 
-/**
- * Check if soft threshold is reached (triggers secondary model).
- */
-export async function isSoftThresholdReached(
-  deviceToken: string,
-  env: Env
-): Promise<boolean> {
+export async function isSoftThresholdReached(deviceToken: string, env: Env): Promise<boolean> {
   const access = await accessLedger(deviceToken, env);
   if (access.kind === 'unavailable' || envConfigError(env)) {
     return true;
@@ -246,32 +229,18 @@ export async function isSoftThresholdReached(
   return summary.softThresholdReached;
 }
 
-/**
- * Get usage summary for last 7 and 30 days (M0-09 stub: returns today's data).
- */
 export async function getUsageSummary(
   deviceToken: string,
   env: Env
-): Promise<{
-  last7DaysUSD: number;
-  last30DaysUSD: number;
-  dailyCapUSD: number;
-  softThresholdUSD: number;
-  spentTodayUSD: number;
-  reservedTodayUSD: number;
-  softThresholdReached: boolean;
-  hardCapReached: boolean;
-  ledgerDayEndsAt: string | null;
-  byTask: Record<string, number>;
-}> {
+): Promise<UsageSummaryResponse> {
   const access = await accessLedger(deviceToken, env);
 
   if (envConfigError(env)) {
-    return failClosedUsageSummary(env);
+    return failClosedUsageSummary('config_error');
   }
 
   if (access.kind === 'unavailable') {
-    return failClosedUsageSummary(env);
+    return failClosedUsageSummary('ledger_unavailable');
   }
 
   if (access.kind === 'ready') {
@@ -280,7 +249,7 @@ export async function getUsageSummary(
       stub.summary(getTodayDateString(), config)
     );
     if (summary === 'unavailable') {
-      return failClosedUsageSummary(env);
+      return failClosedUsageSummary('ledger_unavailable');
     }
     return {
       last7DaysUSD: summary.spentUSD,
@@ -293,24 +262,28 @@ export async function getUsageSummary(
       hardCapReached: summary.hardCapReached,
       ledgerDayEndsAt: getEndOfDayISO(),
       byTask: summary.byTask,
+      ledgerConfigStatus: 'ok',
     };
   }
 
   const record = await getSpendRecord(deviceToken, env);
   const totalSpent = record.spentUSD + record.reservedUSD;
-  const config = spendConfig(env);
+  const resolved = resolveSpendConfig(env);
+  const dailyCapUSD = resolved.configError ? null : resolved.dailyCapUSD;
+  const softThresholdUSD = resolved.configError ? null : resolved.softThresholdUSD;
 
   return {
     last7DaysUSD: record.spentUSD,
     last30DaysUSD: record.spentUSD,
-    dailyCapUSD: config.dailyCapUSD,
-    softThresholdUSD: config.softThresholdUSD,
+    dailyCapUSD,
+    softThresholdUSD,
     spentTodayUSD: record.spentUSD,
     reservedTodayUSD: record.reservedUSD,
-    softThresholdReached: totalSpent >= config.softThresholdUSD,
-    hardCapReached: totalSpent >= config.dailyCapUSD,
+    softThresholdReached: totalSpent >= SPEND_CONFIG.softThresholdUSD,
+    hardCapReached: totalSpent >= SPEND_CONFIG.dailyCapUSD,
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: record.tasks,
+    ledgerConfigStatus: 'ok',
   };
 }
 

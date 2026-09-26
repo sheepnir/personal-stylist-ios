@@ -17,10 +17,6 @@ import {
 
 const STATE_KEY = 'ledger';
 
-function dayKeySnapshot(state: LedgerState): string {
-  return Object.keys(state.days).sort().join('\0');
-}
-
 /** Per-device spend ledger (keyed by device locator id, not token hash). */
 export class DeviceSpendLedger extends DurableObject<Env> {
   private loadState(): LedgerState {
@@ -44,11 +40,14 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     config: SpendConfig,
     task = 'unknown'
   ): ReserveResult {
-    if (!configToMicro(config).ok) {
-      return { ok: false, reason: 'config_error' };
-    }
     return this.ctx.storage.transactionSync(() => {
       const { state, pruned } = this.touch();
+      if (!configToMicro(config).ok) {
+        if (pruned) {
+          this.saveState(state);
+        }
+        return { ok: false, reason: 'config_error' };
+      }
       const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
       if (!result.ok) {
         removeEmptyDayBucket(state, day);
@@ -77,11 +76,14 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   }
 
   summary(day: string, config: SpendConfig): DaySummary {
-    if (!configToMicro(config).ok) {
-      return failClosedDaySummary(day);
-    }
     return this.ctx.storage.transactionSync(() => {
       const { state, pruned } = this.touch();
+      if (!configToMicro(config).ok) {
+        if (pruned) {
+          this.saveState(state);
+        }
+        return failClosedDaySummary(day);
+      }
       const summary = summarizeDay(state, day, config);
       if (pruned) {
         this.saveState(state);

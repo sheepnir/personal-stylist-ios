@@ -3,8 +3,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resolveSpendConfig, SPEND_CONFIG, resetSpendConfigLogStateForTests } from '../src/types.js';
-import { reserveSpend, isHardCapReached } from '../src/usage.js';
+import { resolveSpendConfig, resetSpendConfigLogStateForTests } from '../src/spendConfig.js';
+import { SPEND_CONFIG } from '../src/types.js';
+import { getUsageSummary, reserveSpend, isHardCapReached } from '../src/usage.js';
 import { generateDeviceToken } from '../src/tokens.js';
 import { createSpendLedgerMock, emptyLedger } from './helpers.js';
 import type { Env } from '../src/types.js';
@@ -42,6 +43,14 @@ describe('resolveSpendConfig', () => {
       softThresholdUSD: 3,
     });
   });
+
+  it.each(['0.0000004', '10000000000'])(
+    'rejects cap %s that does not convert to safe positive micro-USD',
+    (raw) => {
+      resetSpendConfigLogStateForTests();
+      expect(resolveSpendConfig({ DAILY_CAP_USD: raw })).toEqual({ configError: true });
+    }
+  );
 });
 
 describe('invalid deployment config fail-closed in usage', () => {
@@ -56,5 +65,9 @@ describe('invalid deployment config fail-closed in usage', () => {
     const token = generateDeviceToken();
     expect(await reserveSpend(token, 'a1', 0.1, env)).toEqual({ ok: false, reason: 'config_error' });
     expect(await isHardCapReached(token, env)).toBe(true);
+    const usage = await getUsageSummary(token, env);
+    expect(usage.dailyCapUSD).toBeNull();
+    expect(usage.softThresholdUSD).toBeNull();
+    expect(usage.ledgerConfigStatus).toBe('config_error');
   });
 });

@@ -7,6 +7,14 @@ import type { SpendConfig } from './types.js';
 
 export const MICRO_USD = 1_000_000;
 
+/** Largest deployable daily cap (USD); larger configured values are rejected. */
+export const MAX_DEPLOYABLE_CAP_USD = 1_000_000;
+
+/** Largest actual provider cost (USD) accepted on a single reconcile. */
+export const MAX_SINGLE_RECONCILE_USD = 10_000;
+
+export const MAX_SINGLE_RECONCILE_MICRO = MAX_SINGLE_RECONCILE_USD * MICRO_USD;
+
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
 
 export interface AttemptEntry {
@@ -50,7 +58,7 @@ export interface ReserveResult {
 
 export interface ReconcileResult {
   ok: boolean;
-  reason?: 'not_found' | 'invalid';
+  reason?: 'not_found' | 'invalid' | 'overflow';
 }
 
 export interface DaySummary {
@@ -78,19 +86,26 @@ export function snapMicroProduct(usd: number): number | null {
     return null;
   }
   const snapped = Math.round(product * 1000) / 1000;
-  if (!Number.isFinite(snapped) || snapped <= 0) {
+  if (!Number.isFinite(snapped)) {
     return null;
   }
   return snapped;
 }
 
-/** Positive finite costs: snap, ceil to micro-USD, minimum 1 micro. */
+/** Positive finite costs: snap, ceil to micro-USD, minimum 1 micro (including snap-to-zero dust). */
 export function costUsdToMicro(usd: number): CostMicroResult {
-  const snapped = snapMicroProduct(usd);
-  if (snapped === null) {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
     return { ok: false };
   }
-  const micro = Math.max(1, Math.ceil(snapped));
+  const product = usd * MICRO_USD;
+  if (!Number.isFinite(product)) {
+    return { ok: false };
+  }
+  const snapped = Math.round(product * 1000) / 1000;
+  if (!Number.isFinite(snapped)) {
+    return { ok: false };
+  }
+  const micro = snapped <= 0 ? 1 : Math.max(1, Math.ceil(snapped));
   if (micro > Number.MAX_SAFE_INTEGER) {
     return { ok: false };
   }
@@ -155,8 +170,29 @@ function nullRecord<T extends object>(): T {
   return Object.create(null) as T;
 }
 
-function mapAdd(map: Record<string, number>, key: string, delta: number): void {
-  map[key] = (Object.hasOwn(map, key) ? map[key] : 0) + delta;
+export function safeMicroAdd(a: number, b: number): number | null {
+  if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b)) {
+    return null;
+  }
+  const sum = a + b;
+  return Number.isSafeInteger(sum) ? sum : null;
+}
+
+export function safeMicroSub(a: number, b: number): number | null {
+  if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b)) {
+    return null;
+  }
+  const diff = a - b;
+  return Number.isSafeInteger(diff) ? diff : null;
+}
+
+function mapAdd(map: Record<string, number>, key: string, delta: number): boolean {
+  const next = safeMicroAdd(Object.hasOwn(map, key) ? map[key] : 0, delta);
+  if (next === null) {
+    return false;
+  }
+  map[key] = next;
+  return true;
 }
 
 export function emptyLedgerState(): LedgerState {
@@ -209,6 +245,36 @@ function utcDayAgeDays(day: string, now: Date): number {
   return Math.floor((nowMs - dayMs) / 86_400_000);
 }
 
+/** Valid ledger day for mutations: real UTC date, not more than one calendar day ahead of now. */
+export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
+  if (!isValidLedgerDayKey(day)) {
+    return false;
+  }
+  return utcDayAgeDays(day, now) >= -1;
+}
+
+function enforceBucketLimit(state: LedgerState, now: Date): void {
+  const keys = Object.keys(state.days);
+  if (keys.length <= LEDGER_DAY_BUCKETS) {
+    return;
+  }
+  const sorted = keys.sort((a, b) => {
+    const ageA = isValidLedgerDayKey(a) ? utcDayAgeDays(a, now) : Number.MAX_SAFE_INTEGER;
+    const ageB = isValidLedgerDayKey(b) ? utcDayAgeDays(b, now) : Number.MAX_SAFE_INTEGER;
+    return ageB - ageA;
+  });
+  for (const key of sorted) {
+    if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
+      break;
+    }
+    const day = state.days[key];
+    if (dayHasOpenAttempts(day)) {
+      continue;
+    }
+    delete state.days[key];
+  }
+}
+
 function dayHasOpenAttempts(day: DayRecord): boolean {
   for (const entry of Object.values(day.attempts)) {
     if (entry.state === 'reserved' || entry.state === 'unknown') {
@@ -223,11 +289,15 @@ function dayIsFullySettled(day: DayRecord): boolean {
 }
 
 /** Reserved upper bounds on malformed buckets (fail-closed cap headroom). */
-function malformedOpenReservedMicro(state: LedgerState): number {
+function malformedOpenReservedMicro(state: LedgerState): number | null {
   let total = 0;
   for (const [key, day] of Object.entries(state.days)) {
     if (!isValidLedgerDayKey(key) && dayHasOpenAttempts(day)) {
-      total += day.reservedMicro;
+      const next = safeMicroAdd(total, day.reservedMicro);
+      if (next === null) {
+        return null;
+      }
+      total = next;
     }
   }
   return total;
@@ -248,10 +318,18 @@ export function pruneOldDays(state: LedgerState, now: Date): boolean {
       delete state.days[key];
       continue;
     }
-    if (utcDayAgeDays(key, now) > LEDGER_MAX_DAY_AGE && dayIsFullySettled(day)) {
+    const age = utcDayAgeDays(key, now);
+    if (age < -1) {
+      if (!dayHasOpenAttempts(day)) {
+        delete state.days[key];
+      }
+      continue;
+    }
+    if (age > LEDGER_MAX_DAY_AGE && dayIsFullySettled(day)) {
       delete state.days[key];
     }
   }
+  enforceBucketLimit(state, now);
   const keysAfter = Object.keys(state.days).sort().join('\0');
   return keysBefore !== keysAfter;
 }
@@ -273,13 +351,14 @@ export function reserveAttempt(
   upperBoundUSD: number,
   day: string,
   config: SpendConfig,
-  task = 'unknown'
+  task = 'unknown',
+  now: Date = new Date()
 ): ReserveResult {
   const bounds = costUsdToMicro(upperBoundUSD);
   if (!attemptId || !bounds.ok) {
     return { ok: false, reason: 'invalid' };
   }
-  if (!isValidLedgerDayKey(day)) {
+  if (!isLedgerDayKeyUsable(day, now)) {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -303,17 +382,32 @@ export function reserveAttempt(
 
   const dayRecord = readDay(state, day);
   const conservativeReserved = malformedOpenReservedMicro(state);
+  if (conservativeReserved === null) {
+    return { ok: false, reason: 'invalid' };
+  }
 
   if (dayRecord.spentMicro >= capMicro) {
     return { ok: false, reason: 'hard_cap' };
   }
 
-  const totalCommitted = dayRecord.spentMicro + dayRecord.reservedMicro + conservativeReserved;
-  if (totalCommitted >= capMicro || totalCommitted + upperBoundMicro > capMicro) {
+  const spentPlusReserved = safeMicroAdd(dayRecord.spentMicro, dayRecord.reservedMicro);
+  if (spentPlusReserved === null) {
+    return { ok: false, reason: 'invalid' };
+  }
+  const totalCommitted = safeMicroAdd(spentPlusReserved, conservativeReserved);
+  if (totalCommitted === null) {
+    return { ok: false, reason: 'invalid' };
+  }
+  const withHold = safeMicroAdd(totalCommitted, upperBoundMicro);
+  if (withHold === null || totalCommitted >= capMicro || withHold > capMicro) {
     return { ok: false, reason: 'hard_cap' };
   }
 
   const writable = getOrCreateDay(state, day);
+  const newReserved = safeMicroAdd(writable.reservedMicro, upperBoundMicro);
+  if (newReserved === null) {
+    return { ok: false, reason: 'invalid' };
+  }
   writable.attempts[attemptId] = {
     attemptId,
     upperBoundMicro,
@@ -321,7 +415,7 @@ export function reserveAttempt(
     state: 'reserved',
     createdAt: new Date().toISOString(),
   };
-  writable.reservedMicro += upperBoundMicro;
+  writable.reservedMicro = newReserved;
   return { ok: true };
 }
 
@@ -344,6 +438,10 @@ export function reconcileAttempt(
   const { day, entry } = located;
   const actualMicro = actual.micro;
 
+  if (actualMicro > MAX_SINGLE_RECONCILE_MICRO) {
+    return { ok: false, reason: 'invalid' };
+  }
+
   if (entry.state === 'reconciled' && entry.actualMicro === actualMicro) {
     return { ok: true };
   }
@@ -351,16 +449,27 @@ export function reconcileAttempt(
     return { ok: false, reason: 'invalid' };
   }
 
-  day.reservedMicro -= entry.upperBoundMicro;
-  day.spentMicro += actualMicro;
+  const newReserved = safeMicroSub(day.reservedMicro, entry.upperBoundMicro);
+  const newSpent = safeMicroAdd(day.spentMicro, actualMicro);
+  if (newReserved === null || newSpent === null) {
+    return { ok: false, reason: 'overflow' };
+  }
+
+  const taskKey = task ?? entry.task;
+  const taskTotal = safeMicroAdd(Object.hasOwn(day.tasks, taskKey) ? day.tasks[taskKey] : 0, actualMicro);
+  if (taskTotal === null) {
+    return { ok: false, reason: 'overflow' };
+  }
+
+  day.reservedMicro = newReserved;
+  day.spentMicro = newSpent;
+  day.tasks[taskKey] = taskTotal;
+
   const over = actualMicro > entry.upperBoundMicro;
   if (over) {
     day.overReservationCount += 1;
     entry.overReservation = true;
   }
-
-  const taskKey = task ?? entry.task;
-  mapAdd(day.tasks, taskKey, actualMicro);
 
   entry.state = 'reconciled';
   entry.actualMicro = actualMicro;
@@ -388,13 +497,17 @@ export function summarizeDay(
   const configMicro = configToMicro(config);
   const record = readDay(state, day);
   const conservativeReserved = malformedOpenReservedMicro(state);
-  const totalCommitted = record.spentMicro + record.reservedMicro + conservativeReserved;
   const byTask: Record<string, number> = nullRecord();
   for (const task of Object.keys(record.tasks)) {
     if (Object.hasOwn(record.tasks, task)) {
       byTask[task] = microToUsd(record.tasks[task]);
     }
   }
+
+  const totalCommitted =
+    conservativeReserved === null
+      ? null
+      : safeMicroAdd(safeMicroAdd(record.spentMicro, record.reservedMicro) ?? NaN, conservativeReserved);
 
   if (!configMicro.ok) {
     return {
@@ -413,7 +526,7 @@ export function summarizeDay(
     date: day,
     spentUSD: microToUsd(record.spentMicro),
     reservedUSD: microToUsd(record.reservedMicro),
-    softThresholdReached: totalCommitted >= softMicro,
+    softThresholdReached: totalCommitted === null ? true : totalCommitted >= softMicro,
     hardCapReached: record.spentMicro >= capMicro,
     overReservationCount: record.overReservationCount,
     byTask,

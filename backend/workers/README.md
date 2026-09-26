@@ -72,8 +72,8 @@ DAILY_CAP_USD = "1.00"
 SOFT_THRESHOLD_USD = "0.50"
 ```
 
-Invalid or non-positive values fall back to the defaults; the soft threshold is clamped to the cap.
-Spend is tracked in a **per-device Durable Object** (`DeviceSpendLedger`, binding `SPEND_LEDGER`): one atomic upper-bound reservation per paid attempt, reconciled to actual cost afterward. Amounts are stored as integer micro-USD inside the ledger. Day buckets strictly older than **31 UTC calendar days** are pruned on every ledger call (buckets exactly 31 days old are kept). The legacy shared `DEVICE_TOKEN` has no ledger (deterministic path only). Per-device requests fail closed when `SPEND_LEDGER` is unavailable. The old `USAGE_LEDGER` KV namespace remains bound but is not read for spend.
+Invalid or non-positive env values are a **config error** (fail closed — no fallback to sample caps in the ledger or usage API). Plain decimal strings only (`DAILY_CAP_USD` / `SOFT_THRESHOLD_USD`); values must convert to safe positive micro-USD and stay within `MAX_DEPLOYABLE_CAP_USD` (1_000_000 USD in code).
+Spend is tracked in a **per-device Durable Object** (`DeviceSpendLedger`, binding `SPEND_LEDGER`): one atomic upper-bound reservation per paid attempt, reconciled to actual cost afterward. Amounts are stored as integer micro-USD inside the ledger. The ledger retains **at most 31 UTC day buckets** (today plus the 30 preceding calendar days); older fully settled buckets are pruned on every call, and open reservations are never dropped. The legacy shared `DEVICE_TOKEN` has no ledger (deterministic path only). Per-device requests fail closed when `SPEND_LEDGER` is unavailable. The old `USAGE_LEDGER` KV namespace remains bound but is not read for spend.
 
 Optional `ATTRIBUTION_URL` sets the `HTTP-Referer` sent to the model provider (default
 `https://example.invalid`).

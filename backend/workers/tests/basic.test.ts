@@ -162,7 +162,8 @@ describe('POST /v1/outfit/generate ledger reads', () => {
 
 describe('Types', () => {
   it('ships illustrative SPEND_CONFIG sample defaults', async () => {
-    const { SPEND_CONFIG, resolveSpendConfig } = await import('../src/types.js');
+    const { SPEND_CONFIG } = await import('../src/types.js');
+    const { resolveSpendConfig } = await import('../src/spendConfig.js');
 
     expect(SPEND_CONFIG.softThresholdUSD).toBeLessThan(SPEND_CONFIG.dailyCapUSD);
     expect(resolveSpendConfig({})).toEqual({
@@ -173,7 +174,7 @@ describe('Types', () => {
   });
 
   it('lets env vars override the sample spend config', async () => {
-    const { resolveSpendConfig } = await import('../src/types.js');
+    const { resolveSpendConfig } = await import('../src/spendConfig.js');
 
     expect(resolveSpendConfig({ DAILY_CAP_USD: '4', SOFT_THRESHOLD_USD: '3' })).toEqual({
       configError: false,

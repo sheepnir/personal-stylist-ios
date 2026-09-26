@@ -1502,18 +1502,18 @@ components:
         reconciled; `spentTodayUSD + reservedTodayUSD` is what the cap is checked against.
       required:
         [last7DaysUSD, last30DaysUSD, dailyCapUSD, softThresholdUSD, spentTodayUSD,
-         reservedTodayUSD, softThresholdReached, hardCapReached]
+         reservedTodayUSD, softThresholdReached, hardCapReached, ledgerConfigStatus]
       properties:
         last7DaysUSD: { type: number, minimum: 0 }
         last30DaysUSD: { type: number, minimum: 0 }
         dailyCapUSD:
-          type: number
+          type: [number, 'null']
           minimum: 0
-          description: The hard cap.
+          description: The hard cap. Null when spend configuration is invalid or the ledger is unavailable.
         softThresholdUSD:
-          type: number
+          type: [number, 'null']
           minimum: 0
-          description: Above this, the secondary model is used.
+          description: Above this, the secondary model is used. Null when caps are unavailable.
         spentTodayUSD: { type: number, minimum: 0 }
         reservedTodayUSD:
           type: number
@@ -1525,6 +1525,12 @@ components:
           description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13). Each ages to "spent" after 24 h.
         softThresholdReached: { type: boolean }
         hardCapReached: { type: boolean }
+        ledgerConfigStatus:
+          type: string
+          enum: [ok, config_error, ledger_unavailable]
+          description: |
+            `ok` when caps were read from valid configuration and the ledger responded.
+            `config_error` or `ledger_unavailable` fail closed (treat caps as reached; do not infer limits from null caps).
         ledgerDayEndsAt:
           type: [string, 'null']
           format: date-time

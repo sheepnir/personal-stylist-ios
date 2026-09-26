@@ -13,6 +13,7 @@ import {
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  isValidLedgerDayKey,
   LEDGER_DAY_BUCKETS,
   LEDGER_MAX_DAY_AGE,
   MICRO_USD,
@@ -49,6 +50,10 @@ describe('ledgerCore USD ↔ micro-USD conversion', () => {
 
   it('capUsdToMicro floors 0.9999995 to 999999 micro', () => {
     expect(capUsdToMicro(0.9999995)).toEqual({ ok: true, micro: 999_999 });
+  });
+
+  it('costUsdToMicro(1e-10) returns 1 micro', () => {
+    expect(costUsdToMicro(1e-10)).toEqual({ ok: true, micro: 1 });
   });
 
   it('0.10 + 0.20 versus 0.30 micro-USD regression', () => {
@@ -136,6 +141,63 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(summarizeDay(state, DAY, { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 }).hardCapReached).toBe(
       true
     );
+  });
+
+  it('refuses second reconcile when spentMicro sum would exceed MAX_SAFE_INTEGER', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'big1', 0.01, DAY, CONFIG);
+    reserveAttempt(state, 'big2', 0.01, DAY, CONFIG);
+    reconcileAttempt(state, 'big1', 0.01);
+    const day = state.days[DAY];
+    day.spentMicro = Number.MAX_SAFE_INTEGER - 500;
+    day.reservedMicro = 0;
+    day.attempts.big2.state = 'reserved';
+    expect(reconcileAttempt(state, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
+    expect(day.spentMicro).toBe(Number.MAX_SAFE_INTEGER - 500);
+  });
+});
+
+describe('ledgerCore future day keys', () => {
+  const NOW = new Date(`${DAY}T12:00:00.000Z`);
+
+  it('rejects reserve on a day more than one UTC day ahead', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a1', 0.1, '2026-09-28', CONFIG, 'unknown', NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('prunes settled future days beyond one day ahead', () => {
+    const state = emptyLedgerState();
+    state.days['2099-01-01'] = {
+      date: '2099-01-01',
+      spentMicro: 100,
+      reservedMicro: 0,
+      overReservationCount: 0,
+      attempts: Object.create(null),
+      tasks: Object.create(null),
+    };
+    pruneOldDays(state, NOW);
+    expect(state.days['2099-01-01']).toBeUndefined();
+  });
+
+  it('never retains more than 31 day buckets', () => {
+    const state = emptyLedgerState();
+    for (let i = 0; i < 40; i += 1) {
+      const d = `2026-08-${String(i + 1).padStart(2, '0')}`;
+      if (!isValidLedgerDayKey(d)) continue;
+      state.days[d] = {
+        date: d,
+        spentMicro: 1,
+        reservedMicro: 0,
+        overReservationCount: 0,
+        attempts: Object.create(null),
+        tasks: Object.create(null),
+      };
+    }
+    pruneOldDays(state, NOW);
+    expect(Object.keys(state.days).length).toBeLessThanOrEqual(LEDGER_DAY_BUCKETS);
   });
 });
 
