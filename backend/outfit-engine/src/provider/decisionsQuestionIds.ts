@@ -26,18 +26,17 @@ export function parseSlotChoiceQuestionId(id: string): Slot | null {
 /** Reject malformed question ids before parsing provider answers. */
 export function providerQuestionsMatchSlotIdContract(
   questions: ProviderQuestion[],
-  requiredSlots?: Set<Slot>,
+  requiredSlots: Set<Slot>,
 ): boolean {
   const seen = new Set<string>();
   for (const q of questions) {
     if (seen.has(q.id)) return false;
     seen.add(q.id);
     if (q.type === "choice") {
+      if (!KNOWN_SLOTS.has(q.slot)) return false;
+      if (parseSlotChoiceQuestionId(q.id) !== q.slot) return false;
       if (q.id !== slotChoiceQuestionId(q.slot)) return false;
-      if (
-        requiredSlots?.has(q.slot) &&
-        ownHas(q.options, "none")
-      ) {
+      if (requiredSlots.has(q.slot) && ownHas(q.options, "none")) {
         return false;
       }
     }
