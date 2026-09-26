@@ -37,4 +37,26 @@ describe("safeOwn", () => {
     expect(isOwnStringToStringMap({ a: "" })).toBe(false);
     expect(isOwnStringToStringMap({ a: 1 })).toBe(false);
   });
+
+  it("isOwnStringToStringMap ignores inherited properties", () => {
+    const proto = { inherited: "uuid" };
+    const child = Object.create(proto) as Record<string, unknown>;
+    expect(isOwnStringToStringMap(child)).toBe(false);
+  });
+
+  it("isOwnStringToStringMap rejects polluted or custom prototypes", () => {
+    const polluted = Object.create({ evil: "x" }) as Record<string, unknown>;
+    polluted.g_1 = "uuid";
+    expect(isOwnStringToStringMap(polluted)).toBe(false);
+  });
+
+  it("isOwnStringToStringMap rejects reserved own keys", () => {
+    for (const key of ["__proto__", "constructor", "prototype"]) {
+      expect(isOwnStringToStringMap({ [key]: "uuid" })).toBe(false);
+    }
+    expect(
+      isOwnStringToStringMap(JSON.parse('{"__proto__":"x","g_1":"ok"}')),
+    ).toBe(false);
+    expect(isOwnStringToStringMap(JSON.parse('{"g_1":"ok"}'))).toBe(true);
+  });
 });
