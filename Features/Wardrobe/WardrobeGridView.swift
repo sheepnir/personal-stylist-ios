@@ -1136,3 +1136,5 @@ private final class WardrobeFilterCache {
         return rows
     }
 }
+
+// ci/48-s3-swift scenario
