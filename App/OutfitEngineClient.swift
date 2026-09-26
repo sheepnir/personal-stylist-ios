@@ -334,7 +334,7 @@ enum OutfitEngineClient {
     }
 
     private static func rfc3339CalendarDateValid(year: Int, month: Int, day: Int) -> Bool {
-        guard (1...12).contains(month), (1...31).contains(day) else { return false }
+        guard year >= 1, (1...12).contains(month), (1...31).contains(day) else { return false }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         var components = DateComponents()

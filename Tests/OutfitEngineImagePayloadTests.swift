@@ -82,7 +82,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     private static func workerRfc3339CalendarValid(year: Int, month: Int, day: Int) -> Bool {
-        guard (1...12).contains(month), (1...31).contains(day) else { return false }
+        guard year >= 1, (1...12).contains(month), (1...31).contains(day) else { return false }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         var components = DateComponents()
@@ -470,12 +470,14 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
             XCTAssertNotNil(Self.workerImageFinding(in: [key: 1]), key)
         }
-        let loneSurrogateKey = String(
+        let replacementCharKey = String(
             decoding: Array("lone".utf16) + [0xD800] + Array("surrogate".utf16),
             as: UTF16.self
         )
-        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(loneSurrogateKey))
-        XCTAssertNotNil(Self.workerImageFinding(in: [loneSurrogateKey: 1]))
+        // UTF-16 decoding replaces the lone surrogate with U+FFFD (non-printable-ASCII rule); lone surrogates are covered in Worker vitest only.
+        XCTAssertTrue(replacementCharKey.unicodeScalars.contains { $0.value == 0xFFFD })
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(replacementCharKey))
+        XCTAssertNotNil(Self.workerImageFinding(in: [replacementCharKey: 1]))
     }
 
     func testWordSeparatorsFoldBeforeTokenMatch() {
@@ -510,12 +512,21 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             let label = entry["label"] as? String ?? "reject"
             let body = try XCTUnwrap(entry["body"])
             XCTAssertNotNil(Self.workerImageFinding(in: body), label)
+            if let object = body as? [String: Any] {
+                let stripped = OutfitEngineClient.strippingImagePayload(object)
+                XCTAssertNil(Self.workerImageFinding(in: stripped), "\(label) after strippingImagePayload")
+            }
         }
         let allowBodies = try XCTUnwrap(json["allowBodies"] as? [[String: Any]])
         for entry in allowBodies {
             let label = entry["label"] as? String ?? "allow"
             let body = try XCTUnwrap(entry["body"])
-            XCTAssertNil(Self.workerImageFinding(in: body), label)
+            guard let object = body as? [String: Any] else {
+                XCTFail("\(label): allow corpus body must be a JSON object for strippingImagePayload")
+                continue
+            }
+            let stripped = OutfitEngineClient.strippingImagePayload(object)
+            XCTAssertNil(Self.workerImageFinding(in: stripped), label)
         }
     }
 

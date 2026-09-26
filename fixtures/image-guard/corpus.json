@@ -141,6 +141,7 @@
     { "label": "consent fragment T 2026", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "T 2026", "policyVersion": "1" } } },
     { "label": "consent RFC-1123 string", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "Sun, 20 Sep 2026 18:30:00 GMT", "policyVersion": "1" } } },
     { "label": "consent invalid calendar date", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-02-31T12:00:00Z", "policyVersion": "1" } } },
+    { "label": "consent RFC3339 year 0000 below minimum", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "0000-01-01T00:00:00Z", "policyVersion": "2026-09-01" }, "wardrobe": [{ "id": "1", "slot": "TOP", "readiness": "READY" }] } },
     { "label": "consent invalid time hour 24", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T24:00:00Z", "policyVersion": "1" } } },
     { "label": "consent invalid time minute 60", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:60:00Z", "policyVersion": "1" } } },
     { "label": "consent invalid numeric offset hour", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00+24:00", "policyVersion": "1" } } },
@@ -182,13 +183,6 @@
       "label": "consent RFC3339 year 0050",
       "body": {
         "privacyConsent": { "wardrobeImagesAcceptedAt": "0050-06-15T12:00:00Z", "policyVersion": "2026-09-01" },
-        "wardrobe": [{ "id": "1", "slot": "TOP", "readiness": "READY" }]
-      }
-    },
-    {
-      "label": "consent RFC3339 year 0000",
-      "body": {
-        "privacyConsent": { "wardrobeImagesAcceptedAt": "0000-01-01T00:00:00Z", "policyVersion": "2026-09-01" },
         "wardrobe": [{ "id": "1", "slot": "TOP", "readiness": "READY" }]
       }
     },

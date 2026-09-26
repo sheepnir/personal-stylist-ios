@@ -10,11 +10,11 @@ import {
 } from '../src/imageGuardConsent.js';
 
 describe('imageGuardConsent RFC 3339 (#36)', () => {
-  it('rejects non-ASCII digits, trailing newline, and accepts year 0050 and 0000', () => {
+  it('rejects non-ASCII digits, trailing newline, year 0000, and accepts year 0050', () => {
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('２026-09-20T12:00:00Z')).toBe(false);
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T12:00:00Z\n')).toBe(false);
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('0050-06-15T12:00:00Z')).toBe(true);
-    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('0000-01-01T00:00:00Z')).toBe(true);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('0000-01-01T00:00:00Z')).toBe(false);
   });
 
   it('rejects out-of-range time and offset components', () => {
@@ -32,6 +32,7 @@ describe('imageGuardConsent RFC 3339 (#36)', () => {
 
   it('uses setUTCFullYear-style calendar validation for low years', () => {
     expect(rfc3339CalendarDateValid(50, 6, 15)).toBe(true);
+    expect(rfc3339CalendarDateValid(0, 1, 1)).toBe(false);
     expect(rfc3339CalendarDateValid(2026, 2, 31)).toBe(false);
   });
 

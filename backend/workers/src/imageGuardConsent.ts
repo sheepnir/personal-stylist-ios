@@ -17,9 +17,9 @@ export function consentTimestampHasControlCharacter(value: string): boolean {
   return false;
 }
 
-/** Calendar date in the string must be real (no 2026-02-31 rollover). */
+/** Calendar date in the string must be real (no 2026-02-31 rollover). Years before 0001 are rejected (fail-closed; aligns with ISO 8601 / proleptic Gregorian usage). */
 export function rfc3339CalendarDateValid(year: number, month: number, day: number): boolean {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return false;
   const probe = new Date(0);
   probe.setUTCFullYear(year, month - 1, day);
   return (
