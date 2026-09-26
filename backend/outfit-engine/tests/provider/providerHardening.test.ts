@@ -285,6 +285,20 @@ describe("provider hardening (QA / ADR §7.1.3)", () => {
     expect(result.cause).toBe("OUTPUT_PARSE");
   });
 
+  it("omits stale stage4 rationale so runStage4 does not emit RATIONALE_QUALITY", () => {
+    const input = minimalInput();
+    input.stage4 = {
+      ...input.stage4,
+      rationale: { summary: "", pairingNotes: [], cautions: [] },
+    };
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.stage4Cautions.some((c) => c.code === "RATIONALE_QUALITY"),
+    ).toBe(false);
+  });
+
   it("mergeCautionsLikeGenerateLocal keeps at most two cautions", () => {
     const merged = mergeCautionsLikeGenerateLocal(
       ["builder-a", "builder-b", "builder-c"],

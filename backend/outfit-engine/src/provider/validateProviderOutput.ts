@@ -110,8 +110,9 @@ export function validateProviderOutput(
     return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
 
+  const { rationale: _staleRationale, ...stage4Core } = input.stage4;
   const stage4 = runStage4({
-    ...input.stage4,
+    ...stage4Core,
     assignments: mapped.assignments,
     fallbackLevel: "NONE",
   });
