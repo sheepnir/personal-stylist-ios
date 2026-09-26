@@ -6,11 +6,7 @@ import type {
   ProviderSetToken,
   ValidateProviderOutputInput,
 } from "../../src/provider/types.js";
-import type {
-  OutfitAssignment,
-  Slot,
-  Stage4ViolationCode,
-} from "../../src/types.js";
+import type { OutfitAssignment, Slot } from "../../src/types.js";
 import {
   pipelineFromScenario,
   stage1InputFromScenario,
@@ -286,30 +282,6 @@ describe("validateProviderOutput — Decisions shape (ADR §7.1.3)", () => {
 });
 
 describe("validateProviderOutput — runStage4 violations via mapped answers", () => {
-  function expectStage4Code(
-    scenarioId: string,
-    mutate: (ctx: {
-      input: ValidateProviderOutputInput;
-      parsed: { answers: Record<string, unknown> };
-    }) => void,
-    code: Stage4ViolationCode,
-  ) {
-    const input = baseFromScenario(scenarioId);
-    const parsed = JSON.parse(input.responseBody) as {
-      answers: Record<string, unknown>;
-    };
-    mutate({ input, parsed });
-    input.responseBody = JSON.stringify({
-      ...JSON.parse(input.responseBody),
-      answers: parsed.answers,
-    });
-    const result = validateProviderOutput(input);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.cause).toBe("OUTPUT_STAGE4");
-    expect(result.stage4ViolationCodes).toContain(code);
-  }
-
   it("SET_INTEGRITY when only half of a set is chosen", () => {
     const input = baseFromScenario("T2-03-suit-anchor-atomic");
     const bottomQ = input.questions.find(
