@@ -74,6 +74,8 @@ targets:
         excludes:
           - "**/*.md"
         buildPhase: resources
+      - path: fixtures/image-guard/corpus.json
+        buildPhase: resources
     dependencies:
       - target: PersonalStylist
     settings:

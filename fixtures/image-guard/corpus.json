@@ -54,7 +54,13 @@
     { "key": "soft\u00ADwrap", "imageBearing": true },
     { "key": "\u0438mage", "imageBearing": true },
     { "key": "\uFF49mage", "imageBearing": true },
-    { "key": "i\u0307d", "imageBearing": true }
+    { "key": "i\u0307d", "imageBearing": true },
+    { "key": "lone\uD800surrogate", "imageBearing": true },
+    { "key": "ctrl\u0001field", "imageBearing": true },
+    { "key": "unit\u001Fseparator", "imageBearing": true },
+    { "key": "del\u007Fkey", "imageBearing": true },
+    { "key": "line\u2028sep", "imageBearing": true },
+    { "key": "para\u2029graph", "imageBearing": true }
   ],
   "imageValueStrings": [
     { "value": "data:image/png;base64,AAAA", "imageBearing": true },

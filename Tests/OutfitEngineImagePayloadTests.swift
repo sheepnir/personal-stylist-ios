@@ -461,10 +461,11 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     func testImageGuardCorpusMatchesClientGuard() throws {
-        let corpusURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("fixtures/image-guard/corpus.json")
+        let bundle = Bundle(for: OutfitEngineImagePayloadTests.self)
+        guard let corpusURL = bundle.url(forResource: "corpus", withExtension: "json") else {
+            XCTFail("fixtures/image-guard/corpus.json must be copied into the test bundle (see project.yml)")
+            return
+        }
         let data = try Data(contentsOf: corpusURL)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let keySegments = try XCTUnwrap(json["keySegments"] as? [[String: Any]])

@@ -80,6 +80,16 @@ CLIENT_ASCII_MAX = re.compile(r"private static let imageGuardPrintableAsciiMax: 
 
 GUARDED_REQUEST_ROOTS = ("GenerateRequest", "AlternativesRequest")
 
+# docs/openapi.yaml → PreferenceRule.subject documented property names (D-26).
+PREFERENCE_RULE_SUBJECT_KEYS = (
+    "garmentId",
+    "color_family",
+    "pattern",
+    "material",
+    "category",
+    "pair",
+)
+
 
 def extract_tokens(path: Path, pattern: re.Pattern[str]) -> list[str]:
     match = pattern.search(path.read_text(encoding="utf-8"))
@@ -226,6 +236,7 @@ def run_legitimate_key_sweep(corpus: dict) -> None:
             openapi_guarded_request_keys()
             | fixture_json_keys()
             | corpus_legitimate_keys(corpus)
+            | set(PREFERENCE_RULE_SUBJECT_KEYS)
         )
         - image_bearing
     )
