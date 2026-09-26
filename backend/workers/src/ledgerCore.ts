@@ -36,12 +36,9 @@ export interface LedgerState {
 
 export const LEDGER_RETENTION_DAYS = 31;
 
-/** ADR-0001 §12 / D-34: unknown reservations count as spent after 24 h. */
+/** Timing values for unknown outcomes — ADR-0001 §12 (`docs/architect/decisions/0001-openrouter-styling-phase-a.md`); these constants are authoritative. */
 export const UNKNOWN_OUTCOME_AGING_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Increasing intervals between lazy CostSource lookups (first lookup on first ledger access).
- */
 export const COST_LOOKUP_BACKOFF_MS = [
   0,
   60_000,

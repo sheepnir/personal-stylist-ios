@@ -90,6 +90,20 @@ export async function reconcileSpend(
 }
 
 /**
+ * Mark a paid attempt's outcome unknown; reservation stays in place (#13-b).
+ */
+export async function markUnknownSpend(
+  deviceToken: string,
+  attemptId: string,
+  env: Env,
+  generationId?: string
+): Promise<{ ok: boolean; reason?: string }> {
+  const locator = locatorForLedger(deviceToken, env);
+  if (!locator) return { ok: false, reason: 'no_ledger' };
+  return ledgerStub(locator, env).markUnknown(attemptId, generationId);
+}
+
+/**
  * @deprecated KV path removed; use {@link reserveSpend} + {@link reconcileSpend}. Kept for tests migrating off KV.
  */
 export async function recordSpend(

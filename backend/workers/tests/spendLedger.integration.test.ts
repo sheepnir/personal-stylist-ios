@@ -7,6 +7,7 @@ import {
   getSpendRecord,
   reserveSpend,
   reconcileSpend,
+  markUnknownSpend,
   hashToken,
 } from '../src/usage.js';
 import {
@@ -73,5 +74,41 @@ describe('usage ↔ DeviceSpendLedger', () => {
     const record = await getSpendRecord(token, env);
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
+  });
+
+  it('markUnknownSpend forwards attemptId and generationId without changing reservedUSD', async () => {
+    const ledger = spendLedger();
+    const env = envWithSpend();
+    env.SPEND_LEDGER = ledger as Env['SPEND_LEDGER'];
+    const token = generateDeviceToken();
+    const locator = deviceLocatorFromToken(token)!;
+
+    expect(await reserveSpend(token, 'attempt-unknown', 0.42, env)).toEqual({ ok: true });
+    const before = await getSpendRecord(token, env);
+    expect(before.reservedUSD).toBeCloseTo(0.42);
+
+    expect(await markUnknownSpend(token, 'attempt-unknown', env, 'gen-forward-1')).toEqual({ ok: true });
+    expect(await markUnknownSpend(token, 'attempt-unknown', env, 'gen-forward-1')).toEqual({ ok: true });
+
+    const after = await getSpendRecord(token, env);
+    expect(after.reservedUSD).toBeCloseTo(0.42);
+    expect(after.spentUSD).toBeCloseTo(0);
+
+    expect(ledger.markUnknownCalls).toEqual([
+      { deviceId: locator, attemptId: 'attempt-unknown', generationId: 'gen-forward-1' },
+      { deviceId: locator, attemptId: 'attempt-unknown', generationId: 'gen-forward-1' },
+    ]);
+  });
+
+  it('markUnknownSpend matches reserveSpend when there is no ledger', async () => {
+    const env = envWithSpend();
+    const token = generateDeviceToken();
+    const withoutLedger: Env = { ...env, SPEND_LEDGER: undefined };
+
+    const reserveResult = await reserveSpend(token, 'attempt-x', 0.1, withoutLedger);
+    const unknownResult = await markUnknownSpend(token, 'attempt-x', withoutLedger, 'gen-1');
+
+    expect(unknownResult).toEqual(reserveResult);
+    expect(unknownResult).toEqual({ ok: false, reason: 'no_ledger' });
   });
 });

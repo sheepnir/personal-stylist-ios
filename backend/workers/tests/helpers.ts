@@ -54,9 +54,14 @@ export function tokenRegistry(): DurableObjectNamespace {
   }) } as unknown as DurableObjectNamespace;
 }
 
+export type SpendLedgerTestHarness = DurableObjectNamespace & {
+  markUnknownCalls: Array<{ deviceId: string; attemptId: string; generationId?: string }>;
+};
+
 /** In-memory per-device spend ledger stub (same API as DeviceSpendLedger). */
-export function spendLedger(): DurableObjectNamespace {
+export function spendLedger(): SpendLedgerTestHarness {
   const byDevice = new Map<string, LedgerState>();
+  const markUnknownCalls: SpendLedgerTestHarness['markUnknownCalls'] = [];
 
   const stateFor = (deviceId: string): LedgerState => {
     let state = byDevice.get(deviceId);
@@ -91,11 +96,13 @@ export function spendLedger(): DurableObjectNamespace {
         return summarizeDay(state, day, config);
       },
       markUnknown: async (attemptId: string, generationId?: string) => {
+        markUnknownCalls.push({ deviceId, attemptId, generationId });
         const state = stateFor(deviceId);
         ageLedger(state, new Date(), NO_COST_SOURCE);
         const result = markAttemptUnknown(state, attemptId, generationId);
         return result;
       },
     }),
-  } as unknown as DurableObjectNamespace;
+    markUnknownCalls,
+  } as unknown as SpendLedgerTestHarness;
 }
