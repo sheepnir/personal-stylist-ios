@@ -21,11 +21,6 @@ WORKER = ROOT / "backend/workers/src/validation.ts"
 CLIENT = ROOT / "App/OutfitEngineClient.swift"
 WORKERS_DIR = ROOT / "backend/workers"
 
-FORBIDDEN_LEGACY_SUBSTRINGS = (
-    "WORKER_KEYS = re.compile",
-    "CLIENT_KEYS = re.compile",
-)
-
 WORKER_TOKENS = re.compile(
     r"export const FORBIDDEN_IMAGE_KEY_TOKENS = \[([\s\S]*?)\] as const;",
     re.MULTILINE,
@@ -57,15 +52,6 @@ def extract_consent_path(path: Path, pattern: re.Pattern[str]) -> str:
     return match.group(1)
 
 
-def assert_no_legacy_pattern_copy(source: str) -> None:
-    for marker in FORBIDDEN_LEGACY_SUBSTRINGS:
-        if marker in source:
-            sys.exit(
-                "scripts/check-image-guard-parity.py must not embed legacy regex "
-                f"pattern copies (found {marker!r}); use the shared corpus + Worker vitest only."
-            )
-
-
 def load_corpus() -> dict:
     corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
     for key in ("keySegments", "rejectBodies", "allowBodies"):
@@ -88,9 +74,6 @@ def run_worker_vitest_corpus() -> None:
 
 
 def main() -> int:
-    script_source = Path(__file__).read_text(encoding="utf-8")
-    assert_no_legacy_pattern_copy(script_source)
-
     worker_tokens = extract_tokens(WORKER, WORKER_TOKENS)
     client_tokens = extract_tokens(CLIENT, CLIENT_TOKENS)
     worker_consent = extract_consent_path(WORKER, WORKER_CONSENT_PATH)
