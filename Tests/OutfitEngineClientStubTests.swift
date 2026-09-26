@@ -275,6 +275,15 @@ final class OutfitEngineClientStubTests: XCTestCase {
         )
     }
 
+    func testEngineBypassVoiceOverActionsFollowSuppressFlag() {
+        XCTAssertFalse(
+            OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(suppressEngineActions: true)
+        )
+        XCTAssertTrue(
+            OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(suppressEngineActions: false)
+        )
+    }
+
     @MainActor
     func testOutfitEngineActionsDisabledWhileRejectedAndReenabledAfterClear() async throws {
         let model = try await makeModelForDeviceAccessTests()

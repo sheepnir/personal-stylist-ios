@@ -580,12 +580,14 @@ struct OutfitBoardView: View {
             }
             .padding(10)
             .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Empty \(a.slot.displayLabel). \(reason)")
-            .accessibilityAction(named: "Find \(a.slot.displayLabel)") {
-                guard !model.outfitEngineActionsDisabled else { return }
-                onSwap(a.slot)
-            }
+            .modifier(
+                GapTileVoiceOver(
+                    combinedLabel: "Empty \(a.slot.displayLabel). \(reason)",
+                    findActionName: "Find \(a.slot.displayLabel)",
+                    suppressEngineActions: model.outfitEngineActionsDisabled,
+                    onFind: { onSwap(a.slot) }
+                )
+            )
         }
     }
 
@@ -742,13 +744,22 @@ struct OutfitBoardView: View {
                 }
                 .frame(width: 88)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Empty accessory")
-            .accessibilityAction(named: "Find accessory") {
-                guard !model.outfitEngineActionsDisabled else { return }
-                onSwap(a.slot)
-            }
+            .modifier(
+                GapTileVoiceOver(
+                    combinedLabel: "Empty accessory",
+                    findActionName: "Find accessory",
+                    suppressEngineActions: model.outfitEngineActionsDisabled,
+                    onFind: { onSwap(a.slot) }
+                )
+            )
         }
+    }
+}
+
+/// When device access is rejected, omit Find custom actions (same policy as `FilledTileAccess`).
+enum OutfitBoardAccessibilityPolicy {
+    static func exposesEngineBypassVoiceOverActions(suppressEngineActions: Bool) -> Bool {
+        !suppressEngineActions
     }
 }
 
@@ -760,6 +771,27 @@ private struct BoardTileActionRow<Content: View>: View {
         HStack(spacing: 8) {
             content()
             Spacer(minLength: 0)
+        }
+    }
+}
+
+/// Gap-tile VoiceOver — Find custom action omitted when engine actions are disabled (#34 R6).
+private struct GapTileVoiceOver: ViewModifier {
+    var combinedLabel: String
+    var findActionName: String
+    var suppressEngineActions: Bool
+    var onFind: () -> Void
+
+    func body(content: Content) -> some View {
+        if suppressEngineActions {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(combinedLabel)
+        } else {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(combinedLabel)
+                .accessibilityAction(named: findActionName, onFind)
         }
     }
 }
