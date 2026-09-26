@@ -11,7 +11,9 @@ import {
   hashToken,
   isHardCapReached,
   getUsageSummary,
+  recordSpend,
 } from '../src/usage.js';
+import { SPEND_CONFIG } from '../src/types.js';
 import {
   generateDeviceToken,
   deviceLocatorFromToken,
@@ -163,6 +165,38 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
     expect(record.tasks.generate).toBeCloseTo(0.08);
+  });
+
+  it('soft threshold flag follows committed spend plus reservations (#38)', async () => {
+    const { env } = envWithSpend();
+    const token = generateDeviceToken();
+    const soft = SPEND_CONFIG.softThresholdUSD;
+
+    let usage = await getUsageSummary(token, env);
+    expect(usage.softThresholdReached).toBe(false);
+    expect(usage.hardCapReached).toBe(false);
+
+    expect(await reserveSpend(token, 'soft-a', soft * 0.4, env)).toEqual({ ok: true });
+    usage = await getUsageSummary(token, env);
+    expect(usage.reservedTodayUSD).toBeCloseTo(soft * 0.4);
+    expect(usage.softThresholdReached).toBe(false);
+
+    expect(await reserveSpend(token, 'soft-b', soft * 0.7, env)).toEqual({ ok: true });
+    usage = await getUsageSummary(token, env);
+    expect(usage.reservedTodayUSD).toBeCloseTo(soft * 1.1);
+    expect(usage.softThresholdReached).toBe(true);
+    expect(usage.hardCapReached).toBe(false);
+  });
+
+  it('recordSpend fails loudly when reserve is rejected at hard cap', async () => {
+    const { env } = envWithSpend();
+    const token = generateDeviceToken();
+    expect(await reserveSpend(token, 'fill', SPEND_CONFIG.dailyCapUSD, env)).toEqual({ ok: true });
+    expect(await recordSpend(token, 'generate', 0.01, env)).toEqual({
+      ok: false,
+      stage: 'reserve',
+      reason: 'hard_cap',
+    });
   });
 
   it('never persists raw device tokens or token hashes in ledger storage', async () => {

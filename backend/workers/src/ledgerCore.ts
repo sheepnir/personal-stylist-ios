@@ -700,11 +700,33 @@ export function summarizeDay(
     spentUSD: microToUsd(record.spentMicro),
     reservedUSD: microToUsd(record.reservedMicro),
     softThresholdReached: totalCommitted === null ? true : totalCommitted >= softMicro,
-    hardCapReached: record.spentMicro >= capMicro,
+    hardCapReached: dayHardCapReached(state, day, capMicro),
     attemptLimitReached: attemptLimitReachedForDay(record),
     overReservationCount: record.overReservationCount,
     byTask,
   };
+}
+
+/** True when {@link reserveAttempt} would refuse another hold with `hard_cap` (minimum 1 micro-USD). */
+export function dayHardCapReached(state: LedgerState, day: string, capMicro: number): boolean {
+  const record = readDay(state, day);
+  if (record.spentMicro >= capMicro) {
+    return true;
+  }
+  const conservativeReserved = malformedOpenReservedMicro(state);
+  if (conservativeReserved === null) {
+    return true;
+  }
+  const spentPlusReserved = safeMicroAdd(record.spentMicro, record.reservedMicro);
+  if (spentPlusReserved === null) {
+    return true;
+  }
+  const totalCommitted = safeMicroAdd(spentPlusReserved, conservativeReserved);
+  if (totalCommitted === null) {
+    return true;
+  }
+  const withMinHold = safeMicroAdd(totalCommitted, 1);
+  return withMinHold === null || totalCommitted >= capMicro || withMinHold > capMicro;
 }
 
 /** Prunes eligible settled buckets; returns whether storage changed. #13-b adds unknown aging. */

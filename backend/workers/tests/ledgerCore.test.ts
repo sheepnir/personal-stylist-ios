@@ -179,6 +179,19 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(reserveAttempt(state, 'a2', 0.5, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
   });
 
+  it('hardCapReached is true when reservations fill the cap even if spent is below cap', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'hold', 1.0, DAY, CONFIG)).toEqual({ ok: true });
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBe(0);
+    expect(summary.reservedUSD).toBeCloseTo(1.0);
+    expect(summary.hardCapReached).toBe(true);
+    expect(reserveAttempt(state, 'extra', 0.01, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'hard_cap',
+    });
+  });
+
   it('allows ten 0.1 reservations to exactly fill a 1.0 cap (micro-USD)', () => {
     const state = emptyLedgerState();
     for (let i = 0; i < 10; i += 1) {
