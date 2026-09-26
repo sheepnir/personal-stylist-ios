@@ -112,3 +112,5 @@ Writes gitignored `Config/LocalSecrets.xcconfig` from the `OUTFIT_ENGINE_BASE_UR
 **Release builds:** Debug env bootstrap is compiled out. Use **Style profile → Device access** to paste an enrollment secret once (or an issued device token). Do **not** rely on Debug→Release Keychain continuity as the primary path.
 
 Local `:8787` bridge needs no token.
+
+<!-- ci/48-s1-docs scenario -->
