@@ -19,6 +19,12 @@ describe('imageGuardKey printable ASCII rule', () => {
     expect(normalizedKeyContainsForbiddenImageToken('\uFF49mage')).toBe(true);
   });
 
+  it('rejects keys containing a lone UTF-16 surrogate (not in shared corpus — invalid JSON for Foundation)', () => {
+    const key = `lone${String.fromCharCode(0xd800)}surrogate`;
+    expect(objectKeyFailsPrintableAsciiRule(key)).toBe(true);
+    expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(true);
+  });
+
   it('exports ASCII bounds for parity', () => {
     expect(IMAGE_GUARD_PRINTABLE_ASCII_MIN).toBe(0x20);
     expect(IMAGE_GUARD_PRINTABLE_ASCII_MAX).toBe(0x7e);

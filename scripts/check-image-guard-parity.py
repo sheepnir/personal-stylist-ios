@@ -80,10 +80,15 @@ CLIENT_ASCII_MAX = re.compile(r"private static let imageGuardPrintableAsciiMax: 
 
 GUARDED_REQUEST_ROOTS = ("GenerateRequest", "AlternativesRequest")
 
-# docs/openapi.yaml → PreferenceRule.subject documented property names (D-26).
+# docs/openapi.yaml → PreferenceRule.subject documented property names (D-26),
+# plus engine-recognized combination / color subject keys (stage1 filters, combinationRules).
 PREFERENCE_RULE_SUBJECT_KEYS = (
     "garmentId",
+    "garmentIds",
     "color_family",
+    "colorFamily",
+    "color_families",
+    "colorFamilies",
     "pattern",
     "material",
     "category",

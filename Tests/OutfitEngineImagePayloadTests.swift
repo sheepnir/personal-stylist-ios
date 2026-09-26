@@ -470,6 +470,12 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
             XCTAssertNotNil(Self.workerImageFinding(in: [key: 1]), key)
         }
+        let loneSurrogateKey = String(
+            decoding: Array("lone".utf16) + [0xD800] + Array("surrogate".utf16),
+            as: UTF16.self
+        )
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(loneSurrogateKey))
+        XCTAssertNotNil(Self.workerImageFinding(in: [loneSurrogateKey: 1]))
     }
 
     func testWordSeparatorsFoldBeforeTokenMatch() {
