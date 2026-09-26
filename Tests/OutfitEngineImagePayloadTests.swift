@@ -527,6 +527,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             }
             let stripped = OutfitEngineClient.strippingImagePayload(object)
             XCTAssertNil(Self.workerImageFinding(in: stripped), label)
+            XCTAssertEqual(stripped as NSDictionary, object as NSDictionary, label)
         }
     }
 
