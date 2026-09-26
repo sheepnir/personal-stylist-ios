@@ -749,6 +749,11 @@ export function reserveAttempt(
     return { ok: false, reason: 'hard_cap' };
   }
 
+  const createdAt = new Date().toISOString();
+  if (!isValidCreatedAt(createdAt)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
   const writable = getOrCreateDay(state, day);
   if (attemptLimitReachedForDay(writable)) {
     return { ok: false, reason: 'attempt_limit' };
@@ -762,7 +767,7 @@ export function reserveAttempt(
     upperBoundMicro,
     task,
     state: 'reserved',
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
   writable.reservedMicro = newReserved;
   return { ok: true };
@@ -901,6 +906,10 @@ export function markAttemptUnknown(
   }
 
   return { ok: false, reason: 'not_found' };
+}
+
+function isValidCreatedAt(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
 }
 
 /** `null` when missing or unparseable — treated as immediately eligible to age. */
