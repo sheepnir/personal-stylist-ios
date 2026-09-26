@@ -93,7 +93,7 @@ npm run dev     # wrangler dev --config wrangler.local.toml (needs the local con
 
 - **Platform:** Cloudflare Workers
 - **Auth:** Per-device opaque tokens (hashed in per-device Durable Objects)
-- **Storage:** KV binding retained (unused for spend); per-device Durable Objects for token registry (hashes only) and spend ledger (content-free, keyed by device locator)
+- **Storage:** KV binding retained (unused for spend); per-device Durable Objects for token registry (hashes only) and spend ledger (content-free, keyed by device locator). Open reservations are never pruned.
 - **Spend cap:** per-device DO ledger with atomic reserve / reconcile, soft threshold and configurable hard cap (see above); no model-call path exists yet
 - **Path:** Deterministic only (no model calls yet)
 - **Privacy:** fail-closed provider data collection (`provider.data_collection: deny`)

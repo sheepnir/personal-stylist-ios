@@ -112,6 +112,39 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBeCloseTo(0);
     expect(summarizeDay(state, '2026-09-25', CONFIG).reservedUSD).toBeCloseTo(0.25);
   });
+
+  it('rejects zero and negative-zero amounts on reserve and reconcile', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'z1', 0, DAY, CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reserveAttempt(state, 'z2', -0, DAY, CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    reserveAttempt(state, 'a1', 0.2, DAY, CONFIG);
+    expect(reconcileAttempt(state, 'a1', 0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, 'a1', -0)).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('refuses reserve when committed total already equals the hard cap', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a1', 1.0, DAY, CONFIG)).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'a2', 0.01, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
+  });
+
+  it('returns already_settled when re-reserving a reconciled attemptId', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'done', 0.2, DAY, CONFIG);
+    reconcileAttempt(state, 'done', 0.15);
+    expect(reserveAttempt(state, 'done', 0.2, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'already_settled',
+    });
+  });
+
+  it('rejects malformed day keys on reserve and does not persist them via summarize', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a1', 0.1, 'not-a-day', CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reserveAttempt(state, 'a2', 0.1, '2026-02-30', CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    summarizeDay(state, '2026-13-40', CONFIG);
+    expect(state.days['2026-13-40']).toBeUndefined();
+  });
 });
 
 describe('ledgerCore retention', () => {
@@ -166,5 +199,42 @@ describe('ledgerCore retention', () => {
     ageLedger(state, new Date(`${DAY}T00:00:00.000Z`));
     expect(reserveAttempt(state, 'a1', 999, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
     expect(state.days['1999-01-01']).toBeUndefined();
+  });
+
+  it('never prunes a day bucket that still has an open reservation', () => {
+    const state = emptyLedgerState();
+    const staleDay = '1999-01-01';
+    state.days[staleDay] = {
+      date: staleDay,
+      spentMicro: 0,
+      reservedMicro: usdToMicro(0.4),
+      overReservationCount: 0,
+      attempts: {
+        open: {
+          attemptId: 'open',
+          upperBoundMicro: usdToMicro(0.4),
+          task: 'generate',
+          state: 'reserved',
+          createdAt: new Date().toISOString(),
+        },
+      },
+      tasks: {},
+    };
+    pruneOldDays(state, new Date(`${DAY}T00:00:00.000Z`));
+    expect(state.days[staleDay]).toBeDefined();
+  });
+
+  it('always removes malformed day keys during prune', () => {
+    const state = emptyLedgerState();
+    state.days['not-valid'] = {
+      date: 'not-valid',
+      spentMicro: usdToMicro(1),
+      reservedMicro: 0,
+      overReservationCount: 0,
+      attempts: {},
+      tasks: {},
+    };
+    pruneOldDays(state, new Date(`${DAY}T00:00:00.000Z`));
+    expect(state.days['not-valid']).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 /**
  * usage.ts wiring unit tests over in-memory ledger storage (#13-a).
- * Exercises core logic via helpers.spendLedger(); workerd / DO concurrency is #14.
+ * Exercises core logic via helpers.createSpendLedgerMock(); workerd / DO concurrency is #14.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -18,14 +18,18 @@ import {
   hashToken as hashFromTokens,
 } from '../src/tokens.js';
 import type { Env } from '../src/types.js';
-import { spendLedger, emptyLedger } from './helpers.js';
+import { createSpendLedgerMock, emptyLedger } from './helpers.js';
 
-function envWithSpend(): Env {
+function envWithSpend(): { env: Env; dump: ReturnType<typeof createSpendLedgerMock>['dumpState'] } {
+  const mock = createSpendLedgerMock();
   return {
-    DEVICE_TOKEN: 'legacy-shared',
-    OPENROUTER_API_KEY: 'k',
-    USAGE_LEDGER: emptyLedger(),
-    SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
+    dump: mock.dumpState,
+    env: {
+      DEVICE_TOKEN: 'legacy-shared',
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: mock.namespace as Env['SPEND_LEDGER'],
+    },
   };
 }
 
@@ -44,7 +48,7 @@ describe('usage helpers with in-memory spend ledger', () => {
   });
 
   it('keys ledger by device locator (survives token rotation)', async () => {
-    const env = envWithSpend();
+    const { env, dump: _dump } = envWithSpend();
     const locator = 'a1000001-0001-4000-8000-000000000099';
     const tokenA = generateDeviceToken(locator);
     const tokenB = generateDeviceToken(locator);
@@ -58,7 +62,7 @@ describe('usage helpers with in-memory spend ledger', () => {
   });
 
   it('legacy shared token gets no reservation', async () => {
-    const env = envWithSpend();
+    const { env } = envWithSpend();
     expect(await reserveSpend('legacy-shared', 'attempt-x', 0.5, env)).toEqual({
       ok: false,
       reason: 'no_ledger',
@@ -94,7 +98,7 @@ describe('usage helpers with in-memory spend ledger', () => {
   });
 
   it('reserve + reconcile round-trip through usage helpers with task attribution', async () => {
-    const env = envWithSpend();
+    const { env } = envWithSpend();
     const token = generateDeviceToken();
     expect(await reserveSpend(token, 'paid-1', 0.35, env, undefined, 'generate')).toEqual({ ok: true });
     expect(await reconcileSpend(token, 'paid-1', 0.08, env, 'generate')).toEqual({ ok: true });
@@ -102,5 +106,19 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
     expect(record.tasks.generate).toBeCloseTo(0.08);
+  });
+
+  it('never persists raw device tokens or token hashes in ledger storage', async () => {
+    const { env, dump } = envWithSpend();
+    const token = generateDeviceToken();
+    const locator = deviceLocatorFromToken(token)!;
+    const digest = await hashFromTokens(token);
+
+    await reserveSpend(token, 'attempt-privacy', 0.05, env);
+    await reconcileSpend(token, 'attempt-privacy', 0.04, env, 'generate');
+
+    const persisted = JSON.stringify(dump(locator));
+    expect(persisted).not.toContain(token);
+    expect(persisted).not.toContain(digest);
   });
 });

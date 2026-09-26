@@ -35,12 +35,14 @@ export interface LedgerState {
   days: Record<string, DayRecord>;
 }
 
-/** UTC calendar days retained (inclusive); buckets strictly older than this are pruned. */
+/** UTC calendar days retained (inclusive); fully settled buckets strictly older than this may be pruned. */
 export const LEDGER_RETENTION_DAYS = 31;
+
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
   ok: boolean;
-  reason?: 'hard_cap' | 'invalid';
+  reason?: 'hard_cap' | 'invalid' | 'already_settled';
 }
 
 export interface ReconcileResult {
@@ -73,6 +75,18 @@ export function configToMicro(config: SpendConfig): { capMicro: number; softMicr
   };
 }
 
+/** Strict UTC calendar day key (YYYY-MM-DD) that matches a real calendar date. */
+export function isValidLedgerDayKey(day: string): boolean {
+  if (!DAY_KEY_RE.test(day)) return false;
+  const ms = Date.parse(`${day}T00:00:00.000Z`);
+  if (!Number.isFinite(ms)) return false;
+  return utcDayString(new Date(ms)) === day;
+}
+
+function isPositiveUsd(amount: number): boolean {
+  return Number.isFinite(amount) && amount > 0;
+}
+
 export function emptyLedgerState(): LedgerState {
   return { days: {} };
 }
@@ -88,12 +102,16 @@ function emptyDay(date: string): DayRecord {
   };
 }
 
-function getDay(state: LedgerState, date: string): DayRecord {
+function getOrCreateDay(state: LedgerState, date: string): DayRecord {
   const existing = state.days[date];
   if (existing) return existing;
   const day = emptyDay(date);
   state.days[date] = day;
   return day;
+}
+
+function readDay(state: LedgerState, date: string): DayRecord {
+  return state.days[date] ?? emptyDay(date);
 }
 
 function utcDayString(d: Date): string {
@@ -106,13 +124,27 @@ function utcDayAgeDays(day: string, now: Date): number {
   return Math.floor((nowMs - dayMs) / 86_400_000);
 }
 
+function dayIsFullySettled(day: DayRecord): boolean {
+  for (const entry of Object.values(day.attempts)) {
+    if (entry.state === 'reserved' || entry.state === 'unknown') {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
- * Prune day buckets strictly older than {@link LEDGER_RETENTION_DAYS} UTC calendar days.
- * A bucket on the boundary (exactly 31 days old) is kept.
+ * Prune day buckets strictly older than {@link LEDGER_RETENTION_DAYS} UTC calendar days
+ * when every attempt on that day is settled (reconciled). Open reservations are never dropped.
+ * Malformed day keys are always removed.
  */
 export function pruneOldDays(state: LedgerState, now: Date): void {
   for (const key of Object.keys(state.days)) {
-    if (utcDayAgeDays(key, now) > LEDGER_RETENTION_DAYS) {
+    if (!isValidLedgerDayKey(key)) {
+      delete state.days[key];
+      continue;
+    }
+    if (utcDayAgeDays(key, now) > LEDGER_RETENTION_DAYS && dayIsFullySettled(state.days[key])) {
       delete state.days[key];
     }
   }
@@ -137,29 +169,35 @@ export function reserveAttempt(
   config: SpendConfig,
   task = 'unknown'
 ): ReserveResult {
-  if (!attemptId || !Number.isFinite(upperBoundUSD) || upperBoundUSD < 0) {
+  if (!attemptId || !isPositiveUsd(upperBoundUSD)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (!isValidLedgerDayKey(day)) {
     return { ok: false, reason: 'invalid' };
   }
 
   const upperBoundMicro = usdToMicro(upperBoundUSD);
-  const { capMicro, softMicro: _softMicro } = configToMicro(config);
+  const { capMicro } = configToMicro(config);
 
   const existingGlobal = findAttempt(state, attemptId);
   if (existingGlobal) {
+    if (existingGlobal.entry.state === 'reconciled' || existingGlobal.entry.state === 'unknown') {
+      return { ok: false, reason: 'already_settled' };
+    }
     if (existingGlobal.entry.upperBoundMicro === upperBoundMicro) {
       return { ok: true };
     }
     return { ok: false, reason: 'invalid' };
   }
 
-  const dayRecord = getDay(state, day);
+  const dayRecord = getOrCreateDay(state, day);
 
   if (dayRecord.spentMicro >= capMicro) {
     return { ok: false, reason: 'hard_cap' };
   }
 
   const totalCommitted = dayRecord.spentMicro + dayRecord.reservedMicro;
-  if (totalCommitted + upperBoundMicro > capMicro) {
+  if (totalCommitted >= capMicro || totalCommitted + upperBoundMicro > capMicro) {
     return { ok: false, reason: 'hard_cap' };
   }
 
@@ -180,7 +218,7 @@ export function reconcileAttempt(
   actualUSD: number,
   task?: string
 ): ReconcileResult {
-  if (!attemptId || !Number.isFinite(actualUSD) || actualUSD < 0) {
+  if (!attemptId || !isPositiveUsd(actualUSD)) {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -219,7 +257,19 @@ export function summarizeDay(
   day: string,
   config: SpendConfig
 ): DaySummary {
-  const record = getDay(state, day);
+  if (!isValidLedgerDayKey(day)) {
+    return {
+      date: day,
+      spentUSD: 0,
+      reservedUSD: 0,
+      softThresholdReached: false,
+      hardCapReached: false,
+      overReservationCount: 0,
+      byTask: {},
+    };
+  }
+
+  const record = readDay(state, day);
   const { capMicro, softMicro } = configToMicro(config);
   const totalCommitted = record.spentMicro + record.reservedMicro;
   const byTask: Record<string, number> = {};
@@ -237,7 +287,7 @@ export function summarizeDay(
   };
 }
 
-/** Placeholder for #13-b; prunes stale day buckets on every call. */
+/** Placeholder for #13-b; prunes eligible settled buckets and malformed keys on every call. */
 export function ageLedger(state: LedgerState, now: Date): void {
   pruneOldDays(state, now);
 }

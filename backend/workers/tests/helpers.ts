@@ -53,7 +53,12 @@ export function tokenRegistry(): DurableObjectNamespace {
 }
 
 /** In-memory per-device spend ledger stub (same API as DeviceSpendLedger). */
-export function spendLedger(): DurableObjectNamespace {
+export interface SpendLedgerMock {
+  namespace: DurableObjectNamespace;
+  dumpState: (deviceId: string) => LedgerState;
+}
+
+export function createSpendLedgerMock(): SpendLedgerMock {
   const byDevice = new Map<string, LedgerState>();
 
   const stateFor = (deviceId: string): LedgerState => {
@@ -65,7 +70,7 @@ export function spendLedger(): DurableObjectNamespace {
     return state;
   };
 
-  return {
+  const namespace = {
     getByName: (deviceId: string) => ({
       reserve: async (
         attemptId: string,
@@ -91,4 +96,13 @@ export function spendLedger(): DurableObjectNamespace {
       markUnknown: async () => ({ ok: false }),
     }),
   } as unknown as DurableObjectNamespace;
+
+  return {
+    namespace,
+    dumpState: (deviceId: string) => structuredClone(byDevice.get(deviceId) ?? emptyLedgerState()),
+  };
+}
+
+export function spendLedger(): DurableObjectNamespace {
+  return createSpendLedgerMock().namespace;
 }
