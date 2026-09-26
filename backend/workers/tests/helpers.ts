@@ -2,9 +2,11 @@
  * Shared in-memory KV for Workers unit tests.
  */
 
+import { NO_COST_SOURCE } from '../src/costSource.js';
 import {
   ageLedger,
   emptyLedgerState,
+  markAttemptUnknown,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
@@ -55,14 +57,26 @@ export function tokenRegistry(): DurableObjectNamespace {
   }) } as unknown as DurableObjectNamespace;
 }
 
+export type MarkUnknownCall = {
+  deviceId: string;
+  attemptId: string;
+  generationId?: string;
+};
+
 /** In-memory per-device spend ledger stub (same API as DeviceSpendLedger). */
 export interface SpendLedgerMock {
   namespace: DurableObjectNamespace;
   dumpState: (deviceId: string) => LedgerState;
+  markUnknownCalls: MarkUnknownCall[];
 }
+
+export type SpendLedgerTestHarness = DurableObjectNamespace & {
+  markUnknownCalls: MarkUnknownCall[];
+};
 
 export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolean }): SpendLedgerMock {
   const byDevice = new Map<string, LedgerState>();
+  const markUnknownCalls: MarkUnknownCall[] = [];
 
   const stateFor = (deviceId: string): LedgerState => {
     let state = byDevice.get(deviceId);
@@ -86,7 +100,7 @@ export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolea
         task = 'unknown'
       ) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
         if (!result.ok) {
           removeEmptyDayBucket(state, day);
@@ -95,26 +109,33 @@ export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolea
       },
       reconcile: async (day: string, attemptId: string, actualUSD: number, task?: string) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         return reconcileAttempt(state, day, attemptId, actualUSD, task);
       },
       summary: async (day: string, config: SpendConfig) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         return summarizeDay(state, day, config);
       },
-      markUnknown: async () => ({ ok: false }),
+      markUnknown: async (_day: string, attemptId: string, generationId?: string) => {
+        markUnknownCalls.push({ deviceId, attemptId, generationId });
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return markAttemptUnknown(state, attemptId, generationId);
+      },
     }),
   } as unknown as DurableObjectNamespace;
 
   return {
     namespace,
     dumpState: (deviceId: string) => structuredClone(byDevice.get(deviceId) ?? emptyLedgerState()),
+    markUnknownCalls,
   };
 }
 
-export function spendLedger(): DurableObjectNamespace {
-  return createSpendLedgerMock().namespace;
+export function spendLedger(): SpendLedgerTestHarness {
+  const mock = createSpendLedgerMock();
+  return Object.assign(mock.namespace, { markUnknownCalls: mock.markUnknownCalls });
 }
 
 /** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */

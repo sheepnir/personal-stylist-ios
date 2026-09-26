@@ -192,6 +192,28 @@ export async function reconcileSpend(
   return result;
 }
 
+/** Mark a paid attempt's outcome unknown; reservation stays in place (#13-b). */
+export async function markUnknownSpend(
+  deviceToken: string,
+  attemptId: string,
+  env: Env,
+  generationId?: string
+): Promise<{ ok: boolean; reason?: string }> {
+  const access = await accessLedger(deviceToken, env);
+  if (access.kind === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  if (access.kind === 'legacy') {
+    return { ok: false, reason: 'no_ledger' };
+  }
+  const day = getTodayDateString();
+  const result = await callLedger(access, (stub) => stub.markUnknown(day, attemptId, generationId));
+  if (result === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  return result;
+}
+
 export async function isHardCapReached(deviceToken: string, env: Env): Promise<boolean> {
   const access = await accessLedger(deviceToken, env);
   if (access.kind === 'unavailable' || envConfigError(env)) {
