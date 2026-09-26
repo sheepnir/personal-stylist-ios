@@ -1,10 +1,13 @@
 import type { DeviceTokenRegistry } from './tokenRegistry.js';
+import type { DeviceSpendLedger } from './spendLedger.js';
 /**
  * Cloudflare Workers environment bindings for Personal Stylist backend (M0-09).
  */
 
-export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVICE_TOKENS"> {
+export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVICE_TOKENS" | "SPEND_LEDGER"> {
   DEVICE_TOKENS?: DurableObjectNamespace<DeviceTokenRegistry>;
+  /** Per-device spend ledger (keyed by device locator id). */
+  SPEND_LEDGER?: DurableObjectNamespace<DeviceSpendLedger>;
   /** Platform abuse throttle; missing binding fails closed. */
   REQUEST_RATE_LIMITER?: Cloudflare.Env["REQUEST_RATE_LIMITER"];
   /** KV namespace for usage ledger (device token → day → spend). */

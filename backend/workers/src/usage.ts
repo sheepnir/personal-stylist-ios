@@ -1,18 +1,34 @@
 /**
- * Usage tracking and spend cap enforcement (M0-09 minimal KV-based ledger).
+ * Usage tracking and spend cap enforcement via per-device Durable Object ledger (#13-a).
  * Hard cap and soft threshold come from `resolveSpendConfig(env)` (sample defaults, env-overridable).
  */
 
 import type { Env, SpendRecord } from './types.js';
 import { resolveSpendConfig } from './types.js';
-import { hashToken } from './tokens.js';
+import { hashToken, deviceLocatorFromToken } from './tokens.js';
 
 export { hashToken };
 
-const KV_TTL_DAYS = 30;
+function spendConfig(env: Env) {
+  return resolveSpendConfig(env);
+}
+
+function ledgerStub(deviceLocator: string, env: Env) {
+  if (!env.SPEND_LEDGER) throw new Error('Spend ledger unavailable');
+  return env.SPEND_LEDGER.getByName(deviceLocator);
+}
 
 /**
- * Get today's spend record for a device token.
+ * Legacy shared tokens and missing bindings have no ledger.
+ */
+function locatorForLedger(deviceToken: string, env: Env): string | null {
+  const locator = deviceLocatorFromToken(deviceToken);
+  if (!locator || !env.SPEND_LEDGER) return null;
+  return locator;
+}
+
+/**
+ * Get today's spend record for a device token (legacy tokens → empty in-memory shape).
  */
 export async function getSpendRecord(
   deviceToken: string,
@@ -20,27 +36,61 @@ export async function getSpendRecord(
 ): Promise<SpendRecord> {
   const today = getTodayDateString();
   const tokenHash = await hashToken(deviceToken);
-  const key = spendKey(tokenHash, today);
+  const locator = locatorForLedger(deviceToken, env);
 
-  const stored = await env.USAGE_LEDGER.get(key, 'json');
-
-  if (stored) {
-    return stored as SpendRecord;
+  if (!locator) {
+    return {
+      tokenHash,
+      date: today,
+      spentUSD: 0,
+      reservedUSD: 0,
+      tasks: {},
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
-  // Initialize new record
+  const summary = await ledgerStub(locator, env).summary(today, spendConfig(env));
   return {
     tokenHash,
     date: today,
-    spentUSD: 0,
-    reservedUSD: 0,
-    tasks: {},
+    spentUSD: summary.spentUSD,
+    reservedUSD: summary.reservedUSD,
+    tasks: summary.byTask,
     lastUpdated: new Date().toISOString(),
   };
 }
 
 /**
- * Update spend record after a task completes.
+ * Reserve an upper bound for a paid attempt (no-op for legacy shared tokens).
+ */
+export async function reserveSpend(
+  deviceToken: string,
+  attemptId: string,
+  upperBoundUSD: number,
+  env: Env,
+  day: string = getTodayDateString()
+): Promise<{ ok: boolean; reason?: string }> {
+  const locator = locatorForLedger(deviceToken, env);
+  if (!locator) return { ok: false, reason: 'no_ledger' };
+  return ledgerStub(locator, env).reserve(attemptId, upperBoundUSD, day, spendConfig(env));
+}
+
+/**
+ * Reconcile a reservation to the actual provider cost.
+ */
+export async function reconcileSpend(
+  deviceToken: string,
+  attemptId: string,
+  actualUSD: number,
+  env: Env
+): Promise<{ ok: boolean; reason?: string }> {
+  const locator = locatorForLedger(deviceToken, env);
+  if (!locator) return { ok: false, reason: 'no_ledger' };
+  return ledgerStub(locator, env).reconcile(attemptId, actualUSD);
+}
+
+/**
+ * @deprecated KV path removed; use {@link reserveSpend} + {@link reconcileSpend}. Kept for tests migrating off KV.
  */
 export async function recordSpend(
   deviceToken: string,
@@ -48,20 +98,10 @@ export async function recordSpend(
   costUSD: number,
   env: Env
 ): Promise<void> {
-  const today = getTodayDateString();
-  const record = await getSpendRecord(deviceToken, env);
-  const key = spendKey(record.tokenHash, today);
-
-  record.spentUSD += costUSD;
-  record.tasks[task] = (record.tasks[task] || 0) + costUSD;
-  record.lastUpdated = new Date().toISOString();
-  
-  // Store with 30-day TTL
-  await env.USAGE_LEDGER.put(
-    key,
-    JSON.stringify(record),
-    { expirationTtl: 60 * 60 * 24 * KV_TTL_DAYS }
-  );
+  const attemptId = `test-record:${task}:${costUSD}`;
+  const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env);
+  if (!reserved.ok) return;
+  await reconcileSpend(deviceToken, attemptId, costUSD, env);
 }
 
 /**
@@ -73,7 +113,7 @@ export async function isHardCapReached(
 ): Promise<boolean> {
   const record = await getSpendRecord(deviceToken, env);
   const totalSpent = record.spentUSD + record.reservedUSD;
-  return totalSpent >= resolveSpendConfig(env).dailyCapUSD;
+  return totalSpent >= spendConfig(env).dailyCapUSD;
 }
 
 /**
@@ -85,7 +125,7 @@ export async function isSoftThresholdReached(
 ): Promise<boolean> {
   const record = await getSpendRecord(deviceToken, env);
   const totalSpent = record.spentUSD + record.reservedUSD;
-  return totalSpent >= resolveSpendConfig(env).softThresholdUSD;
+  return totalSpent >= spendConfig(env).softThresholdUSD;
 }
 
 /**
@@ -107,43 +147,29 @@ export async function getUsageSummary(
   byTask: Record<string, number>;
 }> {
   const record = await getSpendRecord(deviceToken, env);
-  
-  // M0-09 minimal: only today's data; full 7/30-day aggregation in M0-18
+  const config = spendConfig(env);
   const totalSpent = record.spentUSD + record.reservedUSD;
-  
+
   return {
-    last7DaysUSD: record.spentUSD, // Stub: same as today
-    last30DaysUSD: record.spentUSD, // Stub: same as today
-    dailyCapUSD: resolveSpendConfig(env).dailyCapUSD,
-    softThresholdUSD: resolveSpendConfig(env).softThresholdUSD,
+    last7DaysUSD: record.spentUSD,
+    last30DaysUSD: record.spentUSD,
+    dailyCapUSD: config.dailyCapUSD,
+    softThresholdUSD: config.softThresholdUSD,
     spentTodayUSD: record.spentUSD,
     reservedTodayUSD: record.reservedUSD,
-    softThresholdReached: totalSpent >= resolveSpendConfig(env).softThresholdUSD,
-    hardCapReached: totalSpent >= resolveSpendConfig(env).dailyCapUSD,
+    softThresholdReached: totalSpent >= config.softThresholdUSD,
+    hardCapReached: totalSpent >= config.dailyCapUSD,
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: record.tasks,
   };
 }
 
-/**
- * Get today's date as YYYY-MM-DD string.
- */
 function getTodayDateString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-/**
- * Get end of today as ISO timestamp.
- */
 function getEndOfDayISO(): string {
   const now = new Date();
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return endOfDay.toISOString();
-}
-
-/**
- * Generate KV key for spend record from a token hash.
- */
-function spendKey(tokenHash: string, date: string): string {
-  return `spend:${tokenHash}:${date}`;
 }

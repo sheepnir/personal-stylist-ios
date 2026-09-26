@@ -2,6 +2,16 @@
  * Shared in-memory KV for Workers unit tests.
  */
 
+import {
+  ageLedger,
+  emptyLedgerState,
+  reconcileAttempt,
+  reserveAttempt,
+  summarizeDay,
+  type LedgerState,
+} from '../src/ledgerCore.js';
+import type { SpendConfig } from '../src/types.js';
+
 export class MemoryKV {
   store = new Map<string, string>();
   async get(key: string, type?: 'json'): Promise<unknown> {
@@ -40,4 +50,45 @@ export function tokenRegistry(): DurableObjectNamespace {
       devices.set(id, { hash, issuedAt, status: 'active' }); return true;
     },
   }) } as unknown as DurableObjectNamespace;
+}
+
+/** In-memory per-device spend ledger stub (same API as DeviceSpendLedger). */
+export function spendLedger(): DurableObjectNamespace {
+  const byDevice = new Map<string, LedgerState>();
+
+  const stateFor = (deviceId: string): LedgerState => {
+    let state = byDevice.get(deviceId);
+    if (!state) {
+      state = emptyLedgerState();
+      byDevice.set(deviceId, state);
+    }
+    return state;
+  };
+
+  return {
+    getByName: (deviceId: string) => ({
+      reserve: async (
+        attemptId: string,
+        upperBoundUSD: number,
+        day: string,
+        config: SpendConfig
+      ) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date());
+        const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config);
+        return result;
+      },
+      reconcile: async (attemptId: string, actualUSD: number) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date());
+        return reconcileAttempt(state, attemptId, actualUSD);
+      },
+      summary: async (day: string, config: SpendConfig) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date());
+        return summarizeDay(state, day, config);
+      },
+      markUnknown: async () => ({ ok: false }),
+    }),
+  } as unknown as DurableObjectNamespace;
 }

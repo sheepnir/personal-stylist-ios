@@ -73,6 +73,8 @@ SOFT_THRESHOLD_USD = "0.50"
 ```
 
 Invalid or non-positive values fall back to the defaults; the soft threshold is clamped to the cap.
+Spend is tracked in a **per-device Durable Object** (`DeviceSpendLedger`, binding `SPEND_LEDGER`): one atomic upper-bound reservation per paid attempt, reconciled to actual cost afterward. The legacy shared `DEVICE_TOKEN` has no ledger (deterministic path only). The old `USAGE_LEDGER` KV namespace remains bound but is not read for spend.
+
 Optional `ATTRIBUTION_URL` sets the `HTTP-Referer` sent to the model provider (default
 `https://example.invalid`).
 
@@ -91,7 +93,7 @@ npm run dev     # wrangler dev --config wrangler.local.toml (needs the local con
 
 - **Platform:** Cloudflare Workers
 - **Auth:** Per-device opaque tokens (hashed in per-device Durable Objects)
-- **Storage:** KV for usage ledger; transactional SQLite Durable Objects for token registry (hashes only)
-- **Spend cap:** ledger + configurable cap/threshold helpers (see above); no model-call path exists yet, so nothing is enforced against real spend
+- **Storage:** KV binding retained (unused for spend); per-device Durable Objects for token registry (hashes only) and spend ledger (content-free, keyed by device locator)
+- **Spend cap:** per-device DO ledger with atomic reserve / reconcile, soft threshold and configurable hard cap (see above); no model-call path exists yet
 - **Path:** Deterministic only (no model calls yet)
 - **Privacy:** fail-closed provider data collection (`provider.data_collection: deny`)

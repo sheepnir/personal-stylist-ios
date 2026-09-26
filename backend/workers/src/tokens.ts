@@ -25,9 +25,13 @@ export async function hashToken(deviceToken: string): Promise<string> {
 }
 
 // Locator is random and public; the full token (locator + secret) is hashed for auth.
-function deviceId(token: string): string | null {
+export function deviceLocatorFromToken(token: string): string | null {
   const match = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.[A-Za-z0-9_-]{43}$/.exec(token);
   return match?.[1] ?? null;
+}
+
+function deviceId(token: string): string | null {
+  return deviceLocatorFromToken(token);
 }
 function registry(id: string, env: Env) {
   if (!env.DEVICE_TOKENS) throw new Error('Token registry unavailable');

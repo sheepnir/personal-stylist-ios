@@ -1,4 +1,5 @@
 export { DeviceTokenRegistry } from './tokenRegistry.js';
+export { DeviceSpendLedger } from './spendLedger.js';
 /**
  * Personal Stylist Cloudflare Workers backend - M0-09.
  * 

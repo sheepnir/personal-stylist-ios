@@ -1,4 +1,4 @@
-import { tokenRegistry } from './helpers.js';
+import { tokenRegistry, spendLedger, emptyLedger } from './helpers.js';
 /**
  * Device-token lifecycle tests (D-46 / #169).
  */
@@ -27,6 +27,7 @@ function env(kv = new MemoryKV()): Env {
   let requests = 0;
   return {
     DEVICE_TOKENS: tokenRegistry() as Env["DEVICE_TOKENS"],
+    SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
     DEVICE_TOKEN: LEGACY,
     ENROLLMENT_SECRET: ENROLLMENT,
     OPENROUTER_API_KEY: 'k',
