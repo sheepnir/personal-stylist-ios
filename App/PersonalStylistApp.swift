@@ -7,6 +7,12 @@ struct PersonalStylistApp: App {
     private let store: PersistenceStore
 
     init() {
+        do {
+            try BaselineCleanStart.runIfNeeded()
+        } catch {
+            // A failed wipe must not open an empty in-memory store in its place.
+            fatalError("Baseline clean start did not finish")
+        }
         let built: (ModelContainer, PersistenceStore)
         do {
             let container = try AppModelContainer.make(inMemory: false)
