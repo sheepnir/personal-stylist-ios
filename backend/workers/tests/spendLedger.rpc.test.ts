@@ -52,6 +52,15 @@ describe('DeviceSpendLedger RPC return values', () => {
       tasks: Object.create(null),
     };
     day.tasks['generate'] = 2_000_000;
+    day.attempts['legacy-settle'] = {
+      attemptId: 'legacy-settle',
+      upperBoundMicro: 2_000_000,
+      actualMicro: 2_000_000,
+      task: 'generate',
+      state: 'reconciled',
+      createdAt: `${DAY}T12:00:00.000Z`,
+      reconciledAt: `${DAY}T12:00:00.000Z`,
+    };
     state.days[DAY] = day;
 
     const { ledger } = createDeviceSpendLedgerHarness(state);

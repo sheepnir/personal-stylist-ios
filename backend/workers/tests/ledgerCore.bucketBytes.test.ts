@@ -54,7 +54,7 @@ export function buildTrueWorstCaseSettledDay(dayKey: string): DayRecord {
     const task = maxLengthTask(i % MAX_DISTINCT_TASKS_PER_DAY);
     attempts[attemptId] = {
       attemptId,
-      upperBoundMicro: micro,
+      upperBoundMicro: micro - 1,
       actualMicro: micro,
       task,
       state: 'reconciled',
@@ -172,6 +172,42 @@ describe('MAX_DISTINCT_TASKS_PER_DAY', () => {
       ).toEqual({ ok: true });
     }
     expect(reserveAttempt(state, 'extra-task', 0.01, DAY, CONFIG, 'new-task-name-xx', FROZEN_NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('rejects reconcile task override that would add a 33rd distinct task', () => {
+    const state = emptyLedgerState();
+    for (let i = 0; i < MAX_DISTINCT_TASKS_PER_DAY; i += 1) {
+      expect(
+        reserveAttempt(state, `a${i}`, 0.01, DAY, CONFIG, maxLengthTask(i), FROZEN_NOW)
+      ).toEqual({ ok: true });
+    }
+    expect(
+      reserveAttempt(state, 'dup-hold', 0.01, DAY, CONFIG, maxLengthTask(0), FROZEN_NOW)
+    ).toEqual({ ok: true });
+    const snapshot = JSON.stringify(state.days[DAY]);
+    expect(
+      reconcileAttempt(state, DAY, 'dup-hold', 0.005, 'new-33rd-task-xx')
+    ).toEqual({ ok: false, reason: 'invalid' });
+    expect(JSON.stringify(state.days[DAY])).toBe(snapshot);
+  });
+
+  it('true worst-case settled day cannot exceed task cap via reconcile override', () => {
+    const state = emptyLedgerState();
+    const day = buildTrueWorstCaseSettledDay(DAY);
+    const probeId = 'override-probe';
+    day.attempts[probeId] = {
+      attemptId: probeId,
+      upperBoundMicro: MICRO_USD,
+      task: maxLengthTask(0),
+      state: 'reserved',
+      createdAt: `${DAY}T01:00:00.000Z`,
+    };
+    day.reservedMicro += MICRO_USD;
+    state.days[DAY] = day;
+    expect(reconcileAttempt(state, DAY, probeId, 0.01, 'zzzzzzzzzzzzzzzz')).toEqual({
       ok: false,
       reason: 'invalid',
     });

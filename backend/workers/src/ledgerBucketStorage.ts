@@ -11,6 +11,7 @@ import {
   markDayStorageCorrupt,
   isDayStorageCorrupt,
   MAX_BUCKET_BYTES,
+  recomputeDayTotalsFromAttempts,
   type AttemptEntry,
   type AttemptState,
   type DayRecord,
@@ -21,6 +22,9 @@ export const BUCKET_KEY_PREFIX = 'bucket:';
 const LEGACY_LEDGER_KEY = 'ledger';
 
 const STATE_CODES = new Set([0, 1, 2]);
+
+/** JavaScript Date-safe epoch milliseconds (inclusive upper bound). */
+const MAX_LEDGER_EPOCH_MS = 8_640_000_000_000_000;
 
 /** Compact persisted attempt (attempt id is the map key). */
 interface StoredAttempt {
@@ -59,7 +63,12 @@ function isNonNegativeSafeInt(value: unknown): value is number {
 }
 
 function isEpochMs(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= MAX_LEDGER_EPOCH_MS
+  );
 }
 
 function validateStoredAttempt(id: string, raw: unknown): StoredAttempt | null {
@@ -70,13 +79,18 @@ function validateStoredAttempt(id: string, raw: unknown): StoredAttempt | null {
   if (!isNonNegativeSafeInt(a.u) || !isValidReserveTaskName(String(a.t))) {
     return null;
   }
-  if (!STATE_CODES.has(a.S as number)) {
+  const stateCode = a.S as number;
+  if (!STATE_CODES.has(stateCode)) {
     return null;
   }
   if (!isEpochMs(a.c)) {
     return null;
   }
-  if (a.a !== undefined && !isNonNegativeSafeInt(a.a)) {
+  if (stateCode === 0 || stateCode === 2) {
+    if (a.a !== undefined || a.R !== undefined) {
+      return null;
+    }
+  } else if (!isNonNegativeSafeInt(a.a)) {
     return null;
   }
   if (a.R !== undefined && !isEpochMs(a.R)) {
@@ -195,27 +209,55 @@ function decodeAttempt(id: string, stored: StoredAttempt): AttemptEntry {
   return entry;
 }
 
-export function decodeDayFromStorage(date: string, stored: StoredDayBucket): DayRecord {
-  const attempts = Object.create(null) as Record<string, AttemptEntry>;
-  for (const id of Object.keys(stored.a)) {
-    if (Object.hasOwn(stored.a, id)) {
-      attempts[id] = decodeAttempt(id, stored.a[id]!);
+function storedTasksMatchRecomputed(
+  stored: Record<string, number>,
+  recomputed: Record<string, number>
+): boolean {
+  const storedKeys = Object.keys(stored);
+  const recomputedKeys = Object.keys(recomputed);
+  if (storedKeys.length !== recomputedKeys.length) {
+    return false;
+  }
+  for (const task of storedKeys) {
+    if (!Object.hasOwn(stored, task) || stored[task] !== recomputed[task]) {
+      return false;
     }
   }
-  const tasks = Object.create(null) as Record<string, number>;
-  for (const task of Object.keys(stored.k)) {
-    if (Object.hasOwn(stored.k, task)) {
-      tasks[task] = stored.k[task]!;
+  return true;
+}
+
+/** Decode one day bucket; null when attempts disagree with stored totals or decode throws. */
+export function decodeDayFromStorage(date: string, stored: StoredDayBucket): DayRecord | null {
+  try {
+    const attempts = Object.create(null) as Record<string, AttemptEntry>;
+    for (const id of Object.keys(stored.a)) {
+      if (Object.hasOwn(stored.a, id)) {
+        attempts[id] = decodeAttempt(id, stored.a[id]!);
+      }
     }
+    const recomputed = recomputeDayTotalsFromAttempts(attempts);
+    if (recomputed === null) {
+      return null;
+    }
+    if (
+      recomputed.spentMicro !== stored.s ||
+      recomputed.reservedMicro !== stored.r ||
+      recomputed.overReservationCount !== stored.o ||
+      !storedTasksMatchRecomputed(stored.k, recomputed.tasks)
+    ) {
+      return null;
+    }
+    return hydrateDayRecord({
+      date,
+      spentMicro: recomputed.spentMicro,
+      reservedMicro: recomputed.reservedMicro,
+      overReservationCount: recomputed.overReservationCount,
+      attempts,
+      tasks: recomputed.tasks,
+    });
+  } catch {
+    return null;
   }
-  return hydrateDayRecord({
-    date,
-    spentMicro: stored.s,
-    reservedMicro: stored.r,
-    overReservationCount: stored.o,
-    attempts,
-    tasks,
-  });
 }
 
 /** UTF-8 byte length of the compact JSON persisted for one day bucket. */
@@ -279,7 +321,12 @@ function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): v
     markDayStorageCorrupt(state, day);
     return;
   }
-  state.days[day] = decodeDayFromStorage(day, stored);
+  const decoded = decodeDayFromStorage(day, stored);
+  if (!decoded) {
+    markDayStorageCorrupt(state, day);
+    return;
+  }
+  state.days[day] = decoded;
 }
 
 export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
@@ -293,8 +340,13 @@ export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
       const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record)));
       if (!encoded) {
         markDayStorageCorrupt(state, day);
+        continue;
+      }
+      const decoded = decodeDayFromStorage(day, encoded);
+      if (!decoded) {
+        markDayStorageCorrupt(state, day);
       } else {
-        state.days[day] = decodeDayFromStorage(day, encoded);
+        state.days[day] = decoded;
       }
     }
   }

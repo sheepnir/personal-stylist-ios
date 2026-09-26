@@ -118,6 +118,77 @@ describe('loadLedgerFromStorage fail-closed', () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('marks day corrupt when stored reserved total disagrees with open holds (r:0, open u)', () => {
+    const createdMs = Date.parse(`${DAY}T01:00:00.000Z`);
+    const kv = memoryKv({
+      [bucketStorageKey(DAY)]: {
+        s: 0,
+        r: 0,
+        o: 0,
+        a: {
+          openhold: { u: 1_000_000, t: 'generate', S: 0, c: createdMs },
+        },
+        k: {},
+      },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, DAY)).toBe(true);
+    expect(reserveAttempt(state, 'new', 0.1, DAY, CONFIG, 'generate', NOW)).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
+  });
+
+  it('marks day corrupt when stored spent disagrees with reconciled attempts', () => {
+    const createdMs = Date.parse(`${DAY}T01:00:00.000Z`);
+    const kv = memoryKv({
+      [bucketStorageKey(DAY)]: {
+        s: 9_999_999,
+        r: 0,
+        o: 0,
+        a: {
+          settled1: { u: 1_000_000, t: 'generate', S: 1, a: 1_000_000, c: createdMs },
+        },
+        k: { generate: 1_000_000 },
+      },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, DAY)).toBe(true);
+  });
+
+  it('marks day corrupt when stored byTask disagrees with reconciled attempts', () => {
+    const createdMs = Date.parse(`${DAY}T01:00:00.000Z`);
+    const kv = memoryKv({
+      [bucketStorageKey(DAY)]: {
+        s: 1_000_000,
+        r: 0,
+        o: 0,
+        a: {
+          settled1: { u: 1_000_000, t: 'generate', S: 1, a: 1_000_000, c: createdMs },
+        },
+        k: { generate: 2_000_000 },
+      },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, DAY)).toBe(true);
+  });
+
+  it('marks day corrupt when attempt created epoch exceeds Date-safe range', () => {
+    const kv = memoryKv({
+      [bucketStorageKey(DAY)]: {
+        s: 0,
+        r: 0,
+        o: 0,
+        a: {
+          badtime: { u: 1, t: 'generate', S: 0, c: 9_000_000_000_000_000 },
+        },
+        k: {},
+      },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, DAY)).toBe(true);
+  });
 });
 
 function maxLengthTaskUnique(index: number): string {
@@ -138,7 +209,7 @@ function buildPersistOversizedDay(dayKey: string) {
     const task = maxLengthTaskUnique(i);
     attempts[attemptId] = {
       attemptId,
-      upperBoundMicro: micro,
+      upperBoundMicro: micro - 1,
       actualMicro: micro,
       task,
       state: 'reconciled',
