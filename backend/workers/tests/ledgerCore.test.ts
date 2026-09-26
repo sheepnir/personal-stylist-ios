@@ -5,9 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   ageLedger,
+  actualUsdToMicro,
   capUsdToMicro,
   costUsdToMicro,
   emptyLedgerState,
+  ledgerExceedsBucketLimit,
   pruneOldDays,
   reconcileAttempt,
   removeEmptyDayBucket,
@@ -90,6 +92,16 @@ describe('ledgerCore reserve / reconcile', () => {
     const entry = state.days[DAY].attempts.a1;
     expect(entry.overReservation).toBe(true);
     expect(summarizeDay(state, DAY, CONFIG).overReservationCount).toBe(1);
+  });
+
+  it('accepts reconcile actual cost above 10000 USD when representable in micro-USD', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'big', 0.01, DAY, { dailyCapUSD: 20_000, softThresholdUSD: 10_000 });
+    const actualUsd = 15_000;
+    expect(actualUsdToMicro(actualUsd).ok).toBe(true);
+    expect(reconcileAttempt(state, 'big', actualUsd)).toEqual({ ok: true });
+    expect(state.days[DAY].spentMicro).toBe(15_000 * MICRO_USD);
+    expect(state.days[DAY].attempts.big.overReservation).toBe(true);
   });
 
   it('tracks task named constructor without prototype pollution', () => {
@@ -272,4 +284,70 @@ describe('ledgerCore retention', () => {
     expect(ageLedger(state, new Date(`${DAY}T00:00:00.000Z`))).toBe(true);
     expect(state.days['1999-01-01']).toBeUndefined();
   });
+
+  it('does not delete today when 31 stale open buckets exceed the bucket limit', () => {
+    const now = new Date(`${DAY}T12:00:00.000Z`);
+    const state = emptyLedgerState();
+    const capMicro = 1_000_000;
+
+    for (let offset = 1; offset <= 31; offset += 1) {
+      const dayKey = utcDayKeyMinusDays(DAY, offset);
+      state.days[dayKey] = openReservedDay(dayKey, `stale-${offset}`, 10_000);
+    }
+
+    state.days[DAY] = {
+      date: DAY,
+      spentMicro: capMicro,
+      reservedMicro: 0,
+      overReservationCount: 0,
+      attempts: {
+        settled: {
+          attemptId: 'settled',
+          upperBoundMicro: capMicro,
+          actualMicro: capMicro,
+          task: 'generate',
+          state: 'reconciled',
+          createdAt: now.toISOString(),
+          reconciledAt: now.toISOString(),
+        },
+      },
+      tasks: Object.create(null),
+    };
+    state.days[DAY].tasks.generate = capMicro;
+
+    pruneOldDays(state, now);
+
+    expect(state.days[DAY]).toBeDefined();
+    expect(state.days[DAY].spentMicro).toBe(capMicro);
+    expect(ledgerExceedsBucketLimit(state)).toBe(true);
+    expect(summarizeDay(state, DAY, CONFIG).hardCapReached).toBe(true);
+    expect(reserveAttempt(state, 'blocked', 0.01, DAY, CONFIG, 'unknown', now)).toEqual({
+      ok: false,
+      reason: 'hard_cap',
+    });
+  });
 });
+
+function utcDayKeyMinusDays(day: string, daysBack: number): string {
+  const ms = Date.parse(`${day}T00:00:00.000Z`) - daysBack * 86_400_000;
+  return new Date(ms).toISOString().split('T')[0];
+}
+
+function openReservedDay(dayKey: string, attemptId: string, upperBoundMicro: number) {
+  return {
+    date: dayKey,
+    spentMicro: 0,
+    reservedMicro: upperBoundMicro,
+    overReservationCount: 0,
+    attempts: {
+      [attemptId]: {
+        attemptId,
+        upperBoundMicro,
+        task: 'generate',
+        state: 'reserved' as const,
+        createdAt: new Date().toISOString(),
+      },
+    },
+    tasks: Object.create(null),
+  };
+}

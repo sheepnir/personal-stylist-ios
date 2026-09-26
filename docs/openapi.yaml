@@ -1527,9 +1527,10 @@ components:
         hardCapReached: { type: boolean }
         ledgerConfigStatus:
           type: string
-          enum: [ok, config_error, ledger_unavailable]
+          enum: [ok, config_error, ledger_unavailable, legacy]
           description: |
             `ok` when caps were read from valid configuration and the ledger responded.
+            `legacy` for the shared legacy device token (no per-device spend ledger).
             `config_error` or `ledger_unavailable` fail closed (treat caps as reached; do not infer limits from null caps).
         ledgerDayEndsAt:
           type: [string, 'null']

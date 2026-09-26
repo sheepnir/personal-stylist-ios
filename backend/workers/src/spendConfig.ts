@@ -13,8 +13,11 @@ export type ResolvedSpendConfig =
 const PLAIN_DECIMAL_USD = /^\d+(\.\d+)?$/;
 
 function parsePlainDecimalUsd(raw: string | undefined): number | null | 'unset' {
-  if (raw === undefined || raw.trim() === '') {
+  if (raw === undefined) {
     return 'unset';
+  }
+  if (raw.trim() === '') {
+    return null;
   }
   const trimmed = raw.trim();
   if (!PLAIN_DECIMAL_USD.test(trimmed)) {
@@ -47,8 +50,8 @@ function logSpendConfigError(): void {
 }
 
 /**
- * Resolve spend caps from env. Unset vars use sample defaults; an explicitly invalid
- * value or one that does not convert to safe positive micro-USD is a config error.
+ * Resolve spend caps from env. Only absent vars use sample defaults; an explicitly empty
+ * or whitespace-only value, invalid token, or non-representable cap is a config error.
  */
 export function resolveSpendConfig(
   env: Pick<Env, 'DAILY_CAP_USD' | 'SOFT_THRESHOLD_USD'>

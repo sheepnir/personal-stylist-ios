@@ -93,6 +93,12 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(missing.ledgerAccess).toBe('unavailable');
   });
 
+  it('legacy usage summary reports ledgerConfigStatus legacy', async () => {
+    const { env } = envWithSpend();
+    const usage = await getUsageSummary('legacy-shared', env);
+    expect(usage.ledgerConfigStatus).toBe('legacy');
+  });
+
   it('fail-closed when summary RPC rejects after getByName', async () => {
     const token = generateDeviceToken();
     const env: Env = {

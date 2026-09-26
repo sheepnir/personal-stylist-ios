@@ -5,8 +5,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveSpendConfig, resetSpendConfigLogStateForTests } from '../src/spendConfig.js';
 import { SPEND_CONFIG } from '../src/types.js';
-import { getUsageSummary, reserveSpend, isHardCapReached } from '../src/usage.js';
-import { generateDeviceToken } from '../src/tokens.js';
+import { getUsageSummary, reserveSpend, isHardCapReached, reconcileSpend } from '../src/usage.js';
+import { generateDeviceToken, deviceLocatorFromToken } from '../src/tokens.js';
 import { createSpendLedgerMock, emptyLedger } from './helpers.js';
 import type { Env } from '../src/types.js';
 
@@ -22,6 +22,10 @@ describe('resolveSpendConfig', () => {
       dailyCapUSD: SPEND_CONFIG.dailyCapUSD,
       softThresholdUSD: SPEND_CONFIG.softThresholdUSD,
     });
+  });
+
+  it.each(['', '   '])('treats explicitly empty DAILY_CAP_USD=%j as config error', (raw) => {
+    expect(resolveSpendConfig({ DAILY_CAP_USD: raw })).toEqual({ configError: true });
   });
 
   it.each(['abc', '1,00', '$1', '-1', '0', 'NaN', '1e400', '0x10'])(
@@ -69,5 +73,25 @@ describe('invalid deployment config fail-closed in usage', () => {
     expect(usage.dailyCapUSD).toBeNull();
     expect(usage.softThresholdUSD).toBeNull();
     expect(usage.ledgerConfigStatus).toBe('config_error');
+  });
+
+  it('still reconciles an existing reservation when deployment config is invalid', async () => {
+    const mock = createSpendLedgerMock();
+    const validEnv: Env = {
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: mock.namespace as Env['SPEND_LEDGER'],
+    };
+    const invalidEnv: Env = { ...validEnv, DAILY_CAP_USD: 'abc' };
+    const token = generateDeviceToken();
+    expect(await reserveSpend(token, 'held-1', 0.25, validEnv)).toEqual({ ok: true });
+    expect(await reserveSpend(token, 'held-2', 0.1, invalidEnv)).toEqual({
+      ok: false,
+      reason: 'config_error',
+    });
+    expect(await reconcileSpend(token, 'held-1', 0.12, invalidEnv)).toEqual({ ok: true });
+    const locator = deviceLocatorFromToken(token)!;
+    const day = mock.dumpState(locator).days[new Date().toISOString().split('T')[0]];
+    expect(day?.spentMicro).toBeGreaterThanOrEqual(120_000);
   });
 });

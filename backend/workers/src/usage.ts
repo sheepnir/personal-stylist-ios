@@ -9,7 +9,7 @@ import { hashToken, deviceLocatorFromToken } from './tokens.js';
 
 export { hashToken };
 
-export type LedgerConfigStatus = 'ok' | 'config_error' | 'ledger_unavailable';
+export type LedgerConfigStatus = 'ok' | 'config_error' | 'ledger_unavailable' | 'legacy';
 
 export interface UsageSummaryResponse {
   last7DaysUSD: number;
@@ -167,9 +167,6 @@ export async function reconcileSpend(
   task?: string
 ): Promise<{ ok: boolean; reason?: string }> {
   const access = await accessLedger(deviceToken, env);
-  if (envConfigError(env)) {
-    return { ok: false, reason: 'config_error' };
-  }
   if (access.kind === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
   }
@@ -283,7 +280,7 @@ export async function getUsageSummary(
     hardCapReached: totalSpent >= SPEND_CONFIG.dailyCapUSD,
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: record.tasks,
-    ledgerConfigStatus: 'ok',
+    ledgerConfigStatus: 'legacy',
   };
 }
 

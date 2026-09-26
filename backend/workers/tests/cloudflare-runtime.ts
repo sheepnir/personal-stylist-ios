@@ -1,4 +1,4 @@
-// Node unit tests mock RPC namespaces; actual storage behavior is tested in workerd.
+// Node unit tests mock Durable Object base state; ledger behavior uses fake storage in tests, not workerd.
 export class DurableObject<Env = unknown> {
   protected ctx: DurableObjectState;
   protected env: Env;

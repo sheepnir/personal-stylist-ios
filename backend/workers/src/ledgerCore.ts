@@ -10,11 +10,6 @@ export const MICRO_USD = 1_000_000;
 /** Largest deployable daily cap (USD); larger configured values are rejected. */
 export const MAX_DEPLOYABLE_CAP_USD = 1_000_000;
 
-/** Largest actual provider cost (USD) accepted on a single reconcile. */
-export const MAX_SINGLE_RECONCILE_USD = 10_000;
-
-export const MAX_SINGLE_RECONCILE_MICRO = MAX_SINGLE_RECONCILE_USD * MICRO_USD;
-
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
 
 export interface AttemptEntry {
@@ -107,6 +102,29 @@ export function costUsdToMicro(usd: number): CostMicroResult {
   }
   const micro = snapped <= 0 ? 1 : Math.max(1, Math.ceil(snapped));
   if (micro > Number.MAX_SAFE_INTEGER) {
+    return { ok: false };
+  }
+  return { ok: true, micro };
+}
+
+/** Reconcile actual cost: non-negative finite USD → safe integer micro-USD (0 allowed). */
+export function actualUsdToMicro(usd: number): CostMicroResult {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) {
+    return { ok: false };
+  }
+  if (usd === 0) {
+    return { ok: true, micro: 0 };
+  }
+  const product = usd * MICRO_USD;
+  if (!Number.isFinite(product)) {
+    return { ok: false };
+  }
+  const snapped = Math.round(product * 1000) / 1000;
+  if (!Number.isFinite(snapped)) {
+    return { ok: false };
+  }
+  const micro = snapped <= 0 ? 1 : Math.max(1, Math.ceil(snapped));
+  if (!Number.isSafeInteger(micro)) {
     return { ok: false };
   }
   return { ok: true, micro };
@@ -254,25 +272,53 @@ export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
 }
 
 function enforceBucketLimit(state: LedgerState, now: Date): void {
-  const keys = Object.keys(state.days);
-  if (keys.length <= LEDGER_DAY_BUCKETS) {
+  if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
     return;
   }
-  const sorted = keys.sort((a, b) => {
-    const ageA = isValidLedgerDayKey(a) ? utcDayAgeDays(a, now) : Number.MAX_SAFE_INTEGER;
-    const ageB = isValidLedgerDayKey(b) ? utcDayAgeDays(b, now) : Number.MAX_SAFE_INTEGER;
-    return ageB - ageA;
-  });
-  for (const key of sorted) {
+
+  const today = utcDayString(now);
+
+  let oldestOpenValidKey: string | null = null;
+  for (const key of Object.keys(state.days)) {
+    const day = state.days[key];
+    if (!dayHasOpenAttempts(day) || !isValidLedgerDayKey(key)) {
+      continue;
+    }
+    if (oldestOpenValidKey === null || key < oldestOpenValidKey) {
+      oldestOpenValidKey = key;
+    }
+  }
+
+  const deletable = Object.keys(state.days)
+    .filter((key) => {
+      if (key === today) {
+        return false;
+      }
+      const day = state.days[key];
+      if (dayHasOpenAttempts(day)) {
+        return false;
+      }
+      if (isValidLedgerDayKey(key) && oldestOpenValidKey !== null && key >= oldestOpenValidKey) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const ageA = isValidLedgerDayKey(a) ? utcDayAgeDays(a, now) : Number.MAX_SAFE_INTEGER;
+      const ageB = isValidLedgerDayKey(b) ? utcDayAgeDays(b, now) : Number.MAX_SAFE_INTEGER;
+      return ageB - ageA;
+    });
+
+  for (const key of deletable) {
     if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
       break;
     }
-    const day = state.days[key];
-    if (dayHasOpenAttempts(day)) {
-      continue;
-    }
     delete state.days[key];
   }
+}
+
+export function ledgerExceedsBucketLimit(state: LedgerState): boolean {
+  return Object.keys(state.days).length > LEDGER_DAY_BUCKETS;
 }
 
 function dayHasOpenAttempts(day: DayRecord): boolean {
@@ -366,6 +412,9 @@ export function reserveAttempt(
   if (!configMicro.ok) {
     return { ok: false, reason: 'config_error' };
   }
+  if (ledgerExceedsBucketLimit(state)) {
+    return { ok: false, reason: 'hard_cap' };
+  }
   const { capMicro } = configMicro;
   const upperBoundMicro = bounds.micro;
 
@@ -425,7 +474,7 @@ export function reconcileAttempt(
   actualUSD: number,
   task?: string
 ): ReconcileResult {
-  const actual = costUsdToMicro(actualUSD);
+  const actual = actualUsdToMicro(actualUSD);
   if (!attemptId || !actual.ok) {
     return { ok: false, reason: 'invalid' };
   }
@@ -437,10 +486,6 @@ export function reconcileAttempt(
 
   const { day, entry } = located;
   const actualMicro = actual.micro;
-
-  if (actualMicro > MAX_SINGLE_RECONCILE_MICRO) {
-    return { ok: false, reason: 'invalid' };
-  }
 
   if (entry.state === 'reconciled' && entry.actualMicro === actualMicro) {
     return { ok: true };
