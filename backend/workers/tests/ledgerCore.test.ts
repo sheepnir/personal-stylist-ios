@@ -138,7 +138,7 @@ describe('ledgerCore reserve / reconcile', () => {
   });
 
   it('idempotent reserve retry succeeds after reservation day becomes past or bucket limit is hit', () => {
-    const reserveDay = utcDayKeyMinusDays(DAY, -1);
+    const reserveDay = DAY;
     const nowAtReserve = new Date(`${DAY}T12:00:00.000Z`);
     const state = emptyLedgerState();
     expect(
@@ -291,6 +291,15 @@ describe('ledgerCore future day keys', () => {
   it('rejects reserve on a day more than one UTC day ahead', () => {
     const state = emptyLedgerState();
     expect(reserveAttempt(state, 'a1', 0.1, '2026-09-28', CONFIG, 'unknown', NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('rejects reserve for tomorrow UTC day', () => {
+    const state = emptyLedgerState();
+    const tomorrow = utcDayKeyMinusDays(DAY, -1);
+    expect(reserveAttempt(state, 'a1', 0.1, tomorrow, CONFIG, 'generate', NOW)).toEqual({
       ok: false,
       reason: 'invalid',
     });

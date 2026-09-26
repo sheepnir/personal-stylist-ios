@@ -201,36 +201,78 @@ describe('loadLedgerFromStorage fail-closed', () => {
     const state = loadLedgerFromStorage(kv);
     expect(isDayStorageCorrupt(state, DAY)).toBe(true);
   });
+});
 
-  it('legacy monolith marks only malformed days corrupt and leaves valid days loaded', () => {
-    const createdMs = Date.parse(`${DAY}T01:00:00.000Z`);
-    const kv = memoryKv({
-      ledger: {
-        days: {
-          [DAY]: {
-            date: DAY,
-            spentMicro: 0,
-            reservedMicro: 1_000_000,
-            overReservationCount: 0,
-            attempts: {
-              okhold: {
-                attemptId: 'okhold',
-                upperBoundMicro: 1_000_000,
-                task: 'generate',
-                state: 'reserved',
-                createdAt: new Date(createdMs).toISOString(),
-              },
-            },
-            tasks: Object.create(null),
-          },
-          '2026-09-25': null,
+describe('legacy monolith key fail-closed', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('blocks the entire DO while the ledger key remains untouched after writes', () => {
+    const legacyPayload = {
+      days: {
+        [DAY]: {
+          date: DAY,
+          spentMicro: 0,
+          reservedMicro: 0,
+          overReservationCount: 0,
+          attempts: Object.create(null),
+          tasks: Object.create(null),
         },
       },
+    };
+    const { ledger, kvHas } = createDeviceSpendLedgerHarness(undefined, {
+      initialKv: { ledger: legacyPayload },
     });
-    const state = loadLedgerFromStorage(kv);
-    expect(isDayStorageCorrupt(state, '2026-09-25')).toBe(true);
-    expect(state.days[DAY]?.reservedMicro).toBe(1_000_000);
-    expect(reserveAttempt(state, 'next', 0.01, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
+    expect(loadLedgerFromStorage(memoryKv({ ledger: legacyPayload })).legacyMonolithPresent).toBe(true);
+    expect(ledger.reserve('blocked', 0.01, DAY, CONFIG, 'generate')).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
+    expect(ledger.reconcile(DAY, 'blocked', 0.01)).toEqual({ ok: false, reason: 'storage_error' });
+    const summary = ledger.summary(DAY, CONFIG);
+    expect(summary.hardCapReached).toBe(true);
+    expect(summary.attemptLimitReached).toBe(true);
+    expect(kvHas('ledger')).toBe(true);
+  });
+
+  it('legacy repro: corrupt ledger today plus reserve stays fail-closed and never deletes ledger', () => {
+    const legacyPayload = {
+      days: {
+        [DAY]: null,
+        '2026-09-25': {
+          date: '2026-09-25',
+          spentMicro: 0,
+          reservedMicro: 0,
+          overReservationCount: 0,
+          attempts: Object.create(null),
+          tasks: Object.create(null),
+        },
+      },
+    };
+    const tomorrow = '2026-09-27';
+    const { ledger, kvHas } = createDeviceSpendLedgerHarness(undefined, {
+      initialKv: { ledger: legacyPayload },
+    });
+    expect(ledger.reserve('today-try', 0.01, DAY, CONFIG, 'generate')).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
+    expect(ledger.reserve('tomorrow-try', 0.01, tomorrow, CONFIG, 'generate')).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
+    expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(true);
+    expect(kvHas('ledger')).toBe(true);
+  });
+
+  it('without a legacy key, reserve and summary behave normally', () => {
+    const { ledger } = createDeviceSpendLedgerHarness();
+    expect(ledger.reserve('ok', 0.01, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(false);
   });
 });
 

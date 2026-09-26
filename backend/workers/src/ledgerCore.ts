@@ -42,6 +42,8 @@ export interface LedgerState {
   days: Record<string, DayRecord>;
   /** Persisted buckets that failed validation — fail-closed for that UTC day. */
   corruptDays?: Record<string, true>;
+  /** Old monolith `ledger` key still present — entire DO is fail-closed until cleared. */
+  legacyMonolithPresent?: true;
 }
 
 /** Retain today plus the 30 preceding UTC calendar days (31 buckets). */
@@ -287,6 +289,10 @@ export function isDayStorageCorrupt(state: LedgerState, day: string): boolean {
   return state.corruptDays !== undefined && Object.hasOwn(state.corruptDays, day);
 }
 
+export function isLegacyStorageBlocked(state: LedgerState): boolean {
+  return state.legacyMonolithPresent === true;
+}
+
 /** Reserve / reconcile attempt costs above {@link MAX_ATTEMPT_USD} are rejected as invalid. */
 export function boundedAttemptUsdToMicro(usd: number): CostMicroResult {
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0 || usd > MAX_ATTEMPT_USD) {
@@ -450,13 +456,12 @@ function utcDayAgeDays(day: string, now: Date): number {
   return Math.floor((nowMs - dayMs) / 86_400_000);
 }
 
-/** Valid ledger day for mutations: today or at most one UTC calendar day ahead. */
+/** Valid ledger day for new reserves: server's current UTC calendar day only. */
 export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
   if (!isValidLedgerDayKey(day)) {
     return false;
   }
-  const age = utcDayAgeDays(day, now);
-  return age >= -1 && age <= 0;
+  return utcDayAgeDays(day, now) === 0;
 }
 
 const UNSAFE_TASK_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
@@ -643,6 +648,9 @@ export function reserveAttempt(
   task = 'unknown',
   now: Date = new Date()
 ): ReserveResult {
+  if (isLegacyStorageBlocked(state)) {
+    return { ok: false, reason: 'storage_error' };
+  }
   if (isDayStorageCorrupt(state, day)) {
     return { ok: false, reason: 'storage_error' };
   }
@@ -733,6 +741,9 @@ export function reconcileAttempt(
   actualUSD: number,
   task?: string
 ): ReconcileResult {
+  if (isLegacyStorageBlocked(state)) {
+    return { ok: false, reason: 'storage_error' };
+  }
   if (isDayStorageCorrupt(state, day)) {
     return { ok: false, reason: 'storage_error' };
   }
@@ -815,6 +826,9 @@ export function summarizeDay(
   day: string,
   config: SpendConfig
 ): DaySummary {
+  if (isLegacyStorageBlocked(state)) {
+    return failClosedDaySummary(day);
+  }
   if (isDayStorageCorrupt(state, day)) {
     return failClosedDaySummary(day);
   }

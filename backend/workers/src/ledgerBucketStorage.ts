@@ -343,18 +343,9 @@ function listValidBucketDaysFromStorage(kv: ListableKv): string[] {
   return days;
 }
 
-/** Day keys present in storage before a transaction (valid bucket keys + legacy monolith days). */
+/** Day keys present in storage (per-day bucket keys only). */
 export function dayKeysInStorage(kv: ReadableKv): Set<string> {
-  const keys = new Set(listValidBucketDaysFromStorage(kv));
-  const legacy = kv.get<LedgerState>(LEGACY_LEDGER_KEY);
-  if (legacy?.days) {
-    for (const day of Object.keys(legacy.days)) {
-      if (isValidLedgerDayKey(day)) {
-        keys.add(day);
-      }
-    }
-  }
-  return keys;
+  return new Set(listValidBucketDaysFromStorage(kv));
 }
 
 function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): void {
@@ -382,40 +373,9 @@ function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): v
 
 export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
   const state = emptyLedgerState();
-  const legacy = kv.get<unknown>(LEGACY_LEDGER_KEY);
-  if (legacy !== undefined && legacy !== null && typeof legacy === 'object' && 'days' in legacy) {
-    const daysRaw = (legacy as { days?: unknown }).days;
-    if (daysRaw !== null && typeof daysRaw === 'object') {
-      for (const [day, record] of Object.entries(daysRaw as Record<string, unknown>)) {
-        if (!isValidLedgerDayKey(day)) {
-          continue;
-        }
-        try {
-          if (record === null || typeof record !== 'object') {
-            markDayStorageCorrupt(state, day);
-            continue;
-          }
-          const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record as DayRecord)));
-          if (!encoded) {
-            markDayStorageCorrupt(state, day);
-            continue;
-          }
-          const encodedBytes = persistedBucketJsonByteLength(encoded);
-          if (storedDayBucketViolatesLedgerLimits(encoded, encodedBytes)) {
-            markDayStorageCorrupt(state, day);
-            continue;
-          }
-          const decoded = decodeDayFromStorage(day, encoded);
-          if (!decoded) {
-            markDayStorageCorrupt(state, day);
-          } else {
-            state.days[day] = decoded;
-          }
-        } catch {
-          markDayStorageCorrupt(state, day);
-        }
-      }
-    }
+  if (kv.get(LEGACY_LEDGER_KEY) !== undefined) {
+    state.legacyMonolithPresent = true;
+    return state;
   }
   for (const day of listValidBucketDaysFromStorage(kv)) {
     loadStoredDayBucket(kv, day, state);
@@ -423,7 +383,7 @@ export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
   return state;
 }
 
-/** Write touched day buckets; delete pruned days and drop the legacy monolith key. */
+/** Write touched day buckets; delete pruned day bucket keys only. */
 export type PersistLedgerResult = { ok: true } | { ok: false; reason: 'bucket_too_large' };
 
 export function persistLedgerToStorage(
@@ -431,12 +391,14 @@ export function persistLedgerToStorage(
   state: LedgerState,
   dayKeysBefore: Set<string>
 ): PersistLedgerResult {
+  if (state.legacyMonolithPresent) {
+    return { ok: true };
+  }
   for (const day of Object.keys(state.days)) {
     if (storedDayBucketJsonByteLength(state.days[day]!) > MAX_BUCKET_BYTES) {
       return { ok: false, reason: 'bucket_too_large' };
     }
   }
-  kv.delete(LEGACY_LEDGER_KEY);
   const dayKeysAfter = new Set(Object.keys(state.days));
   for (const day of dayKeysBefore) {
     if (!dayKeysAfter.has(day) && !isDayStorageCorrupt(state, day)) {

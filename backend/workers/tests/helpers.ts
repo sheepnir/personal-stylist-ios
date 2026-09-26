@@ -123,6 +123,7 @@ export function createDeviceSpendLedgerHarness(
   putCount: () => number;
   resetPutCount: () => void;
   getStoredState: () => LedgerState | undefined;
+  kvHas: (key: string) => boolean;
 } {
   const kvStore = new Map<string, unknown>();
   const putLog: unknown[] = [];
@@ -176,7 +177,9 @@ export function createDeviceSpendLedgerHarness(
       const hasDays = Object.keys(state.days).length > 0;
       const hasCorrupt =
         state.corruptDays !== undefined && Object.keys(state.corruptDays).length > 0;
-      return hasDays || hasCorrupt ? state : undefined;
+      const legacyBlocked = state.legacyMonolithPresent === true;
+      return hasDays || hasCorrupt || legacyBlocked ? state : undefined;
     },
+    kvHas: (key: string) => kvStore.has(key),
   };
 }

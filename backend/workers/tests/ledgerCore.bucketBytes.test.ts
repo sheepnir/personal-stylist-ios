@@ -127,7 +127,7 @@ describe('DeviceSpendLedger steady-state storage', () => {
     expect(ledger.summary(tomorrow, CONFIG).attemptLimitReached).toBe(true);
     expect(ledger.reserve('extra-tomorrow', 0.01, tomorrow, CONFIG, maxLengthTask(0))).toEqual({
       ok: false,
-      reason: 'attempt_limit',
+      reason: 'invalid',
     });
   });
 });
