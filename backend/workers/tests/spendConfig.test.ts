@@ -48,7 +48,7 @@ describe('resolveSpendConfig', () => {
     });
   });
 
-  it.each(['0.0000004', '10000000000'])(
+  it.each(['0.0000004', '10000000000', '101'])(
     'rejects cap %s that does not convert to safe positive micro-USD',
     (raw) => {
       resetSpendConfigLogStateForTests();

@@ -44,6 +44,8 @@ interface StoredDayBucket {
   o: number;
   a: Record<string, StoredAttempt>;
   k: Record<string, number>;
+  /** Hard-cap lock marker (1) after actual-over-ceiling reconcile. */
+  H?: 1;
 }
 
 const STATE_TO_CODE: Record<AttemptState, 0 | 1 | 2> = {
@@ -76,7 +78,7 @@ function validateStoredAttempt(id: string, raw: unknown): StoredAttempt | null {
     return null;
   }
   const a = raw as Record<string, unknown>;
-  if (!isNonNegativeSafeInt(a.u) || !isValidReserveTaskName(String(a.t))) {
+  if (!isNonNegativeSafeInt(a.u) || typeof a.t !== 'string' || !isValidReserveTaskName(a.t)) {
     return null;
   }
   const stateCode = a.S as number;
@@ -111,6 +113,9 @@ export function validateStoredDayBucket(raw: unknown): StoredDayBucket | null {
   if (!isNonNegativeSafeInt(top.s) || !isNonNegativeSafeInt(top.r) || !isNonNegativeSafeInt(top.o)) {
     return null;
   }
+  if (top.H !== undefined && top.H !== 1) {
+    return null;
+  }
   if (typeof top.a !== 'object' || top.a === null || typeof top.k !== 'object' || top.k === null) {
     return null;
   }
@@ -137,7 +142,7 @@ export function validateStoredDayBucket(raw: unknown): StoredDayBucket | null {
     }
     tasks[task] = tasksRaw[task] as number;
   }
-  return { s: top.s, r: top.r, o: top.o, a: attempts, k: tasks };
+  return { s: top.s, r: top.r, o: top.o, a: attempts, k: tasks, ...(top.H === 1 ? { H: 1 as const } : {}) };
 }
 
 export function parseBucketStorageKey(key: string): string | null {
@@ -186,6 +191,7 @@ export function encodeDayForStorage(day: DayRecord): StoredDayBucket {
     o: day.overReservationCount,
     a,
     k,
+    ...(day.hardCapLocked ? { H: 1 as const } : {}),
   };
 }
 
@@ -254,6 +260,7 @@ export function decodeDayFromStorage(date: string, stored: StoredDayBucket): Day
       overReservationCount: recomputed.overReservationCount,
       attempts,
       tasks: recomputed.tasks,
+      hardCapLocked: stored.H === 1,
     });
   } catch {
     return null;
@@ -331,22 +338,33 @@ function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): v
 
 export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
   const state = emptyLedgerState();
-  const legacy = kv.get<LedgerState>(LEGACY_LEDGER_KEY);
-  if (legacy?.days) {
-    for (const [day, record] of Object.entries(legacy.days)) {
-      if (!isValidLedgerDayKey(day)) {
-        continue;
-      }
-      const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record)));
-      if (!encoded) {
-        markDayStorageCorrupt(state, day);
-        continue;
-      }
-      const decoded = decodeDayFromStorage(day, encoded);
-      if (!decoded) {
-        markDayStorageCorrupt(state, day);
-      } else {
-        state.days[day] = decoded;
+  const legacy = kv.get<unknown>(LEGACY_LEDGER_KEY);
+  if (legacy !== undefined && legacy !== null && typeof legacy === 'object' && 'days' in legacy) {
+    const daysRaw = (legacy as { days?: unknown }).days;
+    if (daysRaw !== null && typeof daysRaw === 'object') {
+      for (const [day, record] of Object.entries(daysRaw as Record<string, unknown>)) {
+        if (!isValidLedgerDayKey(day)) {
+          continue;
+        }
+        try {
+          if (record === null || typeof record !== 'object') {
+            markDayStorageCorrupt(state, day);
+            continue;
+          }
+          const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record as DayRecord)));
+          if (!encoded) {
+            markDayStorageCorrupt(state, day);
+            continue;
+          }
+          const decoded = decodeDayFromStorage(day, encoded);
+          if (!decoded) {
+            markDayStorageCorrupt(state, day);
+          } else {
+            state.days[day] = decoded;
+          }
+        } catch {
+          markDayStorageCorrupt(state, day);
+        }
       }
     }
   }

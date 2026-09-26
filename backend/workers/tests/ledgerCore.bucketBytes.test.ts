@@ -173,7 +173,7 @@ describe('MAX_DISTINCT_TASKS_PER_DAY', () => {
     }
     expect(reserveAttempt(state, 'extra-task', 0.01, DAY, CONFIG, 'new-task-name-xx', FROZEN_NOW)).toEqual({
       ok: false,
-      reason: 'invalid',
+      reason: 'task_limit',
     });
   });
 
@@ -190,7 +190,7 @@ describe('MAX_DISTINCT_TASKS_PER_DAY', () => {
     const snapshot = JSON.stringify(state.days[DAY]);
     expect(
       reconcileAttempt(state, DAY, 'dup-hold', 0.005, 'new-33rd-task-xx')
-    ).toEqual({ ok: false, reason: 'invalid' });
+    ).toEqual({ ok: false, reason: 'task_limit' });
     expect(JSON.stringify(state.days[DAY])).toBe(snapshot);
   });
 
@@ -209,7 +209,7 @@ describe('MAX_DISTINCT_TASKS_PER_DAY', () => {
     state.days[DAY] = day;
     expect(reconcileAttempt(state, DAY, probeId, 0.01, 'zzzzzzzzzzzzzzzz')).toEqual({
       ok: false,
-      reason: 'invalid',
+      reason: 'task_limit',
     });
   });
 });

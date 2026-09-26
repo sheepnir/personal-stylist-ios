@@ -82,6 +82,15 @@ describe('validateStoredDayBucket', () => {
       })
     ).toBeNull();
   });
+
+  it('rejects attempt task when t is missing or not a string', () => {
+    expect(
+      validateStoredDayBucket({
+        ...validBase,
+        a: { bad: { u: 1, S: 0, c: 0 } },
+      })
+    ).toBeNull();
+  });
 });
 
 describe('loadLedgerFromStorage fail-closed', () => {
@@ -188,6 +197,37 @@ describe('loadLedgerFromStorage fail-closed', () => {
     });
     const state = loadLedgerFromStorage(kv);
     expect(isDayStorageCorrupt(state, DAY)).toBe(true);
+  });
+
+  it('legacy monolith marks only malformed days corrupt and leaves valid days loaded', () => {
+    const createdMs = Date.parse(`${DAY}T01:00:00.000Z`);
+    const kv = memoryKv({
+      ledger: {
+        days: {
+          [DAY]: {
+            date: DAY,
+            spentMicro: 0,
+            reservedMicro: 1_000_000,
+            overReservationCount: 0,
+            attempts: {
+              okhold: {
+                attemptId: 'okhold',
+                upperBoundMicro: 1_000_000,
+                task: 'generate',
+                state: 'reserved',
+                createdAt: new Date(createdMs).toISOString(),
+              },
+            },
+            tasks: Object.create(null),
+          },
+          '2026-09-25': null,
+        },
+      },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, '2026-09-25')).toBe(true);
+    expect(state.days[DAY]?.reservedMicro).toBe(1_000_000);
+    expect(reserveAttempt(state, 'next', 0.01, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
   });
 });
 

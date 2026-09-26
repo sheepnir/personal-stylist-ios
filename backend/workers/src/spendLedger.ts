@@ -75,7 +75,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
       const result = reconcileAttempt(state, day, attemptId, actualUSD, task);
-      if (result.ok || pruned) {
+      if (result.ok || pruned || result.reason === 'actual_over_ceiling') {
         if (!this.persist(state, dayKeysBefore)) {
           return toRpcReconcileResult({ ok: false, reason: 'storage_error' });
         }

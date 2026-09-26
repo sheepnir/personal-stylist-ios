@@ -7,8 +7,8 @@ import type { SpendConfig } from './types.js';
 
 export const MICRO_USD = 1_000_000;
 
-/** Largest deployable daily cap (USD); larger configured values are rejected. */
-export const MAX_DEPLOYABLE_CAP_USD = 1_000_000;
+/** Generic sanity ceiling for configured daily caps (not a production limit). */
+export const MAX_DEPLOYABLE_CAP_USD = 100;
 
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
 
@@ -34,6 +34,8 @@ export interface DayRecord {
   attempts: Record<string, AttemptEntry>;
   /** Reconciled spend by task label (micro-USD). */
   tasks: Record<string, number>;
+  /** Set when reconcile records actual over per-attempt ceiling; locks further reserves that day. */
+  hardCapLocked?: boolean;
 }
 
 export interface LedgerState {
@@ -47,9 +49,7 @@ export const LEDGER_DAY_BUCKETS = 31;
 export const LEDGER_MAX_DAY_AGE = LEDGER_DAY_BUCKETS - 1;
 
 /**
- * Max distinct attempt records per UTC day bucket. At 1 micro-USD minimum hold size and a
- * $1 deploy cap, at most ~1e6 holds could fit in micro-USD headroom; 500 caps record bloat
- * while leaving normal paid traffic headroom.
+ * Max attempt records per UTC day bucket — sized to bound persisted record size.
  */
 export const MAX_ATTEMPTS_PER_DAY = 500;
 
@@ -66,6 +66,21 @@ export const MAX_BUCKET_BYTES = 100 * 1024;
 /** Per-attempt reserve / reconcile USD ceiling (keeps bucket JSON bounded). */
 export const MAX_ATTEMPT_USD = 1000;
 
+const MAX_ATTEMPT_MICRO = MAX_ATTEMPT_USD * MICRO_USD;
+
+function resolveReconcileActualMicro(
+  actualUSD: number
+): { ok: true; micro: number; overCeiling: boolean } | { ok: false } {
+  const bounded = boundedAttemptUsdToMicro(actualUSD);
+  if (bounded.ok) {
+    return { ok: true, micro: bounded.micro, overCeiling: false };
+  }
+  if (typeof actualUSD === 'number' && Number.isFinite(actualUSD) && actualUSD > MAX_ATTEMPT_USD) {
+    return { ok: true, micro: MAX_ATTEMPT_MICRO, overCeiling: true };
+  }
+  return { ok: false };
+}
+
 /** Max distinct task labels on one UTC day bucket (worst-case JSON sizing). */
 export const MAX_DISTINCT_TASKS_PER_DAY = 32;
 
@@ -73,12 +88,12 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
   ok: boolean;
-  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error' | 'attempt_limit' | 'storage_error';
+  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error' | 'attempt_limit' | 'storage_error' | 'task_limit';
 }
 
 export interface ReconcileResult {
   ok: boolean;
-  reason?: 'not_found' | 'invalid' | 'overflow' | 'storage_error';
+  reason?: 'not_found' | 'invalid' | 'overflow' | 'storage_error' | 'task_limit' | 'actual_over_ceiling';
 }
 
 export interface DaySummary {
@@ -396,6 +411,7 @@ export function hydrateDayRecord(raw: DayRecord): DayRecord {
     overReservationCount: raw.overReservationCount,
     attempts,
     tasks,
+    hardCapLocked: raw.hardCapLocked === true,
   };
 }
 
@@ -630,6 +646,9 @@ export function reserveAttempt(
   if (isDayStorageCorrupt(state, day)) {
     return { ok: false, reason: 'storage_error' };
   }
+  if (readDay(state, day).hardCapLocked) {
+    return { ok: false, reason: 'hard_cap' };
+  }
   const bounds = boundedAttemptUsdToMicro(upperBoundUSD);
   if (!isValidAttemptId(attemptId) || !bounds.ok) {
     return { ok: false, reason: 'invalid' };
@@ -656,7 +675,7 @@ export function reserveAttempt(
 
   const dayRecordForTask = readDay(state, day);
   if (!reserveTaskAllowedOnDay(dayRecordForTask, task)) {
-    return { ok: false, reason: 'invalid' };
+    return { ok: false, reason: 'task_limit' };
   }
 
   const configMicro = configToMicro(config);
@@ -723,8 +742,8 @@ export function reconcileAttempt(
   if (task !== undefined && !isValidReserveTaskName(task)) {
     return { ok: false, reason: 'invalid' };
   }
-  const actual = boundedAttemptUsdToMicro(actualUSD);
-  if (!isValidAttemptId(attemptId) || !actual.ok) {
+  const resolvedActual = resolveReconcileActualMicro(actualUSD);
+  if (!isValidAttemptId(attemptId) || !resolvedActual.ok) {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -734,10 +753,16 @@ export function reconcileAttempt(
   }
 
   const { day: dayRecord, entry } = located;
-  const actualMicro = actual.micro;
+  const { micro: actualMicro, overCeiling: actualOverCeiling } = resolvedActual;
 
-  if (entry.state === 'reconciled' && entry.actualMicro === actualMicro) {
-    return { ok: true };
+  if (entry.state === 'reconciled') {
+    if (actualOverCeiling && dayRecord.hardCapLocked && entry.actualMicro === MAX_ATTEMPT_MICRO) {
+      return { ok: false, reason: 'actual_over_ceiling' };
+    }
+    if (!actualOverCeiling && entry.actualMicro === actualMicro) {
+      return { ok: true };
+    }
+    return { ok: false, reason: 'invalid' };
   }
   if (entry.state !== 'reserved') {
     return { ok: false, reason: 'invalid' };
@@ -745,7 +770,7 @@ export function reconcileAttempt(
 
   const taskKey = task ?? entry.task;
   if (!reconcileTaskAllowedOnDay(dayRecord, attemptId, taskKey)) {
-    return { ok: false, reason: 'invalid' };
+    return { ok: false, reason: 'task_limit' };
   }
 
   const newReserved = safeMicroSub(dayRecord.reservedMicro, entry.upperBoundMicro);
@@ -766,15 +791,21 @@ export function reconcileAttempt(
   dayRecord.spentMicro = newSpent;
   dayRecord.tasks[taskKey] = taskTotal;
 
-  const over = actualMicro > entry.upperBoundMicro;
+  const over = actualMicro > entry.upperBoundMicro || actualOverCeiling;
   if (over) {
     dayRecord.overReservationCount += 1;
     entry.overReservation = true;
+  }
+  if (actualOverCeiling) {
+    dayRecord.hardCapLocked = true;
   }
 
   entry.state = 'reconciled';
   entry.actualMicro = actualMicro;
   entry.reconciledAt = new Date().toISOString();
+  if (actualOverCeiling) {
+    return { ok: false, reason: 'actual_over_ceiling' };
+  }
   return { ok: true };
 }
 
@@ -843,6 +874,9 @@ export function summarizeDay(
 /** True when {@link reserveAttempt} would refuse another hold with `hard_cap` (minimum 1 micro-USD). */
 export function dayHardCapReached(state: LedgerState, day: string, capMicro: number): boolean {
   const record = readDay(state, day);
+  if (record.hardCapLocked) {
+    return true;
+  }
   if (record.spentMicro >= capMicro) {
     return true;
   }

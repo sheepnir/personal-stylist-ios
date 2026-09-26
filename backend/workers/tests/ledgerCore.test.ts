@@ -2,7 +2,7 @@
  * Unit tests for spend ledger core logic (#13-a).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   ageLedger,
   actualUsdToMicro,
@@ -22,6 +22,7 @@ import {
   MICRO_USD,
   usdToMicro,
 } from '../src/ledgerCore.js';
+import { createDeviceSpendLedgerHarness } from './helpers.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
@@ -105,7 +106,7 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
   });
 
-  it('rejects reserve and reconcile above MAX_ATTEMPT_USD', () => {
+  it('rejects reserve above MAX_ATTEMPT_USD; reconcile caps actual over ceiling', () => {
     const state = emptyLedgerState();
     expect(reserveAttempt(state, 'too-big', MAX_ATTEMPT_USD + 1, DAY, CONFIG)).toEqual({
       ok: false,
@@ -114,8 +115,10 @@ describe('ledgerCore reserve / reconcile', () => {
     reserveAttempt(state, 'hold', 0.1, DAY, CONFIG);
     expect(reconcileAttempt(state, DAY, 'hold', MAX_ATTEMPT_USD + 1)).toEqual({
       ok: false,
-      reason: 'invalid',
+      reason: 'actual_over_ceiling',
     });
+    expect(state.days[DAY].hardCapLocked).toBe(true);
+    expect(state.days[DAY].spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
   });
 
   it('rejects reconcile at zero or negative zero USD without releasing the hold', () => {
@@ -254,6 +257,31 @@ describe('ledgerCore reserve / reconcile', () => {
     day.attempts.big2.state = 'reserved';
     expect(reconcileAttempt(state, DAY, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
     expect(day.spentMicro).toBe(Number.MAX_SAFE_INTEGER - 500);
+  });
+});
+
+describe('reconcile actual over MAX_ATTEMPT_USD ceiling', () => {
+  it('records capped spend, locks hard cap, persists H, and is idempotent after reload', () => {
+    vi.useFakeTimers({ now: new Date(`${DAY}T12:00:00.000Z`) });
+    const { ledger, getStoredState } = createDeviceSpendLedgerHarness();
+    expect(ledger.reserve('ceil-1', 0.5, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(ledger.reconcile(DAY, 'ceil-1', MAX_ATTEMPT_USD + 500)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    const reloaded = getStoredState();
+    expect(reloaded?.days[DAY]?.hardCapLocked).toBe(true);
+    expect(reloaded?.days[DAY]?.spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
+    expect(ledger.reconcile(DAY, 'ceil-1', MAX_ATTEMPT_USD + 500)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    expect(ledger.reserve('blocked', 0.01, DAY, CONFIG, 'generate')).toEqual({
+      ok: false,
+      reason: 'hard_cap',
+    });
+    expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(true);
+    vi.useRealTimers();
   });
 });
 
