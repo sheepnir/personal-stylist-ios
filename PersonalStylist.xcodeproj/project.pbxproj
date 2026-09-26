@@ -15,6 +15,7 @@
 		0A1602D8AC1EF45CD937FCBE /* TestModelContainerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3AA5523BB11219ED77714D /* TestModelContainerTests.swift */; };
 		0A64B0486D7FAA7C3E8F5219 /* OutfitEngineClientStubTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06910BA0D8478DCAF374FE75 /* OutfitEngineClientStubTests.swift */; };
 		0B0238D5F12C4B1469873ECD /* WearHistoryCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06DEC77599F2C0D1FE53AD3 /* WearHistoryCopy.swift */; };
+		0E4C830C59EEC3B78AC0EED7 /* BaselineCleanStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A9E681A6F0DAD2A3FF4247 /* BaselineCleanStartTests.swift */; };
 		122B7F9664EA6A6EF132471C /* DataControlsCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29474C1185A69E1DAD5160BE /* DataControlsCopyTests.swift */; };
 		13948025C86BC117FFCC0091 /* StubEntityMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78A772DDB24AF49A5DF1592 /* StubEntityMapper.swift */; };
 		13FE6089239AFC97C49EFEBC /* WardrobeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99DFC2AA7559A2199DD81D0 /* WardrobeGridView.swift */; };
@@ -87,6 +88,7 @@
 		B0837F2CE46BF4D724A45347 /* corpus.json in Resources */ = {isa = PBXBuildFile; fileRef = D1AFC4F64B5499C1E27687FA /* corpus.json */; };
 		B3074C425EC51E14BF9DEA47 /* SwiftDataPersistenceStore+Destructive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1F1C64A346567FBE377FC1 /* SwiftDataPersistenceStore+Destructive.swift */; };
 		B52FB546C2BAC3CD04A34952 /* DailyWearA11yButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD11DCD9B455CF539E945D81 /* DailyWearA11yButton.swift */; };
+		B924C69E0449B7493CAFB6ED /* BaselineCleanStart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A344CC53700F1B78A2B0A3 /* BaselineCleanStart.swift */; };
 		B95C7CD1DC843070B99A83E5 /* CameraIntakeCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C1DBC8FA24B704FCAD56DD /* CameraIntakeCopy.swift */; };
 		B97042E89CF1ED5A96BFCD47 /* ReadyBatchSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6CA22A6BBE8A8DB94342F7 /* ReadyBatchSupport.swift */; };
 		BB7E4B108DEE47A444562543 /* OutfitBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925BA06440A547B1DDD21056 /* OutfitBoardView.swift */; };
@@ -211,6 +213,7 @@
 		7CED42A07B9FB0DF8F6AE057 /* PersonalStylistUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PersonalStylistUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F0D940B417D6CF5B8721DE1 /* PhotoReplaceCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplaceCopy.swift; sourceTree = "<group>"; };
 		80E0F3AE097CF4024CAF5E58 /* CameraIntakePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraIntakePresentation.swift; sourceTree = "<group>"; };
+		82A344CC53700F1B78A2B0A3 /* BaselineCleanStart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaselineCleanStart.swift; sourceTree = "<group>"; };
 		853974C0862128374BEE223E /* CameraPersistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPersistTests.swift; sourceTree = "<group>"; };
 		8738C66DE63B926C41BC63B8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		88EA54602B7D101953EFCCF1 /* FinishDetailsSaveBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsSaveBar.swift; sourceTree = "<group>"; };
@@ -229,6 +232,7 @@
 		9EDE04AC8A0253033811B151 /* LegacyStoreFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyStoreFixtures.swift; sourceTree = "<group>"; };
 		A06DEC77599F2C0D1FE53AD3 /* WearHistoryCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearHistoryCopy.swift; sourceTree = "<group>"; };
 		A26BBCC32EE528EB344378F3 /* SwiftDataPersistenceStore+Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftDataPersistenceStore+Camera.swift"; sourceTree = "<group>"; };
+		A4A9E681A6F0DAD2A3FF4247 /* BaselineCleanStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaselineCleanStartTests.swift; sourceTree = "<group>"; };
 		A63CC290BCA4409D8690D317 /* DestructiveCascade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestructiveCascade.swift; sourceTree = "<group>"; };
 		A69E49EF063B05067FC1133A /* OutfitEngineClientAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitEngineClientAuthTests.swift; sourceTree = "<group>"; };
 		A6A0A306C04D133D8C865CCF /* CameraIntakeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraIntakeHost.swift; sourceTree = "<group>"; };
@@ -401,6 +405,7 @@
 			isa = PBXGroup;
 			children = (
 				4E9AC9B2D45AED8B5FED2719 /* AssetLibraryTests.swift */,
+				A4A9E681A6F0DAD2A3FF4247 /* BaselineCleanStartTests.swift */,
 				679368002C6729F0D50FCEF1 /* CameraIntakeCopyTests.swift */,
 				727E00F746895D5DFC46B9DE /* CameraIntakeHostedTests.swift */,
 				5DF8F5C191E89B7226725E87 /* CameraIntakePresentationTests.swift */,
@@ -531,6 +536,7 @@
 		B2603AD041043DFDDE8724B7 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
+				82A344CC53700F1B78A2B0A3 /* BaselineCleanStart.swift */,
 				2D30844C11C90DF2A80B725A /* CameraPersistError.swift */,
 				A63CC290BCA4409D8690D317 /* DestructiveCascade.swift */,
 				0D2201A53BF68BB37DFA94B7 /* FixtureWardrobeLoader.swift */,
@@ -715,6 +721,7 @@
 				C1A5EFF29E6E2E294A267EF3 /* AppModelContainer.swift in Sources */,
 				82B217D2277CC685582CABD2 /* AssetLibrary.swift in Sources */,
 				226779F0C6F6489E0E8A5C15 /* AvailabilityToken.swift in Sources */,
+				B924C69E0449B7493CAFB6ED /* BaselineCleanStart.swift in Sources */,
 				A2C51D0F7445C04AFC477D49 /* CameraAuthorization.swift in Sources */,
 				B95C7CD1DC843070B99A83E5 /* CameraIntakeCopy.swift in Sources */,
 				1416118F0EF559736458BF50 /* CameraIntakeHost.swift in Sources */,
@@ -786,6 +793,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC2934AC8846269C2EF6898F /* AssetLibraryTests.swift in Sources */,
+				0E4C830C59EEC3B78AC0EED7 /* BaselineCleanStartTests.swift in Sources */,
 				4F28B91D410FCC2284F1AEF2 /* CameraIntakeCopyTests.swift in Sources */,
 				51FBAA5C4C4D9F0C9D3200CD /* CameraIntakeHostedTests.swift in Sources */,
 				206A311FA04871EA7B427550 /* CameraIntakePresentationTests.swift in Sources */,

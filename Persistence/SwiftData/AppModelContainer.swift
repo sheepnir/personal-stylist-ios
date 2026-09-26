@@ -47,6 +47,7 @@ enum AppModelContainer {
                 configurations: configurations
             )
         } catch {
+            // A migration failure must surface. Do not delete the store or call BaselineCleanStart.
             guard isUnknownModelVersionError(error) else { throw error }
             let container = try ModelContainer(for: schema, configurations: configurations)
             if runUnversionedPostOpen {

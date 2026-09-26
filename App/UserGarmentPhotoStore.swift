@@ -7,6 +7,7 @@ import UIKit
 /// Stored with `NSFileProtectionComplete` and excluded from iCloud/iTunes backup
 /// (PRD §12.4, M1-INF-06, #173).
 enum UserGarmentPhotoStore {
+    static let directoryName = "GarmentPhotos"
     static let pathPrefix = "user-photo:"
     /// Durable camera capture before a garment exists (D-73). Same file as `user-photo:{id}`.
     static let pendingPathPrefix = "pending-photo:"
@@ -240,7 +241,7 @@ enum UserGarmentPhotoStore {
         defer { migrationLock.unlock() }
         if let protectedDirectory { return protectedDirectory }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = docs.appendingPathComponent("GarmentPhotos", isDirectory: true)
+        let dir = docs.appendingPathComponent(directoryName, isDirectory: true)
         try FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true,
