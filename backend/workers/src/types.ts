@@ -46,6 +46,12 @@ export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVI
 
   /** Optional: URL sent as the provider attribution `HTTP-Referer`. Defaults to a reserved example. */
   ATTRIBUTION_URL?: string;
+
+  /** Narrow-only primary model slug (must match allowlist entry and role). */
+  STYLIST_PRIMARY_MODEL?: string;
+
+  /** Narrow-only secondary model slug (must match allowlist entry and role). */
+  STYLIST_SECONDARY_MODEL?: string;
 }
 
 /**

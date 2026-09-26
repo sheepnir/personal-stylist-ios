@@ -1017,8 +1017,11 @@ components:
             When the user opted in to selfie review. Required in practice for
             `SelfieReviewRequest`; optional on other image-bearing calls.
         policyVersion:
-          type: string
-          description: Privacy-policy / data-use version string shown on the consent screen.
+          type: [string, 'null']
+          maxLength: 64
+          description: |
+            The policy version the user was shown and accepted. `null` means no published policy
+            was accepted; the backend treats that as not accepted.
 
     AttributeRequest:
       type: object
@@ -1547,14 +1550,27 @@ components:
     ModelConfigResponse:
       type: object
       additionalProperties: false
-      required: [primary, promptVersion, dataPolicy]
+      required: [primary, promptVersion, dataPolicy, policyVersion]
       properties:
-        primary: { $ref: '#/components/schemas/ModelDescriptor' }
+        primary:
+          oneOf:
+            - { $ref: '#/components/schemas/ModelDescriptor' }
+            - { type: 'null' }
         secondary:
           oneOf:
             - { $ref: '#/components/schemas/ModelDescriptor' }
             - { type: 'null' }
         promptVersion: { type: string }
+        policyVersion:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+          description: |
+            The privacy / data-use policy version this deployment serves. `null` means no policy
+            is published, and then no stored acceptance counts. A client's stored accepted
+            `PrivacyConsent.policyVersion` counts as accepted only if this value is a non-empty
+            string and the stored value equals it exactly; otherwise the user must accept the
+            shown version before any stylist-model path is used.
         dataPolicy:
           type: object
           additionalProperties: false

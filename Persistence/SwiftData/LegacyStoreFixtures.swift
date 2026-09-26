@@ -201,7 +201,7 @@ enum LegacyStoreFixtures {
             sourceRaw: "CAMERA",
             readingAllowed: false,
             readingDecidedAt: Date(timeIntervalSince1970: 1_725_200_000),
-            policyVersionAtChoice: "onboarding-privacy-v1",
+            policyVersionAtChoice: "test-fixture-policy",
             captureIds: [FixedIDs.pendingCapture],
             reviewCursor: 0
         )

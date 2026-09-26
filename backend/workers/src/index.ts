@@ -25,6 +25,7 @@ import {
   handleUsage,
   handleGenerate,
   handleAlternatives,
+  handleModels,
   notFound,
   methodNotAllowed,
 } from './routes.js';
@@ -91,6 +92,14 @@ export default {
           response = methodNotAllowed(['GET']);
         } else {
           response = await handleUsage(request, env, authResult);
+        }
+      }
+      // GET /v1/models
+      else if (path === '/v1/models') {
+        if (method !== 'GET') {
+          response = methodNotAllowed(['GET']);
+        } else {
+          response = await handleModels(request, env, authResult);
         }
       }
       // POST /v1/outfit/generate

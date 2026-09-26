@@ -131,6 +131,26 @@ export async function isSoftThresholdReached(
 /**
  * Get usage summary for last 7 and 30 days (M0-09 stub: returns today's data).
  */
+export type UsageClock = () => Date;
+
+let usageClock: UsageClock = () => new Date();
+
+/** @internal Vitest hook — restore with `setUsageClockForTests(null)`. */
+export function setUsageClockForTests(clock: UsageClock | null): void {
+  usageClock = clock ?? (() => new Date());
+}
+
+/** UTC ledger day key (YYYY-MM-DD), aligned with {@link getSpendRecord}. */
+export function utcLedgerDayKey(now: Date): string {
+  return now.toISOString().split('T')[0];
+}
+
+/** Next UTC midnight after the ledger day containing `now`. */
+export function ledgerDayEndsAtUtc(now: Date = usageClock()): string {
+  const [y, m, d] = utcLedgerDayKey(now).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0, 0)).toISOString();
+}
+
 export async function getUsageSummary(
   deviceToken: string,
   env: Env
@@ -144,11 +164,13 @@ export async function getUsageSummary(
   softThresholdReached: boolean;
   hardCapReached: boolean;
   ledgerDayEndsAt: string | null;
+  resetsAt: string | null;
   byTask: Record<string, number>;
 }> {
   const record = await getSpendRecord(deviceToken, env);
   const config = spendConfig(env);
   const totalSpent = record.spentUSD + record.reservedUSD;
+  const ledgerDayEndsAt = ledgerDayEndsAtUtc();
 
   return {
     last7DaysUSD: record.spentUSD,
@@ -159,17 +181,12 @@ export async function getUsageSummary(
     reservedTodayUSD: record.reservedUSD,
     softThresholdReached: totalSpent >= config.softThresholdUSD,
     hardCapReached: totalSpent >= config.dailyCapUSD,
-    ledgerDayEndsAt: getEndOfDayISO(),
+    ledgerDayEndsAt,
+    resetsAt: ledgerDayEndsAt,
     byTask: record.tasks,
   };
 }
 
 function getTodayDateString(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getEndOfDayISO(): string {
-  const now = new Date();
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  return endOfDay.toISOString();
+  return utcLedgerDayKey(usageClock());
 }

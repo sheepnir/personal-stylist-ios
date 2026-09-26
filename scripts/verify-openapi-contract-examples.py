@@ -31,6 +31,16 @@ except ImportError:  # pragma: no cover
 
 ROOT = Path(__file__).resolve().parents[1]
 OPENAPI = ROOT / "docs" / "openapi.yaml"
+POLICY_JSON = ROOT / "shared" / "privacy-policy-version.json"
+
+
+def load_served_policy_version() -> Any:
+    with POLICY_JSON.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get("policyVersion")
+
+
+SERVED_POLICY_VERSION = load_served_policy_version()
 
 # Synthetic golden payloads (no photographic assets). Consent + AttributeRequest
 # shapes are pinned so later wire adapters (#201 / #206) share this check.
@@ -40,7 +50,7 @@ GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
         "components/schemas/PrivacyConsent",
         {
             "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z",
-            "policyVersion": "onboarding-privacy-v0",
+            "policyVersion": None,
         },
     ),
     (
@@ -53,7 +63,7 @@ GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
             },
             "privacyConsent": {
                 "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z",
-                "policyVersion": "onboarding-privacy-v0",
+                "policyVersion": None,
             },
             "slotHint": "TOP",
             "requestId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
@@ -115,6 +125,37 @@ GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "ModelConfigResponse-unconfigured",
+        "components/schemas/ModelConfigResponse",
+        {
+            "primary": None,
+            "secondary": None,
+            "promptVersion": "none",
+            "policyVersion": SERVED_POLICY_VERSION,
+            "dataPolicy": {
+                "excludesTrainingProviders": True,
+                "verifiedOn": None,
+                "note": None,
+            },
+        },
+    ),
+    (
+        "UsageResponse-ledger-reset",
+        "components/schemas/UsageResponse",
+        {
+            "last7DaysUSD": 0,
+            "last30DaysUSD": 0,
+            "dailyCapUSD": 1,
+            "softThresholdUSD": 0.5,
+            "spentTodayUSD": 0,
+            "reservedTodayUSD": 0,
+            "softThresholdReached": False,
+            "hardCapReached": False,
+            "ledgerDayEndsAt": "2026-09-27T00:00:00.000Z",
+            "resetsAt": "2026-09-27T00:00:00.000Z",
+        },
+    ),
+    (
         "Problem-lockConflict",
         "components/schemas/Problem",
         {
@@ -129,6 +170,23 @@ GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
                     "reason": "Locked TOP occupies the same slot as the anchor garment.",
                 }
             ],
+        },
+    ),
+]
+
+
+NEGATIVE_GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
+    (
+        "ModelConfigResponse-empty-policyVersion",
+        "components/schemas/ModelConfigResponse",
+        {
+            "primary": None,
+            "promptVersion": "none",
+            "policyVersion": "",
+            "dataPolicy": {
+                "excludesTrainingProviders": True,
+                "verifiedOn": None,
+            },
         },
     ),
 ]
@@ -242,6 +300,16 @@ def main() -> int:
         schema = {"$ref": ref}
         errors.extend(validate(f"golden:{name}", schema, payload, spec))
 
+    negative_failures = 0
+    for name, ref_path, payload in NEGATIVE_GOLDEN:
+        ref = "#/" + ref_path
+        schema = {"$ref": ref}
+        ne = validate(f"negative:{name}", schema, payload, spec)
+        if not ne:
+            errors.append(f"negative:{name}: expected schema rejection but instance validated")
+        else:
+            negative_failures += 1
+
     if errors:
         for e in errors:
             print(e, file=sys.stderr)
@@ -254,7 +322,8 @@ def main() -> int:
     example_count = len(iter_media_examples(spec))
     print(
         f"verify-openapi-contract-examples: OK "
-        f"({example_count} embedded examples, {len(GOLDEN)} golden payloads)"
+        f"({example_count} embedded examples, {len(GOLDEN)} golden payloads, "
+        f"{negative_failures} negative case(s) rejected as expected)"
     )
     return 0
 

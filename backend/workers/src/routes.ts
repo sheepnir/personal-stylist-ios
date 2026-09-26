@@ -11,6 +11,8 @@ import {
 import type { Env, ProblemDetail } from './types.js';
 import type { AuthContext } from './auth.js';
 import { getUsageSummary } from './usage.js';
+import { buildModelConfigResponse } from './models.js';
+import { CURRENT_PRIVACY_POLICY_VERSION } from './policy.js';
 import { readJsonWithLimit, rejectImagePayload } from './validation.js';
 
 /**
@@ -29,6 +31,21 @@ export async function handleHealth(_request: Request, _env: Env): Promise<Respon
       headers: { 'Content-Type': 'application/json' },
     }
   );
+}
+
+/**
+ * GET /v1/models - Configured models and served policy version (auth required).
+ */
+export async function handleModels(
+  _request: Request,
+  env: Env,
+  _auth: AuthContext
+): Promise<Response> {
+  const body = buildModelConfigResponse(env, CURRENT_PRIVACY_POLICY_VERSION);
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /**
