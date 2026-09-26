@@ -7,6 +7,8 @@ import {
   MODEL_ALLOWLIST,
   resolveConfiguredModels,
   buildModelConfigResponse,
+  type AllowlistEntry,
+  type ModelRole,
 } from '../src/models.js';
 import { CURRENT_PRIVACY_POLICY_VERSION } from '../src/policy.js';
 
@@ -39,12 +41,15 @@ describe('resolveConfiguredModels', () => {
     expect(resolveConfiguredModels({}).primary).toBeNull();
   });
 
-  it('rejects a slug that is not role-eligible for secondary-only env', () => {
-    // Hypothetical: if allowlist had primary-only entry — today mock supports both.
-    const { secondary } = resolveConfiguredModels({
-      STYLIST_SECONDARY_MODEL: 'mock/stylist-v0',
-    });
-    expect(secondary?.slug).toBe('mock/stylist-v0');
+  it('rejects a slug that is not role-eligible for the requested role', () => {
+    const primaryOnly: AllowlistEntry[] = [
+      { ...MODEL_ALLOWLIST[0], roles: ['primary'] satisfies ModelRole[] },
+    ];
+    const { secondary } = resolveConfiguredModels(
+      { STYLIST_SECONDARY_MODEL: 'mock/stylist-v0' },
+      primaryOnly
+    );
+    expect(secondary).toBeNull();
   });
 
   it('allows secondary equal to primary when both env vars name the same slug', () => {

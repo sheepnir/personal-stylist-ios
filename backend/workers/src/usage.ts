@@ -32,9 +32,10 @@ function locatorForLedger(deviceToken: string, env: Env): string | null {
  */
 export async function getSpendRecord(
   deviceToken: string,
-  env: Env
+  env: Env,
+  asOf: Date = usageClock()
 ): Promise<SpendRecord> {
-  const today = getTodayDateString();
+  const today = utcLedgerDayKey(asOf);
   const tokenHash = await hashToken(deviceToken);
   const locator = locatorForLedger(deviceToken, env);
 
@@ -167,10 +168,11 @@ export async function getUsageSummary(
   resetsAt: string | null;
   byTask: Record<string, number>;
 }> {
-  const record = await getSpendRecord(deviceToken, env);
+  const now = usageClock();
+  const ledgerDayEndsAt = ledgerDayEndsAtUtc(now);
+  const record = await getSpendRecord(deviceToken, env, now);
   const config = spendConfig(env);
   const totalSpent = record.spentUSD + record.reservedUSD;
-  const ledgerDayEndsAt = ledgerDayEndsAtUtc();
 
   return {
     last7DaysUSD: record.spentUSD,

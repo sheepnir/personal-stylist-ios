@@ -58,8 +58,11 @@ export const SERVED_DATA_POLICY = {
  */
 const PROMPT_VERSION_NONE = 'none';
 
-function entryForSlug(slug: string): AllowlistEntry | undefined {
-  return MODEL_ALLOWLIST.find((e) => e.slug === slug);
+function entryForSlug(
+  slug: string,
+  allowlist: readonly AllowlistEntry[]
+): AllowlistEntry | undefined {
+  return allowlist.find((e) => e.slug === slug);
 }
 
 function toDescriptor(entry: AllowlistEntry): ModelDescriptor {
@@ -74,11 +77,12 @@ function toDescriptor(entry: AllowlistEntry): ModelDescriptor {
 
 function resolveRole(
   envValue: string | undefined,
-  role: ModelRole
+  role: ModelRole,
+  allowlist: readonly AllowlistEntry[]
 ): ModelDescriptor | null {
   const trimmed = envValue?.trim();
   if (!trimmed) return null;
-  const entry = entryForSlug(trimmed);
+  const entry = entryForSlug(trimmed, allowlist);
   if (!entry || !entry.roles.includes(role)) return null;
   return toDescriptor(entry);
 }
@@ -88,10 +92,11 @@ function resolveRole(
  * When primary and secondary env both name the same eligible slug, secondary matches primary.
  */
 export function resolveConfiguredModels(
-  env: Pick<Env, 'STYLIST_PRIMARY_MODEL' | 'STYLIST_SECONDARY_MODEL'>
+  env: Pick<Env, 'STYLIST_PRIMARY_MODEL' | 'STYLIST_SECONDARY_MODEL'>,
+  allowlist: readonly AllowlistEntry[] = MODEL_ALLOWLIST
 ): ResolvedModelConfig {
-  const primary = resolveRole(env.STYLIST_PRIMARY_MODEL, 'primary');
-  const secondary = resolveRole(env.STYLIST_SECONDARY_MODEL, 'secondary');
+  const primary = resolveRole(env.STYLIST_PRIMARY_MODEL, 'primary', allowlist);
+  const secondary = resolveRole(env.STYLIST_SECONDARY_MODEL, 'secondary', allowlist);
   return { primary, secondary };
 }
 

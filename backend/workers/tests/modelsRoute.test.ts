@@ -69,6 +69,23 @@ describe('GET /v1/usage resetsAt', () => {
     expect(summary.ledgerDayEndsAt).toBe('2026-09-27T00:00:00.000Z');
     expect(summary.resetsAt).toBe(summary.ledgerDayEndsAt);
   });
+
+  it('uses one UTC day boundary captured before ledger I/O even if the clock crosses midnight', async () => {
+    let clockCalls = 0;
+    setUsageClockForTests(() => {
+      clockCalls += 1;
+      if (clockCalls === 1) {
+        return new Date('2026-03-15T23:59:59.999Z');
+      }
+      return new Date('2026-03-16T00:00:00.001Z');
+    });
+
+    const summary = await getUsageSummary(TOKEN, env());
+    expect(summary.ledgerDayEndsAt).toBe('2026-03-16T00:00:00.000Z');
+    expect(summary.resetsAt).toBe('2026-03-16T00:00:00.000Z');
+    // getUsageSummary must not re-read the clock during ledger I/O (would see 2026-03-16).
+    expect(clockCalls).toBe(1);
+  });
 });
 
 describe('GET /v1/models', () => {

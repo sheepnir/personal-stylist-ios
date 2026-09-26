@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -51,22 +52,40 @@ def policy_ts_uses_json_import() -> bool:
     return "canonical.policyVersion" in text or "privacyPolicy" in text
 
 
-def golden_policy_versions_null() -> list[str]:
-    """Parse policyVersion values from GOLDEN tuples in verify-openapi-contract-examples.py."""
-    text = VERIFY_SCRIPT.read_text(encoding="utf-8")
+def load_verify_module(verify_script: Path = VERIFY_SCRIPT):
+    spec = importlib.util.spec_from_file_location(
+        "verify_openapi_contract_examples_parity",
+        verify_script,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load {verify_script}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def golden_policy_version_errors(verify_script: Path = VERIFY_SCRIPT) -> list[str]:
+    """Every golden with policyVersion must match the canonical JSON (null today)."""
     errors: list[str] = []
-    # Rough extract: lines with "policyVersion": inside GOLDEN block
-    in_golden = False
-    for line in text.splitlines():
-        if line.strip().startswith("GOLDEN:"):
-            in_golden = True
+    canonical = load_json_version()
+    mod = load_verify_module(verify_script)
+
+    for name, ref_path, payload in mod.GOLDEN:
+        if not isinstance(payload, dict) or "policyVersion" not in payload:
             continue
-        if in_golden and line.strip().startswith("]"):
-            break
-        if in_golden and '"policyVersion"' in line:
-            normalized = line.strip().lower()
-            if "null" not in normalized and "none" not in normalized:
-                errors.append(f"contract golden not null: {line.strip()}")
+        pv = payload["policyVersion"]
+        if pv != canonical:
+            errors.append(
+                f"golden:{name} policyVersion={pv!r} != canonical {canonical!r}"
+            )
+
+    model_config_goldens = [
+        (name, payload)
+        for name, ref_path, payload in mod.GOLDEN
+        if ref_path.endswith("ModelConfigResponse")
+    ]
+    if not model_config_goldens:
+        errors.append("no ModelConfigResponse entries found in GOLDEN")
     return errors
 
 
@@ -92,7 +111,7 @@ def repo_has_onboarding_privacy_literal() -> list[str]:
     return hits
 
 
-def run_checks() -> list[str]:
+def run_checks(verify_script: Path = VERIFY_SCRIPT) -> list[str]:
     errors: list[str] = []
     json_pv = load_json_version()
     swift_pv = swift_mirror_value()
@@ -102,7 +121,7 @@ def run_checks() -> list[str]:
         )
     if not policy_ts_uses_json_import():
         errors.append(f"{POLICY_TS}: must import policy version from JSON, not a literal")
-    errors.extend(golden_policy_versions_null())
+    errors.extend(golden_policy_version_errors(verify_script))
     hits = repo_has_onboarding_privacy_literal()
     if hits:
         errors.append(f"onboarding-privacy-* literals found in: {', '.join(hits)}")
@@ -117,11 +136,11 @@ def self_test() -> int:
         return 1
 
     policy_text = POLICY_TS.read_text(encoding="utf-8")
-    mutated = policy_text.replace(
+    mutated_policy = policy_text.replace(
         "canonical.policyVersion",
         '"onboarding-privacy-bad"',
     )
-    POLICY_TS.write_text(mutated, encoding="utf-8")
+    POLICY_TS.write_text(mutated_policy, encoding="utf-8")
     try:
         bad = run_checks()
         if not bad:
@@ -129,6 +148,29 @@ def self_test() -> int:
             return 1
     finally:
         POLICY_TS.write_text(policy_text, encoding="utf-8")
+
+    verify_text = VERIFY_SCRIPT.read_text(encoding="utf-8")
+    mutated_verify = re.sub(
+        r'(\(\s*\n\s*"ModelConfigResponse-configured-mock"[\s\S]*?"policyVersion":\s*)SERVED_POLICY_VERSION',
+        r'\1"bad-non-null-policy"',
+        verify_text,
+        count=1,
+    )
+    if mutated_verify == verify_text:
+        print("self-test: could not mutate verify-openapi-contract-examples.py", file=sys.stderr)
+        return 1
+
+    VERIFY_SCRIPT.write_text(mutated_verify, encoding="utf-8")
+    try:
+        bad_golden = golden_policy_version_errors()
+        if not bad_golden:
+            print(
+                "self-test: mismatched ModelConfigResponse golden should fail but passed",
+                file=sys.stderr,
+            )
+            return 1
+    finally:
+        VERIFY_SCRIPT.write_text(verify_text, encoding="utf-8")
 
     print("check-policy-version-parity: self-test OK")
     return 0
