@@ -119,6 +119,6 @@ describe('usage ↔ DeviceSpendLedger', () => {
     const unknownResult = await markUnknownSpend(token, 'attempt-x', withoutLedger, 'gen-1');
 
     expect(unknownResult).toEqual(reserveResult);
-    expect(unknownResult).toEqual({ ok: false, reason: 'no_ledger' });
+    expect(unknownResult).toEqual({ ok: false, reason: 'ledger_unavailable' });
   });
 });
