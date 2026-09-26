@@ -173,26 +173,26 @@ function consentPathMatches(path: readonly string[]): boolean {
 
 function containsImage(value: unknown): boolean {
   // Iterative traversal: no depth-based fail-open or call-stack exhaustion.
-  const pending: Array<{ item: unknown; path: string[]; fromArray: boolean }> = [
-    { item: value, path: [], fromArray: false },
+  const pending: Array<{ item: unknown; path: string[]; underArrayAncestor: boolean }> = [
+    { item: value, path: [], underArrayAncestor: false },
   ];
   while (pending.length) {
-    const { item, path, fromArray } = pending.pop()!;
+    const { item, path, underArrayAncestor } = pending.pop()!;
     if (typeof item === 'string' && IMAGE_VALUE_PATTERN.test(item.trimStart())) return true;
     if (Array.isArray(item)) {
-      for (const child of item) pending.push({ item: child, path, fromArray: true });
+      for (const child of item) pending.push({ item: child, path, underArrayAncestor: true });
     } else if (item !== null && typeof item === 'object') {
       for (const [key, child] of Object.entries(item)) {
         const nextPath = [...path, key];
-        if (!fromArray && consentPathMatches(nextPath)) {
+        if (!underArrayAncestor && consentPathMatches(nextPath)) {
           if (!isAllowedWardrobeImagesAcceptedAtValue(child)) return true;
           continue;
         }
         if (normalizedKeyContainsForbiddenImageToken(key)) return true;
         if (Array.isArray(child)) {
-          for (const element of child) pending.push({ item: element, path: nextPath, fromArray: true });
+          for (const element of child) pending.push({ item: element, path: nextPath, underArrayAncestor: true });
         } else {
-          pending.push({ item: child, path: nextPath, fromArray: false });
+          pending.push({ item: child, path: nextPath, underArrayAncestor });
         }
       }
     }

@@ -92,13 +92,17 @@
     { "label": "consent field wrong path segment", "body": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z" } },
     { "label": "consent dotted root key spoof", "body": { "privacyConsent.wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z" } },
     { "label": "consent inside array", "body": { "privacyConsent": [{ "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z" }] } },
+    { "label": "consent under root array body", "body": [{ "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1" } }] },
+    { "label": "consent nested under wardrobe array", "body": { "wardrobe": [{ "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1" } }] } },
+    { "label": "consent non-ASCII digit year", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "２026-09-20T12:00:00Z", "policyVersion": "1" } } },
+    { "label": "consent trailing newline", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z\n", "policyVersion": "1" } } },
     { "label": "consent non-date string", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1" } } },
     { "label": "consent non-string null", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": null, "policyVersion": "1" } } },
     { "label": "consent non-string number", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": 1700000000, "policyVersion": "1" } } },
     { "label": "consent non-string boolean", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": true, "policyVersion": "1" } } },
     { "label": "consent non-string object", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": { "at": "2026-09-20T12:00:00Z" }, "policyVersion": "1" } } },
     { "label": "consent non-string array", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": ["2026-09-20T12:00:00Z"], "policyVersion": "1" } } },
-    { "label": "consent 65-char length bound", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z000000000000000000000000000000000000000000000", "policyVersion": "1" } } },
+    { "label": "consent exceeds 64 character length bound", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z000000000000000000000000000000000000000000000", "policyVersion": "1" } } },
     { "label": "consent js Date string", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "Tue Sep 20 2026 12:00:00 GMT", "policyVersion": "1" } } },
     { "label": "consent fragment T 2026", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "T 2026", "policyVersion": "1" } } },
     { "label": "consent RFC-1123 string", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "Sun, 20 Sep 2026 18:30:00 GMT", "policyVersion": "1" } } },
@@ -127,6 +131,13 @@
       "label": "consent RFC3339 numeric offset",
       "body": {
         "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00+05:30", "policyVersion": "2026-09-01" },
+        "wardrobe": [{ "id": "1", "slot": "TOP", "readiness": "READY" }]
+      }
+    },
+    {
+      "label": "consent RFC3339 year 0050",
+      "body": {
+        "privacyConsent": { "wardrobeImagesAcceptedAt": "0050-06-15T12:00:00Z", "policyVersion": "2026-09-01" },
         "wardrobe": [{ "id": "1", "slot": "TOP", "readiness": "READY" }]
       }
     },

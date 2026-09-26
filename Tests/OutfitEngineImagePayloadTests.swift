@@ -22,7 +22,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
     private static let workerConsentRfc3339 = try! NSRegularExpression(
-        pattern: #"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$"#
+        pattern: #"^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"#
     )
 
     /// ECMAScript WhiteSpace + LineTerminator — what `String.prototype.trimStart` removes.
@@ -79,8 +79,13 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             && calendar.component(.day, from: date) == day
     }
 
+    private static func workerConsentTimestampHasControlCharacter(_ value: String) -> Bool {
+        value.unicodeScalars.contains { $0.value <= 0x1f || $0.value == 0x7f }
+    }
+
     private static func workerAllowedConsent(_ value: Any) -> Bool {
         guard let string = value as? String, !string.isEmpty, string.count <= 64 else { return false }
+        guard !workerConsentTimestampHasControlCharacter(string) else { return false }
         let nsRange = NSRange(string.startIndex..., in: string)
         guard let match = workerConsentRfc3339.firstMatch(in: string, range: nsRange) else { return false }
         func intAt(_ index: Int) -> Int? {
@@ -93,7 +98,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
 
     /// Same traversal as `containsImage` in `backend/workers/src/validation.ts`.
     /// Returns the offending key or value prefix, or nil when the body is clean.
-    private static func workerImageFinding(in value: Any, path: [String] = [], fromArray: Bool = false) -> String? {
+    private static func workerImageFinding(in value: Any, path: [String] = [], underArrayAncestor: Bool = false) -> String? {
         if let s = value as? String {
             let t = asciiLowercased(jsTrimStart(s))
             if workerValuePattern.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
@@ -103,19 +108,19 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         }
         if let array = value as? [Any] {
             for child in array {
-                if let found = workerImageFinding(in: child, path: path, fromArray: true) { return found }
+                if let found = workerImageFinding(in: child, path: path, underArrayAncestor: true) { return found }
             }
             return nil
         }
         if let object = value as? [String: Any] {
             for (key, child) in object {
                 let nextPath = path + [key]
-                if !fromArray && workerConsentPathMatches(nextPath) {
+                if !underArrayAncestor && workerConsentPathMatches(nextPath) {
                     if !workerAllowedConsent(child) { return "consent \(nextPath.joined(separator: "."))" }
                     continue
                 }
                 if workerSegmentImageBearing(key) { return "key \(key)" }
-                if let found = workerImageFinding(in: child, path: nextPath, fromArray: false) { return found }
+                if let found = workerImageFinding(in: child, path: nextPath, underArrayAncestor: underArrayAncestor) { return found }
             }
         }
         return nil
@@ -249,18 +254,23 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         XCTAssertNotNil(Self.workerImageFinding(in: [
             "privacyConsent": [["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z"]],
         ]))
+        XCTAssertNotNil(Self.workerImageFinding(in: [
+            ["privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1"]],
+        ]))
+        XCTAssertNotNil(Self.workerImageFinding(in: [
+            "wardrobe": [["privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1"]]]],
+        ]))
     }
 
     func testConsentRfc3339RejectionsMirrorWorker() {
-        let sixtyFive = "2026-09-20T12:00:00Z" + String(repeating: "0", count: 45)
-        XCTAssertEqual(sixtyFive.count, 65)
         let bad = [
             "Tue Sep 20 2026 12:00:00 GMT",
             "T 2026",
             "Sun, 20 Sep 2026 18:30:00 GMT",
             "2026-02-31T12:00:00Z",
             "2026-09-20t12:00:00Z",
-            sixtyFive,
+            "２026-09-20T12:00:00Z",
+            "2026-09-20T12:00:00Z\n",
         ]
         for value in bad {
             let body: [String: Any] = [
@@ -268,13 +278,22 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             ]
             XCTAssertNotNil(Self.workerImageFinding(in: body), value)
         }
-        for value in ["2026-09-20T12:00:00Z", "2026-09-20T12:00:00+05:30", "2026-09-20T12:00:00.123456789Z"] {
+        for value in ["2026-09-20T12:00:00Z", "2026-09-20T12:00:00+05:30", "2026-09-20T12:00:00.123456789Z", "0050-06-15T12:00:00Z"] {
             let body: [String: Any] = [
                 "privacyConsent": ["wardrobeImagesAcceptedAt": value, "policyVersion": "1"],
                 "id": "ok",
             ]
             XCTAssertNil(Self.workerImageFinding(in: body), value)
         }
+    }
+
+    func testConsentTimestampRejectsWhenLengthExceeds64Characters() {
+        let value = "2026-09-20T12:00:00Z" + String(repeating: "0", count: 45)
+        XCTAssertEqual(value.count, 65)
+        let body: [String: Any] = [
+            "privacyConsent": ["wardrobeImagesAcceptedAt": value, "policyVersion": "1"],
+        ]
+        XCTAssertNotNil(Self.workerImageFinding(in: body))
     }
 
     func testConsentExceptionRejectedAtWrongPathOrBadValue() {
@@ -288,7 +307,9 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         let bad = OutfitEngineClient.strippingImagePayload([
             "privacyConsent": ["wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1"],
         ])
-        XCTAssertNil(bad["privacyConsent"])
+        let consent = bad["privacyConsent"] as? [String: Any]
+        XCTAssertNil(consent?["wardrobeImagesAcceptedAt"])
+        XCTAssertEqual(consent?["policyVersion"] as? String, "1")
     }
 
     func testConsentNonStringValuesAreRejectedOnWorkerPath() {
