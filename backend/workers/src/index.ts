@@ -195,3 +195,5 @@ function addCorsHeaders(response: Response, corsHeaders: Record<string, string>)
     headers: newHeaders,
   });
 }
+
+// ci/48-s2-backend scenario
