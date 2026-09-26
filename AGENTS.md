@@ -171,10 +171,12 @@ python3 scripts/check-asset-library.py
 
 ## Workflow hygiene
 
-- **CI workflows:** every top-level workflow declares `permissions: contents: read`, a per-PR
-  `concurrency` group, `persist-credentials: false` on checkout, and actions pinned to a full
-  commit SHA with a `# vX.Y.Z` comment — bump both together. Called (reusable) workflows must
-  not declare workflow-level `concurrency` (the caller owns cancellation).
+- **CI workflows:** top-level workflows (for example `ci.yml`) declare `permissions: contents: read`,
+  a per-PR `concurrency` group, `persist-credentials: false` on checkout, and actions pinned to a
+  full commit SHA with a `# vX.Y.Z` comment — bump both together. Called (reusable) workflows
+  must not declare workflow-level `concurrency` (the caller owns cancellation).
+  `repo-checks.yml` has none in Phase 1 because it is both standalone and called; Phase 3 removes
+  its standalone triggers.
 
 - Work on a short-lived branch and open a pull request into `main`; don't push straight to
   `main`. Squash-merge and delete the branch afterwards.
