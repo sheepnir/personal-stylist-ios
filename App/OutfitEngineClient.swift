@@ -230,8 +230,98 @@ enum OutfitEngineClient {
     static let defaultSeasons = ["SPRING", "SUMMER", "FALL", "WINTER"]
     static let excludeGarmentSetsCap = 10
 
+    // MARK: - Image-payload guard (VF-03)
+
+    // Mirrors `backend/workers/src/validation.ts` (`IMAGE_KEY_PATTERN` /
+    // `IMAGE_VALUE_PATTERN`). The Worker fails closed with 415 `IMAGE_NOT_ALLOWED`
+    // when a body carries any of these, so nothing matching may ever be sent.
+    // Fixture rows carry a local image reference (`imagePath`) that is client-only
+    // state; the engine contract never needs it.
+    //
+    // The Worker's patterns use the JavaScript `i` flag, which on these ASCII-only
+    // patterns folds ASCII letters and nothing else (`ſ` never matches `s`). ICU's
+    // `.caseInsensitive` folds more, so inputs are ASCII-folded by hand and matched
+    // against lowercase patterns instead. `scripts/check-image-guard-parity.py`
+    // fails CI if the token lists below drift from the Worker's.
+    private static let imageKeyPattern = try! NSRegularExpression(
+        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)"
+    )
+    private static let imageValuePattern = try! NSRegularExpression(
+        pattern: "^data:image/|^/9j/|^ivborw0kggo"
+    )
+    private static let camelCaseBoundary = try! NSRegularExpression(pattern: "([a-z])([A-Z])")
+
+    /// ECMAScript WhiteSpace + LineTerminator, i.e. what JavaScript `trimStart()`
+    /// removes. U+0085 (NEL) is deliberately absent: JavaScript keeps it, so a value
+    /// starting with it is not image data to the Worker either.
+    private static let javaScriptWhitespace: Set<UInt32> = [
+        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x00A0, 0x1680,
+        0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A,
+        0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+    ]
+
+    /// A–Z → a–z only; every other scalar is untouched (JavaScript `i` semantics here).
+    private static func foldingASCIICase(_ value: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in value.unicodeScalars {
+            scalars.append((0x41...0x5A).contains(scalar.value) ? Unicode.Scalar(scalar.value + 0x20)! : scalar)
+        }
+        return String(scalars)
+    }
+
+    private static func matches(_ pattern: NSRegularExpression, _ value: String) -> Bool {
+        pattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+    }
+
+    /// `imagePath` → `image_path` → matches `image`, exactly as the Worker normalises.
+    static func isImageBearingKey(_ key: String) -> Bool {
+        let snake = camelCaseBoundary.stringByReplacingMatches(
+            in: key, range: NSRange(key.startIndex..., in: key), withTemplate: "$1_$2"
+        )
+        return matches(imageKeyPattern, foldingASCIICase(snake))
+    }
+
+    /// Data URLs and raw base64 JPEG / PNG prefixes, after JavaScript `trimStart()`.
+    static func looksLikeImageData(_ value: String) -> Bool {
+        let trimmed = String(String.UnicodeScalarView(
+            value.unicodeScalars.drop(while: { javaScriptWhitespace.contains($0.value) })
+        ))
+        return matches(imageValuePattern, foldingASCIICase(trimmed))
+    }
+
+    /// Recursively removes image-bearing keys and image-looking string values from
+    /// an outgoing JSON object. Everything else is passed through untouched.
+    static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
+        var cleaned: [String: Any] = [:]
+        for (key, value) in object where !isImageBearingKey(key) {
+            if let kept = strippingImagePayload(value) { cleaned[key] = kept }
+        }
+        return cleaned
+    }
+
+    /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
+    private static func strippingImagePayload(_ value: Any) -> Any? {
+        switch value {
+        case let object as [String: Any]:
+            return strippingImagePayload(object)
+        case let array as [Any]:
+            return array.compactMap(strippingImagePayload)
+        case let string as String:
+            return looksLikeImageData(string) ? nil : string
+        default:
+            return value
+        }
+    }
+
+    /// Single choke point for every JSON body this client posts.
+    static func encodeRequestBody(_ body: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: strippingImagePayload(body), options: [])
+    }
+
     /// Live store garments are the source of truth. Fixture JSON is an overlay for
     /// bundled ids only — user-added UUIDs are serialized from `StubGarment` (#97).
+    /// Fixture overlay rows are stripped of image-bearing keys here; summary rows
+    /// never carry one. `encodeRequestBody` re-checks the whole body regardless.
     static func wardrobeRows(from garments: [StubGarment]) -> [[String: Any]] {
         let fixtureById = Dictionary(
             uniqueKeysWithValues: FixtureWardrobeLoader.loadGarmentJSONObjects().compactMap { row -> (String, [String: Any])? in
@@ -263,7 +353,7 @@ enum OutfitEngineClient {
                 if let keep = live.keepTogether {
                     fixture["keepTogether"] = keep
                 }
-                wardrobe.append(fixture)
+                wardrobe.append(strippingImagePayload(fixture))
             } else {
                 wardrobe.append(garmentSummary(from: live))
             }
@@ -385,7 +475,7 @@ enum OutfitEngineClient {
         if !locks.isEmpty {
             body["lockedAssignments"] = locks
         }
-        return try JSONSerialization.data(withJSONObject: body, options: [])
+        return try encodeRequestBody(body)
     }
 
     static func generate(
@@ -520,7 +610,7 @@ enum OutfitEngineClient {
                 "activeRules": [] as [Any],
             ] as [String: Any],
         ]
-        return try JSONSerialization.data(withJSONObject: body, options: [])
+        return try encodeRequestBody(body)
     }
 
     static func fetchAlternatives(

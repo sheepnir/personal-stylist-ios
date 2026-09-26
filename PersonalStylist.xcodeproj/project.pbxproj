@@ -39,6 +39,7 @@
 		51FBAA5C4C4D9F0C9D3200CD /* CameraIntakeHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727E00F746895D5DFC46B9DE /* CameraIntakeHostedTests.swift */; };
 		53AA63010A77B6D12848E100 /* SystemCameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4FA83C7D3E85E4F0A82608 /* SystemCameraPicker.swift */; };
 		5805543EA0D0A631CE6585CC /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39132F781D5BB32FA6C9BF8E /* DomainModels.swift */; };
+		5A7311DAEE2569985BBBB521 /* OutfitEngineImagePayloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5768A77FCA47EEA6E0805D41 /* OutfitEngineImagePayloadTests.swift */; };
 		5A804EBC4F5839C09E16C733 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4661E5463851C2BFBBB0B91E /* Assets.xcassets */; };
 		5CB4E403D895A3493CD1DAE6 /* garments.json in Resources */ = {isa = PBXBuildFile; fileRef = 99B402BE0A9DD4335D00F1D8 /* garments.json */; };
 		5E8DC8FF06C3FE296EBF89AB /* WardrobeCardInteractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C9E7A6E5D07CA62916ADAF /* WardrobeCardInteractionTests.swift */; };
@@ -188,6 +189,7 @@
 		4E4E047838A620C015FA904B /* PhotoReplaceA11yContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplaceA11yContractTests.swift; sourceTree = "<group>"; };
 		4E9AC9B2D45AED8B5FED2719 /* AssetLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetLibraryTests.swift; sourceTree = "<group>"; };
 		5531E78426C5AFA9AC1BA0D3 /* FounderProfileSeedLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FounderProfileSeedLoader.swift; sourceTree = "<group>"; };
+		5768A77FCA47EEA6E0805D41 /* OutfitEngineImagePayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitEngineImagePayloadTests.swift; sourceTree = "<group>"; };
 		5DF8F5C191E89B7226725E87 /* CameraIntakePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraIntakePresentationTests.swift; sourceTree = "<group>"; };
 		5F9F013E3E02DB42419D3C0C /* WearHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearHistoryViews.swift; sourceTree = "<group>"; };
 		646469CB9C19BA19F8362939 /* PhotoReplacePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplacePresentationTests.swift; sourceTree = "<group>"; };
@@ -420,6 +422,7 @@
 				F1EC205279C5B2A2554C77DF /* GarmentEditPersistenceTests.swift */,
 				A69E49EF063B05067FC1133A /* OutfitEngineClientAuthTests.swift */,
 				06910BA0D8478DCAF374FE75 /* OutfitEngineClientStubTests.swift */,
+				5768A77FCA47EEA6E0805D41 /* OutfitEngineImagePayloadTests.swift */,
 				6EFF8FDF2CF7FB7DE5435130 /* PerformanceFixesTests.swift */,
 				4E4E047838A620C015FA904B /* PhotoReplaceA11yContractTests.swift */,
 				6A618A4AA57060FD572AA38C /* PhotoReplaceA11yHostedTests.swift */,
@@ -779,6 +782,7 @@
 				1A4240B3D96EF291D6E06969 /* GarmentEditPersistenceTests.swift in Sources */,
 				C41ACF5E3C7DD4BACCE598E6 /* OutfitEngineClientAuthTests.swift in Sources */,
 				0A64B0486D7FAA7C3E8F5219 /* OutfitEngineClientStubTests.swift in Sources */,
+				5A7311DAEE2569985BBBB521 /* OutfitEngineImagePayloadTests.swift in Sources */,
 				DC71EBBE05BF6F02FD5234C9 /* PerformanceFixesTests.swift in Sources */,
 				D173BED15D18A4BB77013FEE /* PhotoReplaceA11yContractTests.swift in Sources */,
 				3D6655BA0BC0FE023A66D8DB /* PhotoReplaceA11yHostedTests.swift in Sources */,
