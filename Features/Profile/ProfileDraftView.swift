@@ -7,6 +7,7 @@ struct ProfileDraftView: View {
 
     @ObservedObject var model: LoopDemoModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     @State private var ageText: String = ""
     @State private var profession: String = ""
@@ -175,8 +176,12 @@ struct ProfileDraftView: View {
         }
         .onChange(of: model.scrollToDeviceAccessRequested) { _, requested in
             guard requested else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
+            if accessibilityReduceMotion {
                 proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+                }
             }
             model.scrollToDeviceAccessRequested = false
         }
