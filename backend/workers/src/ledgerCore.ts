@@ -19,6 +19,8 @@ export interface AttemptEntry {
   /** Lazy CostSource lookups for unknown outcomes (#13-b). */
   costLookupCount?: number;
   lastCostLookupAt?: string;
+  /** Set when unknown outcome aged to spent at upper bound; enables idempotent markUnknown replay. */
+  agedFromUnknown?: boolean;
 }
 
 export interface DayRecord {
@@ -189,6 +191,16 @@ export function markAttemptUnknown(
       if (generationId !== undefined) entry.generationId = generationId;
       return { ok: true };
     }
+    if (entry.state === 'reconciled') {
+      if (entry.agedFromUnknown) {
+        if (generationId !== undefined && entry.generationId !== undefined && entry.generationId !== generationId) {
+          return { ok: false, reason: 'invalid' };
+        }
+        if (generationId !== undefined) entry.generationId = generationId;
+        return { ok: true };
+      }
+      return { ok: false, reason: 'invalid' };
+    }
     if (entry.state !== 'reserved') {
       return { ok: false, reason: 'invalid' };
     }
@@ -207,6 +219,7 @@ function finalizeAgedUnknown(day: DayRecord, entry: AttemptEntry, now: Date): vo
   entry.state = 'reconciled';
   entry.actualUSD = entry.upperBoundUSD;
   entry.reconciledAt = now.toISOString();
+  entry.agedFromUnknown = true;
 }
 
 function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {

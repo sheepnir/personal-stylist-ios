@@ -211,4 +211,50 @@ describe('ledgerCore unknown outcomes (#13-b)', () => {
     expect(summarizeDay(state, DAY, CONFIG).spentUSD).toBeCloseTo(0.22);
     expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBeCloseTo(0);
   });
+
+  it('markUnknown replay before aging is idempotent and keeps reservedUSD', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.33, DAY, CONFIG);
+    expect(markAttemptUnknown(state, 'a1', 'gen-a')).toEqual({ ok: true });
+    expect(markAttemptUnknown(state, 'a1', 'gen-a')).toEqual({ ok: true });
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.reservedUSD).toBeCloseTo(0.33);
+    expect(summary.spentUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.state).toBe('unknown');
+  });
+
+  it('markUnknown replay after aging returns ok without changing spent or reserved', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.5, DAY, CONFIG);
+    markAttemptUnknown(state, 'a1', 'gen-retry');
+
+    const reservedAt = new Date(`${DAY}T10:00:00.000Z`);
+    state.days[DAY]!.attempts.a1.createdAt = reservedAt.toISOString();
+    const afterAging = new Date(reservedAt.getTime() + UNKNOWN_OUTCOME_AGING_MS + 1_000);
+    ageLedger(state, afterAging, noopCost);
+
+    const before = summarizeDay(state, DAY, CONFIG);
+    expect(before.spentUSD).toBeCloseTo(0.5);
+    expect(before.reservedUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.agedFromUnknown).toBe(true);
+
+    ageLedger(state, afterAging, noopCost);
+    expect(markAttemptUnknown(state, 'a1', 'gen-retry')).toEqual({ ok: true });
+
+    const after = summarizeDay(state, DAY, CONFIG);
+    expect(after.spentUSD).toBeCloseTo(before.spentUSD);
+    expect(after.reservedUSD).toBeCloseTo(before.reservedUSD);
+  });
+
+  it('markUnknown on reconciled known cost stays invalid', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.4, DAY, CONFIG);
+    expect(reconcileAttempt(state, 'a1', 0.07)).toEqual({ ok: true });
+    expect(markAttemptUnknown(state, 'a1', 'gen-late')).toEqual({ ok: false, reason: 'invalid' });
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.07);
+    expect(summary.reservedUSD).toBeCloseTo(0);
+  });
 });
