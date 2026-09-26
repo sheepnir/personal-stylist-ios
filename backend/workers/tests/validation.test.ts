@@ -106,6 +106,49 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     expect(res?.status).toBe(415);
   });
 
+  it('rejects consent path spoofing and never applies the exception inside arrays (#36)', () => {
+    expect(
+      rejectImagePayload({ 'privacyConsent.wardrobeImagesAcceptedAt': '2026-09-20T12:00:00Z' })?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: [{ wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z' }],
+      })?.status
+    ).toBe(415);
+  });
+
+  it('rejects strict RFC 3339 violations at the consent path (#36)', () => {
+    const consent = (value: string) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent('Tue Sep 20 2026 12:00:00 GMT'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('T 2026'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('Sun, 20 Sep 2026 18:30:00 GMT'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('2026-02-31T12:00:00Z'))?.status).toBe(415);
+    expect(rejectImagePayload(consent('2026-09-20t12:00:00Z'))?.status).toBe(415);
+  });
+
+  it('rejects a 65-character consent timestamp on length alone (#36)', () => {
+    const value = `${'2026-09-20T12:00:00Z'}${'0'.repeat(45)}`;
+    expect(value.length).toBe(65);
+    expect(
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+      })?.status
+    ).toBe(415);
+  });
+
+  it('allows RFC 3339 consent timestamps with Z, offset, and fractional seconds (#36)', () => {
+    const allow = (value: string) =>
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+        wardrobe: [{ id: '1', slot: 'TOP' }],
+      });
+    expect(allow('2026-09-20T12:00:00Z')).toBeNull();
+    expect(allow('2026-09-20T12:00:00+05:30')).toBeNull();
+    expect(allow('2026-09-20T12:00:00.123456789Z')).toBeNull();
+  });
+
   it('rejects consent timestamp at the wrong path or with bad values (#36)', () => {
     expect(rejectImagePayload({ wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z' })?.status).toBe(415);
     expect(
@@ -113,32 +156,22 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
         privacyConsent: { wardrobeImagesAcceptedAt: 'not-a-date', policyVersion: '1' },
       })?.status
     ).toBe(415);
-    expect(
-      rejectImagePayload({
-        privacyConsent: {
-          wardrobeImagesAcceptedAt: '2026-09-20',
-          policyVersion: '1',
-        },
-      })?.status
-    ).toBe(415);
-    expect(
-      rejectImagePayload({
-        privacyConsent: {
-          wardrobeImagesAcceptedAt: `${'2026-09-20T12:00:00Z'}${'0'.repeat(40)}`,
-          policyVersion: '1',
-        },
-      })?.status
-    ).toBe(415);
   });
 
-  it('rejects non-string wardrobeImagesAcceptedAt at the consent path (#36)', () => {
+  it('rejects null, number, and object at the consent path with 415 (#36)', () => {
     const consent = (value: unknown) => ({
       privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
     });
     expect(rejectImagePayload(consent(null))?.status).toBe(415);
     expect(rejectImagePayload(consent(1_700_000_000))?.status).toBe(415);
-    expect(rejectImagePayload(consent(true))?.status).toBe(415);
     expect(rejectImagePayload(consent({ at: '2026-09-20T12:00:00Z' }))?.status).toBe(415);
+  });
+
+  it('rejects other non-string consent values with 415 (#36)', () => {
+    const consent = (value: unknown) => ({
+      privacyConsent: { wardrobeImagesAcceptedAt: value, policyVersion: '1' },
+    });
+    expect(rejectImagePayload(consent(true))?.status).toBe(415);
     expect(rejectImagePayload(consent(['2026-09-20T12:00:00Z']))?.status).toBe(415);
   });
 

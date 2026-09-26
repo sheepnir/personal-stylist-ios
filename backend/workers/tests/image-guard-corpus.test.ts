@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   FORBIDDEN_IMAGE_KEY_TOKENS,
-  IMAGE_GUARD_CONSENT_FIELD_PATH,
+  IMAGE_GUARD_CONSENT_FIELD_SEGMENTS,
   normalizedKeyContainsForbiddenImageToken,
   rejectImagePayload,
 } from '../src/validation.js';
@@ -28,7 +28,7 @@ const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as Corpus;
 describe('image-guard corpus (#36)', () => {
   it('exports the expected forbidden token count', () => {
     expect(FORBIDDEN_IMAGE_KEY_TOKENS.length).toBeGreaterThanOrEqual(13);
-    expect(IMAGE_GUARD_CONSENT_FIELD_PATH).toBe('privacyConsent.wardrobeImagesAcceptedAt');
+    expect(IMAGE_GUARD_CONSENT_FIELD_SEGMENTS).toEqual(['privacyConsent', 'wardrobeImagesAcceptedAt']);
   });
 
   it.each(corpus.keySegments)('key segment $key → imageBearing=$imageBearing', ({ key, imageBearing }) => {

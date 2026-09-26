@@ -12,6 +12,9 @@
 
 import type { Env, ProblemDetail } from './types.js';
 import { hashToken } from './usage.js';
+import {
+  isAllowedWardrobeImagesAcceptedAtValue,
+} from './imageGuardConsent.js';
 
 /** Maximum accepted request body size for content endpoints. */
 export const MAX_BODY_BYTES = 512 * 1024; // 512 KiB
@@ -22,13 +25,13 @@ export const RATE_LIMIT_WINDOW_SECONDS = 60;
 
 /**
  * Sole named exception: docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt.
- * Matched on the full dotted path from the request body root only. The value must parse
- * as an ISO-8601 date-time and be at most 64 characters (openapi maxLength is tracked separately).
+ * Matched as path segments `['privacyConsent','wardrobeImagesAcceptedAt']` from the body
+ * root through objects only (never inside arrays). Value must match
+ * {@link WARDROBE_IMAGES_ACCEPTED_AT_RFC3339} with calendar round-trip and be at most
+ * 64 characters (openapi maxLength is tracked separately).
  * Additional exceptions require Architect approval and an openapi.yaml reference.
  */
-export const IMAGE_GUARD_CONSENT_FIELD_PATH = 'privacyConsent.wardrobeImagesAcceptedAt';
-
-const WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH = 64;
+export const IMAGE_GUARD_CONSENT_FIELD_SEGMENTS = ['privacyConsent', 'wardrobeImagesAcceptedAt'] as const;
 
 /** Substrings matched against {@link normalizeImageGuardKey} on each object key segment. */
 export const FORBIDDEN_IMAGE_KEY_TOKENS = [
@@ -66,14 +69,7 @@ export function normalizedKeyContainsForbiddenImageToken(key: string): boolean {
   return FORBIDDEN_IMAGE_KEY_TOKENS.some((token) => normalized.includes(token));
 }
 
-export function isAllowedWardrobeImagesAcceptedAtValue(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  if (value.length === 0 || value.length > WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH) return false;
-  // OpenAPI `format: date-time` — require a time component, not a date-only string.
-  if (!value.includes('T')) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed);
-}
+export { isAllowedWardrobeImagesAcceptedAtValue } from './imageGuardConsent.js';
 
 function problem(status: number, title: string, code: string, detail: string, extra: Record<string, unknown> = {}): Response {
   const body: ProblemDetail = {
@@ -168,27 +164,36 @@ export function rejectImagePayload(body: unknown): Response | null {
   return null;
 }
 
-function joinKeyPath(parentPath: string, key: string): string {
-  return parentPath ? `${parentPath}.${key}` : key;
+function consentPathMatches(path: readonly string[]): boolean {
+  return (
+    path.length === IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.length &&
+    IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.every((segment, index) => path[index] === segment)
+  );
 }
 
 function containsImage(value: unknown): boolean {
   // Iterative traversal: no depth-based fail-open or call-stack exhaustion.
-  const pending: Array<{ item: unknown; path: string }> = [{ item: value, path: '' }];
+  const pending: Array<{ item: unknown; path: string[]; fromArray: boolean }> = [
+    { item: value, path: [], fromArray: false },
+  ];
   while (pending.length) {
-    const { item, path } = pending.pop()!;
+    const { item, path, fromArray } = pending.pop()!;
     if (typeof item === 'string' && IMAGE_VALUE_PATTERN.test(item.trimStart())) return true;
     if (Array.isArray(item)) {
-      for (const child of item) pending.push({ item: child, path });
+      for (const child of item) pending.push({ item: child, path, fromArray: true });
     } else if (item !== null && typeof item === 'object') {
       for (const [key, child] of Object.entries(item)) {
-        const keyPath = joinKeyPath(path, key);
-        if (keyPath === IMAGE_GUARD_CONSENT_FIELD_PATH) {
+        const nextPath = [...path, key];
+        if (!fromArray && consentPathMatches(nextPath)) {
           if (!isAllowedWardrobeImagesAcceptedAtValue(child)) return true;
           continue;
         }
         if (normalizedKeyContainsForbiddenImageToken(key)) return true;
-        pending.push({ item: child, path: keyPath });
+        if (Array.isArray(child)) {
+          for (const element of child) pending.push({ item: element, path: nextPath, fromArray: true });
+        } else {
+          pending.push({ item: child, path: nextPath, fromArray: false });
+        }
       }
     }
   }
