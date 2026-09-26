@@ -232,24 +232,36 @@ enum OutfitEngineClient {
 
     // MARK: - Image-payload guard (VF-03)
 
-    // Mirrors `backend/workers/src/validation.ts` (`IMAGE_KEY_PATTERN` /
-    // `IMAGE_VALUE_PATTERN`). The Worker fails closed with 415 `IMAGE_NOT_ALLOWED`
-    // when a body carries any of these, so nothing matching may ever be sent.
-    // Fixture rows carry a local image reference (`imagePath`) that is client-only
-    // state; the engine contract never needs it.
+    // Mirrors `backend/workers/src/imageGuardKey.ts`. Object keys must be printable ASCII
+    // (U+0020–U+007E); otherwise the payload is treated as image-bearing. Allowed keys are
+    // lowercased (ASCII A–Z only), `_`, `-`, `.`, and ECMAScript whitespace are stripped,
+    // then forbidden tokens are matched anywhere in the segment.
+    // `scripts/check-image-guard-parity.py` compares guard constants and runs the shared
+    // corpus through the Worker; the same corpus is exercised in Xcode via
+    // `testImageGuardCorpusMatchesClientGuard`.
     //
-    // The Worker's patterns use the JavaScript `i` flag, which on these ASCII-only
-    // patterns folds ASCII letters and nothing else (`ſ` never matches `s`). ICU's
-    // `.caseInsensitive` folds more, so inputs are ASCII-folded by hand and matched
-    // against lowercase patterns instead. `scripts/check-image-guard-parity.py`
-    // fails CI if the token lists below drift from the Worker's.
-    private static let imageKeyPattern = try! NSRegularExpression(
-        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)"
+    /// docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt. Path segments
+    /// `["privacyConsent","wardrobeImagesAcceptedAt"]` from the body root through objects
+    /// only (never inside arrays). Value must match the strict RFC 3339 rule in
+    /// `backend/workers/src/imageGuardConsent.ts` and be at most 64 characters
+    /// (openapi maxLength is tracked separately).
+    private static let imageGuardConsentFieldSegments = ["privacyConsent", "wardrobeImagesAcceptedAt"]
+    private static let wardrobeImagesAcceptedAtMaxLength = 64
+    private static let forbiddenImageKeyTokens = [
+        "image", "imagedata", "imagebase64", "thumbnail", "thumb", "photo",
+        "masterimage", "processedimage", "pixeldata", "bitmap",
+        "imagery", "photography", "thumbsup",
+    ]
+    private static let wardrobeImagesAcceptedAtRfc3339 = try! NSRegularExpression(
+        pattern: #"^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"#
     )
+    private static let imageGuardPrintableAsciiMin: UInt32 = 0x20
+    private static let imageGuardPrintableAsciiMax: UInt32 = 0x7E
+    private static let imageGuardKeySeparatorCodePoints: [UInt32] = [0x5F, 0x2D, 0x2E]
+    private static let imageValuePrefixes = ["data:image/", "/9j/", "ivborw0kggo"]
     private static let imageValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
-    private static let camelCaseBoundary = try! NSRegularExpression(pattern: "([a-z])([A-Z])")
 
     /// ECMAScript WhiteSpace + LineTerminator, i.e. what JavaScript `trimStart()`
     /// removes. U+0085 (NEL) is deliberately absent: JavaScript keeps it, so a value
@@ -273,12 +285,89 @@ enum OutfitEngineClient {
         pattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
 
-    /// `imagePath` → `image_path` → matches `image`, exactly as the Worker normalises.
+    private static func objectKeyFailsPrintableAsciiRule(_ key: String) -> Bool {
+        for scalar in key.unicodeScalars {
+            let v = scalar.value
+            if v < imageGuardPrintableAsciiMin || v > imageGuardPrintableAsciiMax { return true }
+        }
+        return false
+    }
+
+    private static func isImageGuardKeySeparator(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        if imageGuardKeySeparatorCodePoints.contains(v) { return true }
+        return javaScriptWhitespace.contains(v)
+    }
+
+    private static func normalizeImageGuardKey(_ key: String) -> String {
+        var normalized = ""
+        for scalar in key.unicodeScalars {
+            if isImageGuardKeySeparator(scalar) { continue }
+            if (0x41...0x5A).contains(scalar.value) {
+                normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
+            } else {
+                normalized.unicodeScalars.append(scalar)
+            }
+        }
+        return normalized
+    }
+
+    /// True when the key segment is non-printable-ASCII or contains a forbidden image token.
     static func isImageBearingKey(_ key: String) -> Bool {
-        let snake = camelCaseBoundary.stringByReplacingMatches(
-            in: key, range: NSRange(key.startIndex..., in: key), withTemplate: "$1_$2"
-        )
-        return matches(imageKeyPattern, foldingASCIICase(snake))
+        if objectKeyFailsPrintableAsciiRule(key) { return true }
+        let normalized = normalizeImageGuardKey(key)
+        return forbiddenImageKeyTokens.contains { normalized.contains($0) }
+    }
+
+    private static let consentPathDepth = 2
+
+    private static func consentPathMatches(_ path: [String]) -> Bool {
+        path.count == imageGuardConsentFieldSegments.count
+            && zip(path, imageGuardConsentFieldSegments).allSatisfy { $0.0 == $0.1 }
+    }
+
+    private static func consentTimestampHasControlCharacter(_ value: String) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return v <= 0x1f || v == 0x7f || v == 0x2028 || v == 0x2029
+        }
+    }
+
+    private static func rfc3339CalendarDateValid(year: Int, month: Int, day: Int) -> Bool {
+        guard (1...12).contains(month), (1...31).contains(day) else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        guard let date = calendar.date(from: components) else { return false }
+        return calendar.component(.year, from: date) == year
+            && calendar.component(.month, from: date) == month
+            && calendar.component(.day, from: date) == day
+    }
+
+    private static func isAllowedWardrobeImagesAcceptedAtRfc3339(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= wardrobeImagesAcceptedAtMaxLength else { return false }
+        guard !consentTimestampHasControlCharacter(value) else { return false }
+        let nsRange = NSRange(value.startIndex..., in: value)
+        guard let match = wardrobeImagesAcceptedAtRfc3339.firstMatch(
+            in: value,
+            options: [.anchored],
+            range: nsRange
+        ) else { return false }
+        guard match.range.length == nsRange.length else { return false }
+        func intAt(_ index: Int) -> Int? {
+            guard let range = Range(match.range(at: index), in: value) else { return nil }
+            return Int(value[range])
+        }
+        guard let year = intAt(1), let month = intAt(2), let day = intAt(3) else { return false }
+        return rfc3339CalendarDateValid(year: year, month: month, day: day)
+    }
+
+    private static func isAllowedWardrobeImagesAcceptedAtValue(_ value: Any) -> Bool {
+        guard let string = value as? String else { return false }
+        return isAllowedWardrobeImagesAcceptedAtRfc3339(string)
     }
 
     /// Data URLs and raw base64 JPEG / PNG prefixes, after JavaScript `trimStart()`.
@@ -292,20 +381,73 @@ enum OutfitEngineClient {
     /// Recursively removes image-bearing keys and image-looking string values from
     /// an outgoing JSON object. Everything else is passed through untouched.
     static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
+        strippingImagePayload(object, path: [], pathLen: 0, pastConsentDepth: false, underArrayAncestor: false)
+    }
+
+    private static func strippingImagePayload(
+        _ object: [String: Any],
+        path: [String],
+        pathLen: Int,
+        pastConsentDepth: Bool,
+        underArrayAncestor: Bool
+    ) -> [String: Any] {
         var cleaned: [String: Any] = [:]
-        for (key, value) in object where !isImageBearingKey(key) {
-            if let kept = strippingImagePayload(value) { cleaned[key] = kept }
+        for (key, value) in object {
+            var childPath = path
+            var childPathLen = pathLen
+            var childPastConsentDepth = pastConsentDepth
+            if !underArrayAncestor && !pastConsentDepth && pathLen < consentPathDepth {
+                childPath = pathLen == 0 ? [key] : [path[0], key]
+                childPathLen = childPath.count
+                childPastConsentDepth = childPathLen >= consentPathDepth
+                if consentPathMatches(childPath) {
+                    if isAllowedWardrobeImagesAcceptedAtValue(value) {
+                        cleaned[key] = value
+                    }
+                    continue
+                }
+            }
+            guard !isImageBearingKey(key) else { continue }
+            if let kept = strippingImagePayload(
+                value,
+                path: childPath,
+                pathLen: childPathLen,
+                pastConsentDepth: childPastConsentDepth,
+                underArrayAncestor: underArrayAncestor
+            ) {
+                cleaned[key] = kept
+            }
         }
         return cleaned
     }
 
     /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
-    private static func strippingImagePayload(_ value: Any) -> Any? {
+    private static func strippingImagePayload(
+        _ value: Any,
+        path: [String],
+        pathLen: Int,
+        pastConsentDepth: Bool,
+        underArrayAncestor: Bool
+    ) -> Any? {
         switch value {
         case let object as [String: Any]:
-            return strippingImagePayload(object)
+            return strippingImagePayload(
+                object,
+                path: path,
+                pathLen: pathLen,
+                pastConsentDepth: pastConsentDepth,
+                underArrayAncestor: underArrayAncestor
+            )
         case let array as [Any]:
-            return array.compactMap(strippingImagePayload)
+            return array.compactMap {
+                strippingImagePayload(
+                    $0,
+                    path: path,
+                    pathLen: pathLen,
+                    pastConsentDepth: pastConsentDepth,
+                    underArrayAncestor: true
+                )
+            }
         case let string as String:
             return looksLikeImageData(string) ? nil : string
         default:
