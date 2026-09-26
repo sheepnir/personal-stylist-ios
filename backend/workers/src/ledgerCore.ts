@@ -290,12 +290,78 @@ function distinctTasksOnDay(day: DayRecord): Set<string> {
   return tasks;
 }
 
+/** Distinct task labels on a day after reconciling one attempt to taskKey. */
+export function distinctTasksAfterReconcile(day: DayRecord, attemptId: string, taskKey: string): number {
+  const tasks = new Set<string>();
+  for (const id of Object.keys(day.attempts)) {
+    if (!Object.hasOwn(day.attempts, id)) {
+      continue;
+    }
+    tasks.add(id === attemptId ? taskKey : day.attempts[id]!.task);
+  }
+  return tasks.size;
+}
+
 function reserveTaskAllowedOnDay(day: DayRecord, task: string): boolean {
   const tasks = distinctTasksOnDay(day);
   if (tasks.has(task)) {
     return true;
   }
   return tasks.size < MAX_DISTINCT_TASKS_PER_DAY;
+}
+
+function reconcileTaskAllowedOnDay(day: DayRecord, attemptId: string, taskKey: string): boolean {
+  return distinctTasksAfterReconcile(day, attemptId, taskKey) <= MAX_DISTINCT_TASKS_PER_DAY;
+}
+
+/** Recompute day totals from attempt rows (storage decode invariant check). */
+export function recomputeDayTotalsFromAttempts(
+  attempts: Record<string, AttemptEntry>
+): {
+  spentMicro: number;
+  reservedMicro: number;
+  overReservationCount: number;
+  tasks: Record<string, number>;
+} | null {
+  let spentMicro = 0;
+  let reservedMicro = 0;
+  let overReservationCount = 0;
+  const tasks = nullRecord() as Record<string, number>;
+  for (const id of Object.keys(attempts)) {
+    if (!Object.hasOwn(attempts, id)) {
+      continue;
+    }
+    const entry = attempts[id]!;
+    if (entry.state === 'reserved' || entry.state === 'unknown') {
+      const next = safeMicroAdd(reservedMicro, entry.upperBoundMicro);
+      if (next === null) {
+        return null;
+      }
+      reservedMicro = next;
+      continue;
+    }
+    if (entry.state !== 'reconciled') {
+      return null;
+    }
+    if (entry.actualMicro === undefined) {
+      return null;
+    }
+    const nextSpent = safeMicroAdd(spentMicro, entry.actualMicro);
+    if (nextSpent === null) {
+      return null;
+    }
+    spentMicro = nextSpent;
+    const prevTask = Object.hasOwn(tasks, entry.task) ? tasks[entry.task]! : 0;
+    const nextTask = safeMicroAdd(prevTask, entry.actualMicro);
+    if (nextTask === null) {
+      return null;
+    }
+    tasks[entry.task] = nextTask;
+    if (entry.actualMicro > entry.upperBoundMicro) {
+      overReservationCount += 1;
+    }
+  }
+  return { spentMicro, reservedMicro, overReservationCount, tasks };
 }
 
 function emptyDay(date: string): DayRecord {
@@ -677,13 +743,17 @@ export function reconcileAttempt(
     return { ok: false, reason: 'invalid' };
   }
 
+  const taskKey = task ?? entry.task;
+  if (!reconcileTaskAllowedOnDay(dayRecord, attemptId, taskKey)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
   const newReserved = safeMicroSub(dayRecord.reservedMicro, entry.upperBoundMicro);
   const newSpent = safeMicroAdd(dayRecord.spentMicro, actualMicro);
   if (newReserved === null || newSpent === null) {
     return { ok: false, reason: 'overflow' };
   }
 
-  const taskKey = task ?? entry.task;
   const taskTotal = safeMicroAdd(
     Object.hasOwn(dayRecord.tasks, taskKey) ? dayRecord.tasks[taskKey] : 0,
     actualMicro
