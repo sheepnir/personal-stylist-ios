@@ -23,6 +23,81 @@ import {
   stage1InputFromScenario,
 } from "../stage1/helpers.js";
 
+function normalizeForForbiddenTermScan(text: string): string {
+  return text.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+const FORBIDDEN_NORMALIZED_TERMS = [
+  "freetext",
+  "gapreason",
+  "chat",
+  "conversation",
+] as const;
+
+function collectStringValues(value: unknown, out: string[], seen = new WeakSet<object>()): void {
+  if (typeof value === "string") {
+    out.push(value);
+    return;
+  }
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectStringValues(entry, out, seen);
+    }
+    return;
+  }
+
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    collectStringValues(nested, out, seen);
+  }
+}
+
+function assertHashedPromptFieldsAvoidForbiddenTerms(
+  instructionText: string,
+  optionDescriptions: unknown,
+  answerTypes: unknown,
+): void {
+  const strings: string[] = [];
+  collectStringValues(
+    { instructionText, optionDescriptions, answerTypes },
+    strings,
+  );
+  for (const raw of strings) {
+    const normalized = normalizeForForbiddenTermScan(raw);
+    for (const term of FORBIDDEN_NORMALIZED_TERMS) {
+      expect(normalized.includes(term)).toBe(false);
+    }
+  }
+}
+
+function hashedFieldsContainForbiddenTerm(
+  instructionText: string,
+  optionDescriptions: unknown,
+  answerTypes: unknown,
+): boolean {
+  const strings: string[] = [];
+  collectStringValues(
+    { instructionText, optionDescriptions, answerTypes },
+    strings,
+  );
+  for (const raw of strings) {
+    const normalized = normalizeForForbiddenTermScan(raw);
+    for (const term of FORBIDDEN_NORMALIZED_TERMS) {
+      if (normalized.includes(term)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 const FORBIDDEN_CHAT_KEYS = new Set([
   "messages",
   "chat",
@@ -112,9 +187,30 @@ describe("prompt registry (ADR-0001 §8)", () => {
   it("uses Decisions typed answers, not chat completion messages", () => {
     assertNoChatCompletionFields(outfitT2D1);
     expect(outfitT2D1.instructionText).not.toMatch(/\{g_/);
-    expect(outfitT2D1.instructionText.toLowerCase()).not.toContain("gapreason");
-    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("rationale");
-    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("gapReason");
+    assertHashedPromptFieldsAvoidForbiddenTerms(
+      outfitT2D1.instructionText,
+      outfitT2D1.optionDescriptions,
+      outfitT2D1.answerTypes,
+    );
+  });
+
+  it("forbidden-term scanner rejects legacy free-text and gap-reason wording", () => {
+    const legacyInstruction =
+      "Do not emit free text, explanatory prose, gap reasons, garment placeholders.";
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        legacyInstruction,
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toBe(true);
+    expect(() =>
+      assertHashedPromptFieldsAvoidForbiddenTerms(
+        legacyInstruction,
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toThrow();
   });
 
   it("answerTypes keys mirror A-2 slot_<SLOT> contract (no accessory ids)", () => {

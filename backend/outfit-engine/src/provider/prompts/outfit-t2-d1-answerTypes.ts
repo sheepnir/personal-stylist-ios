@@ -23,7 +23,7 @@ const CHOICE_ANSWER_TYPE: JSONSchema7 = {
   },
 };
 
-/** Per-slot typed Decisions answers keyed by `slot_<SLOT>` (ADR-0001 §7.1, §8). No free text. */
+/** Per-slot typed Decisions answers keyed by `slot_<SLOT>` (ADR-0001 §7.1, §8). */
 export const OUTFIT_T2_D1_ANSWER_TYPES: Readonly<Record<string, JSONSchema7>> =
   deepFreeze(
     Object.fromEntries(
