@@ -106,3 +106,5 @@ export function resolveSpendConfig(
   const soft = parse(env.SOFT_THRESHOLD_USD, SPEND_CONFIG.softThresholdUSD);
   return { dailyCapUSD, softThresholdUSD: Math.min(soft, dailyCapUSD) };
 }
+
+const __ci48ScratchBreak: number = "not-a-number";
