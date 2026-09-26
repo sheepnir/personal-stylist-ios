@@ -237,7 +237,7 @@ describe('ledgerCore unknown outcomes (#13-b)', () => {
     const before = summarizeDay(state, DAY, CONFIG);
     expect(before.spentUSD).toBeCloseTo(0.5);
     expect(before.reservedUSD).toBeCloseTo(0);
-    expect(state.days[DAY]?.attempts.a1.agedFromUnknown).toBe(true);
+    expect(state.days[DAY]?.attempts.a1.agedAtUpperBound).toBe(true);
 
     ageLedger(state, afterAging, noopCost);
     expect(markAttemptUnknown(state, 'a1', 'gen-retry')).toEqual({ ok: true });
@@ -245,6 +245,62 @@ describe('ledgerCore unknown outcomes (#13-b)', () => {
     const after = summarizeDay(state, DAY, CONFIG);
     expect(after.spentUSD).toBeCloseTo(before.spentUSD);
     expect(after.reservedUSD).toBeCloseTo(before.reservedUSD);
+  });
+
+  it('ages orphaned reserved attempts to spent at upper bound after 24 h', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'orphan-1', 0.28, DAY, CONFIG);
+
+    const reservedAt = new Date(`${DAY}T09:00:00.000Z`);
+    state.days[DAY]!.attempts['orphan-1'].createdAt = reservedAt.toISOString();
+
+    const afterAging = new Date(reservedAt.getTime() + UNKNOWN_OUTCOME_AGING_MS + 2_000);
+    ageLedger(state, afterAging, noopCost);
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.28);
+    expect(summary.reservedUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts['orphan-1'].agedAtUpperBound).toBe(true);
+  });
+
+  it('survives a throwing CostSource without releasing the reservation', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.31, DAY, CONFIG);
+    markAttemptUnknown(state, 'a1', 'gen-throw');
+
+    const base = new Date(`${DAY}T12:00:00.000Z`);
+    state.days[DAY]!.attempts.a1.createdAt = new Date(`${DAY}T11:30:00.000Z`).toISOString();
+
+    const throwing: CostSource = {
+      lookup: () => {
+        throw new Error('provider offline');
+      },
+    };
+    expect(() => ageLedger(state, base, throwing)).not.toThrow();
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.reservedUSD).toBeCloseTo(0.31);
+    expect(summary.spentUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.costLookupCount).toBe(1);
+  });
+
+  it('ages immediately when createdAt is missing or unparseable', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'bad-ts', 0.19, DAY, CONFIG);
+    state.days[DAY]!.attempts['bad-ts'].createdAt = 'not-a-timestamp';
+
+    ageLedger(state, new Date(`${DAY}T12:00:00.000Z`), noopCost);
+
+    let summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.19);
+    expect(summary.reservedUSD).toBeCloseTo(0);
+
+    reserveAttempt(state, 'no-ts', 0.11, DAY, CONFIG);
+    delete (state.days[DAY]!.attempts['no-ts'] as { createdAt?: string }).createdAt;
+    ageLedger(state, new Date(`${DAY}T12:01:00.000Z`), noopCost);
+    summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.19 + 0.11);
+    expect(summary.reservedUSD).toBeCloseTo(0);
   });
 
   it('markUnknown on reconciled known cost stays invalid', () => {

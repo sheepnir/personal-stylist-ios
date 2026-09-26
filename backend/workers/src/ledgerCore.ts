@@ -19,8 +19,8 @@ export interface AttemptEntry {
   /** Lazy CostSource lookups for unknown outcomes (#13-b). */
   costLookupCount?: number;
   lastCostLookupAt?: string;
-  /** Set when unknown outcome aged to spent at upper bound; enables idempotent markUnknown replay. */
-  agedFromUnknown?: boolean;
+  /** Set when an open attempt aged to spent at upper bound; enables idempotent markUnknown replay. */
+  agedAtUpperBound?: boolean;
 }
 
 export interface DayRecord {
@@ -123,11 +123,16 @@ export function reserveAttempt(
     return { ok: false, reason: 'hard_cap' };
   }
 
+  const createdAt = new Date().toISOString();
+  if (!isValidCreatedAt(createdAt)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
   dayRecord.attempts[attemptId] = {
     attemptId,
     upperBoundUSD,
     state: 'reserved',
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
   dayRecord.reservedUSD += upperBoundUSD;
   state.days[day] = dayRecord;
@@ -192,7 +197,7 @@ export function markAttemptUnknown(
       return { ok: true };
     }
     if (entry.state === 'reconciled') {
-      if (entry.agedFromUnknown) {
+      if (entry.agedAtUpperBound) {
         if (generationId !== undefined && entry.generationId !== undefined && entry.generationId !== generationId) {
           return { ok: false, reason: 'invalid' };
         }
@@ -213,19 +218,38 @@ export function markAttemptUnknown(
   return { ok: false, reason: 'not_found' };
 }
 
-function finalizeAgedUnknown(day: DayRecord, entry: AttemptEntry, now: Date): void {
+function isValidCreatedAt(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
+}
+
+/** `null` when missing or unparseable — treated as immediately eligible to age. */
+function parseCreatedAtMs(createdAt: string | undefined): number | null {
+  if (!createdAt) return null;
+  const ms = Date.parse(createdAt);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function shouldAgeToUpperBound(entry: AttemptEntry, now: Date): boolean {
+  const createdMs = parseCreatedAtMs(entry.createdAt);
+  if (createdMs === null) return true;
+  return now.getTime() - createdMs >= UNKNOWN_OUTCOME_AGING_MS;
+}
+
+function finalizeAgedAtUpperBound(day: DayRecord, entry: AttemptEntry, now: Date): void {
   day.reservedUSD -= entry.upperBoundUSD;
   day.spentUSD += entry.upperBoundUSD;
   entry.state = 'reconciled';
   entry.actualUSD = entry.upperBoundUSD;
   entry.reconciledAt = now.toISOString();
-  entry.agedFromUnknown = true;
+  entry.agedAtUpperBound = true;
 }
 
 function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {
   if (!entry.generationId) return false;
 
-  const createdMs = Date.parse(entry.createdAt);
+  const createdMs = parseCreatedAtMs(entry.createdAt);
+  if (createdMs === null) return false;
+
   const ageMs = now.getTime() - createdMs;
   if (ageMs >= UNKNOWN_OUTCOME_AGING_MS) return false;
 
@@ -234,19 +258,21 @@ function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {
     COST_LOOKUP_BACKOFF_MS[Math.min(count, COST_LOOKUP_BACKOFF_MS.length - 1)];
   const anchorMs =
     count === 0 ? createdMs : Date.parse(entry.lastCostLookupAt ?? entry.createdAt);
+  if (!Number.isFinite(anchorMs)) return false;
   return now.getTime() >= anchorMs + backoff;
 }
 
-function processUnknownAttempts(state: LedgerState, now: Date, costSource: CostSource): void {
+function processOpenAttempts(state: LedgerState, now: Date, costSource: CostSource): void {
   for (const day of Object.values(state.days)) {
     for (const entry of Object.values(day.attempts)) {
-      if (entry.state !== 'unknown') continue;
+      if (entry.state !== 'reserved' && entry.state !== 'unknown') continue;
 
-      const ageMs = now.getTime() - Date.parse(entry.createdAt);
-      if (ageMs >= UNKNOWN_OUTCOME_AGING_MS) {
-        finalizeAgedUnknown(day, entry, now);
+      if (shouldAgeToUpperBound(entry, now)) {
+        finalizeAgedAtUpperBound(day, entry, now);
         continue;
       }
+
+      if (entry.state !== 'unknown') continue;
 
       if (!shouldAttemptCostLookup(entry, now)) continue;
 
@@ -256,11 +282,14 @@ function processUnknownAttempts(state: LedgerState, now: Date, costSource: CostS
       const generationId = entry.generationId;
       if (!generationId) continue;
 
-      const lookup = costSource.lookup(generationId, entry.attemptId);
-      if (lookup.outcome === 'known' && lookup.costUSD !== undefined) {
-        reconcileAttempt(state, entry.attemptId, lookup.costUSD);
+      try {
+        const lookup = costSource.lookup(generationId, entry.attemptId);
+        if (lookup.outcome === 'known' && lookup.costUSD !== undefined) {
+          reconcileAttempt(state, entry.attemptId, lookup.costUSD);
+        }
+      } catch {
+        // Treat throws like unknown/error: reservation stays, backoff already advanced.
       }
-      // `unknown` and `error` leave the reservation in place (failed reconciliation never releases).
     }
   }
 }
@@ -283,10 +312,10 @@ export function summarizeDay(
 }
 
 /**
- * Prune stale days, age unknown outcomes at 24 h, and lazily reconcile via {@link CostSource}.
+ * Prune stale days, age open reservations at 24 h, and lazily reconcile unknowns via {@link CostSource}.
  */
 export function ageLedger(state: LedgerState, now: Date, costSource: CostSource): void {
-  processUnknownAttempts(state, now, costSource);
+  processOpenAttempts(state, now, costSource);
   pruneOldDays(state, now);
 }
 
