@@ -6,6 +6,7 @@ import type { Env, SpendRecord, SpendLedgerAccess } from './types.js';
 import { SPEND_CONFIG } from './types.js';
 import { resolveSpendConfig, spendConfigFromEnv } from './spendConfig.js';
 import { hashToken, deviceLocatorFromToken } from './tokens.js';
+import { isValidLedgerDayKey } from './ledgerCore.js';
 
 export { hashToken };
 
@@ -161,12 +162,15 @@ export async function reserveSpend(
 
 export async function reconcileSpend(
   deviceToken: string,
+  day: string,
   attemptId: string,
   actualUSD: number,
   env: Env,
-  day: string = getTodayDateString(),
   task?: string
 ): Promise<{ ok: boolean; reason?: string }> {
+  if (!isValidLedgerDayKey(day)) {
+    return { ok: false, reason: 'invalid' };
+  }
   const access = await accessLedger(deviceToken, env);
   if (access.kind === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
@@ -189,9 +193,10 @@ export async function recordSpend(
 ): Promise<void> {
   const safeCost = String(costUSD).replace(/\./g, 'p').replace(/[^A-Za-z0-9_-]/g, 'p');
   const attemptId = `test-record_${task}_${safeCost}`.slice(0, 64);
-  const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
+  const reservationDay = getTodayDateString();
+  const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, reservationDay, task);
   if (!reserved.ok) return;
-  await reconcileSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
+  await reconcileSpend(deviceToken, reservationDay, attemptId, costUSD, env, task);
 }
 
 export async function isHardCapReached(deviceToken: string, env: Env): Promise<boolean> {

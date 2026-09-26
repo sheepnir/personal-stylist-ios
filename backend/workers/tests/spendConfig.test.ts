@@ -84,14 +84,15 @@ describe('invalid deployment config fail-closed in usage', () => {
     };
     const invalidEnv: Env = { ...validEnv, DAILY_CAP_USD: 'abc' };
     const token = generateDeviceToken();
-    expect(await reserveSpend(token, 'held-1', 0.25, validEnv)).toEqual({ ok: true });
+    const reservationDay = new Date().toISOString().split('T')[0];
+    expect(await reserveSpend(token, 'held-1', 0.25, validEnv, reservationDay)).toEqual({ ok: true });
     expect(await reserveSpend(token, 'held-2', 0.1, invalidEnv)).toEqual({
       ok: false,
       reason: 'config_error',
     });
-    expect(await reconcileSpend(token, 'held-1', 0.12, invalidEnv)).toEqual({ ok: true });
+    expect(await reconcileSpend(token, reservationDay, 'held-1', 0.12, invalidEnv)).toEqual({ ok: true });
     const locator = deviceLocatorFromToken(token)!;
-    const day = mock.dumpState(locator).days[new Date().toISOString().split('T')[0]];
+    const day = mock.dumpState(locator).days[reservationDay];
     expect(day?.spentMicro).toBeGreaterThanOrEqual(120_000);
   });
 });
