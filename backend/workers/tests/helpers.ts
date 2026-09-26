@@ -61,13 +61,16 @@ export interface SpendLedgerMock {
   dumpState: (deviceId: string) => LedgerState;
 }
 
-export function createSpendLedgerMock(): SpendLedgerMock {
+export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolean }): SpendLedgerMock {
   const byDevice = new Map<string, LedgerState>();
 
   const stateFor = (deviceId: string): LedgerState => {
     let state = byDevice.get(deviceId);
     if (!state) {
       state = emptyLedgerState();
+      if (options?.legacyMonolithPresent) {
+        state.legacyMonolithPresent = true;
+      }
       byDevice.set(deviceId, state);
     }
     return state;

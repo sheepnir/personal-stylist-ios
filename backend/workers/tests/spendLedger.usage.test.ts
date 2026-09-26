@@ -101,6 +101,20 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(usage.ledgerConfigStatus).toBe('legacy');
   });
 
+  it('reports storage_error when the device ledger is blocked by a legacy monolith key', async () => {
+    const mock = createSpendLedgerMock({ legacyMonolithPresent: true });
+    const env: Env = {
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: mock.namespace as Env['SPEND_LEDGER'],
+    };
+    const token = generateDeviceToken();
+    const usage = await getUsageSummary(token, env);
+    expect(usage.ledgerConfigStatus).toBe('storage_error');
+    expect(usage.hardCapReached).toBe(true);
+    expect(usage.spentTodayUSD).toBe(0);
+  });
+
   it('reconciles using the reservation UTC day after midnight, not implicit today', async () => {
     const { env } = envWithSpend();
     const token = generateDeviceToken();

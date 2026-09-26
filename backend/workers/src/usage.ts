@@ -10,7 +10,12 @@ import { isValidLedgerDayKey } from './ledgerCore.js';
 
 export { hashToken };
 
-export type LedgerConfigStatus = 'ok' | 'config_error' | 'ledger_unavailable' | 'legacy';
+export type LedgerConfigStatus =
+  | 'ok'
+  | 'config_error'
+  | 'ledger_unavailable'
+  | 'legacy'
+  | 'storage_error';
 
 export interface UsageSummaryResponse {
   last7DaysUSD: number;
@@ -242,6 +247,21 @@ export async function getUsageSummary(
     );
     if (summary === 'unavailable') {
       return failClosedUsageSummary('ledger_unavailable');
+    }
+    if (summary.legacyStorageBlocked) {
+      return {
+        last7DaysUSD: summary.spentUSD,
+        last30DaysUSD: summary.spentUSD,
+        dailyCapUSD: config.dailyCapUSD,
+        softThresholdUSD: config.softThresholdUSD,
+        spentTodayUSD: summary.spentUSD,
+        reservedTodayUSD: summary.reservedUSD,
+        softThresholdReached: summary.softThresholdReached,
+        hardCapReached: summary.hardCapReached,
+        ledgerDayEndsAt: getEndOfDayISO(),
+        byTask: summary.byTask,
+        ledgerConfigStatus: 'storage_error',
+      };
     }
     return {
       last7DaysUSD: summary.spentUSD,

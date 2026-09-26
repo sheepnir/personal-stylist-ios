@@ -274,6 +274,35 @@ describe('legacy monolith key fail-closed', () => {
     expect(ledger.reserve('ok', 0.01, DAY, CONFIG, 'generate')).toEqual({ ok: true });
     expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(false);
   });
+
+  it('legacy key plus invalid config still fail-closes with storage_error and keeps ledger', () => {
+    const legacyPayload = {
+      days: {
+        [DAY]: {
+          date: DAY,
+          spentMicro: 0,
+          reservedMicro: 0,
+          overReservationCount: 0,
+          attempts: Object.create(null),
+          tasks: Object.create(null),
+        },
+      },
+    };
+    const invalidConfig = { dailyCapUSD: 0, softThresholdUSD: 0 };
+    const { ledger, kvHas } = createDeviceSpendLedgerHarness(undefined, {
+      initialKv: { ledger: legacyPayload },
+    });
+    expect(ledger.reserve('x', 0.01, DAY, invalidConfig, 'generate')).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
+    expect(ledger.reconcile(DAY, 'x', 0.01)).toEqual({ ok: false, reason: 'storage_error' });
+    const summary = ledger.summary(DAY, invalidConfig);
+    expect(summary.hardCapReached).toBe(true);
+    expect(summary.attemptLimitReached).toBe(true);
+    expect(summary.legacyStorageBlocked).toBe(true);
+    expect(kvHas('ledger')).toBe(true);
+  });
 });
 
 const PAST_DAY = '2026-08-01';

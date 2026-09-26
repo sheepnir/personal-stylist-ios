@@ -159,10 +159,20 @@ describe('ledgerCore reserve / reconcile', () => {
     const nowPastReservationDay = new Date(`2026-09-28T12:00:00.000Z`);
     expect(
       reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowPastReservationDay)
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: false, reason: 'stale_hold' });
+    expect(state.days[reserveDay].reservedMicro).toBe(200_000);
     expect(
       reserveAttempt(state, 'new-hold', 0.01, '2026-09-28', CONFIG, 'generate', nowPastReservationDay)
     ).toEqual({ ok: true });
+  });
+
+  it('idempotent reserve retry rejects a different task for the same attemptId and amount', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'retry-task', 0.2, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'retry-task', 0.2, DAY, CONFIG, 'alternatives')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
   });
 
   it('rejects unsafe reserve task names', () => {

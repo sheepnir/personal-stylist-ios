@@ -4,6 +4,7 @@ import {
   ageLedger,
   configToMicro,
   failClosedDaySummary,
+  isLegacyStorageBlocked,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
@@ -52,6 +53,12 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   ): ReserveResult {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
+      if (isLegacyStorageBlocked(state)) {
+        if (pruned && !this.persist(state, dayKeysBefore)) {
+          return toRpcReserveResult({ ok: false, reason: 'storage_error' });
+        }
+        return toRpcReserveResult({ ok: false, reason: 'storage_error' });
+      }
       if (!configToMicro(config).ok) {
         if (pruned && !this.persist(state, dayKeysBefore)) {
           return toRpcReserveResult({ ok: false, reason: 'storage_error' });
@@ -74,6 +81,12 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   reconcile(day: string, attemptId: string, actualUSD: number, task?: string): ReconcileResult {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
+      if (isLegacyStorageBlocked(state)) {
+        if (pruned && !this.persist(state, dayKeysBefore)) {
+          return toRpcReconcileResult({ ok: false, reason: 'storage_error' });
+        }
+        return toRpcReconcileResult({ ok: false, reason: 'storage_error' });
+      }
       const result = reconcileAttempt(state, day, attemptId, actualUSD, task);
       if (result.ok || pruned || result.reason === 'actual_over_ceiling') {
         if (!this.persist(state, dayKeysBefore)) {
@@ -92,6 +105,12 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   summary(day: string, config: SpendConfig): DaySummary {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
+      if (isLegacyStorageBlocked(state)) {
+        if (pruned && !this.persist(state, dayKeysBefore)) {
+          return toRpcDaySummary(failClosedDaySummary(day));
+        }
+        return toRpcDaySummary(summarizeDay(state, day, config));
+      }
       if (!configToMicro(config).ok) {
         if (pruned && !this.persist(state, dayKeysBefore)) {
           return toRpcDaySummary(failClosedDaySummary(day));

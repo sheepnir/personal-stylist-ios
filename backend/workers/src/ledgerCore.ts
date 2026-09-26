@@ -90,7 +90,15 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
   ok: boolean;
-  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error' | 'attempt_limit' | 'storage_error' | 'task_limit';
+  reason?:
+    | 'hard_cap'
+    | 'invalid'
+    | 'already_settled'
+    | 'config_error'
+    | 'attempt_limit'
+    | 'storage_error'
+    | 'task_limit'
+    | 'stale_hold';
 }
 
 export interface ReconcileResult {
@@ -107,6 +115,8 @@ export interface DaySummary {
   attemptLimitReached: boolean;
   overReservationCount: number;
   byTask: Record<string, number>;
+  /** Set when the monolith `ledger` KV key blocks the whole DO (fail-closed summary). */
+  legacyStorageBlocked?: true;
 }
 
 export type CostMicroResult = { ok: true; micro: number } | { ok: false };
@@ -668,10 +678,16 @@ export function reserveAttempt(
     if (existingOnDay.entry.state === 'reconciled' || existingOnDay.entry.state === 'unknown') {
       return { ok: false, reason: 'already_settled' };
     }
-    if (existingOnDay.entry.upperBoundMicro === upperBoundMicro) {
-      return { ok: true };
+    if (existingOnDay.entry.upperBoundMicro !== upperBoundMicro) {
+      return { ok: false, reason: 'invalid' };
     }
-    return { ok: false, reason: 'invalid' };
+    if (existingOnDay.entry.task !== task) {
+      return { ok: false, reason: 'invalid' };
+    }
+    if (utcDayString(now) !== day) {
+      return { ok: false, reason: 'stale_hold' };
+    }
+    return { ok: true };
   }
 
   if (!isLedgerDayKeyUsable(day, now)) {
@@ -827,7 +843,7 @@ export function summarizeDay(
   config: SpendConfig
 ): DaySummary {
   if (isLegacyStorageBlocked(state)) {
-    return failClosedDaySummary(day);
+    return { ...failClosedDaySummary(day), legacyStorageBlocked: true };
   }
   if (isDayStorageCorrupt(state, day)) {
     return failClosedDaySummary(day);
