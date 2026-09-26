@@ -41,6 +41,9 @@ jobs:
       - name: Generate-failure copy (no raw HTTP/URL errors)
         run: python3 scripts/verify-generate-failure-copy.py
 
+      - name: Image-guard parity (client strip list == Worker reject list)
+        run: python3 scripts/check-image-guard-parity.py
+
       - name: Install pinned Python dependencies (hash-verified)
         # Installed unconditionally into a private target directory so the pinned,
         # hash-verified versions are the ones that actually run (a runner image that

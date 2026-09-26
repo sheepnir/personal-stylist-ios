@@ -13,13 +13,29 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     // MARK: Independent oracle — the Worker's rule, re-stated in the test
 
     private static let workerKeyPattern = try! NSRegularExpression(
-        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)",
-        options: [.caseInsensitive]
+        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)"
     )
     private static let workerValuePattern = try! NSRegularExpression(
-        pattern: "^data:image/|^/9j/|^iVBORw0KGgo",
-        options: [.caseInsensitive]
+        pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
+
+    /// ECMAScript WhiteSpace + LineTerminator — what `String.prototype.trimStart` removes.
+    static let ecmaScriptWhitespace: [UInt32] = [
+        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x00A0, 0x1680,
+        0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A,
+        0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+    ]
+
+    /// JavaScript `i` on an ASCII pattern folds A–Z only.
+    private static func asciiLowercased(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.map {
+            (0x41...0x5A).contains($0.value) ? Unicode.Scalar($0.value + 0x20)! : $0
+        }))
+    }
+
+    private static func jsTrimStart(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.drop { ecmaScriptWhitespace.contains($0.value) }))
+    }
 
     /// Same traversal as `containsImage` in `backend/workers/src/validation.ts`.
     /// Returns the offending key or value prefix, or nil when the body is clean.
@@ -27,7 +43,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         var pending: [Any] = [value]
         while let item = pending.popLast() {
             if let s = item as? String {
-                let t = String(s.drop(while: \.isWhitespace))
+                let t = asciiLowercased(jsTrimStart(s))
                 if workerValuePattern.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
                     return "value \(t.prefix(16))"
                 }
@@ -35,9 +51,9 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
                 pending.append(contentsOf: array)
             } else if let object = item as? [String: Any] {
                 for (key, child) in object {
-                    let snake = key.replacingOccurrences(
+                    let snake = asciiLowercased(key.replacingOccurrences(
                         of: "([a-z])([A-Z])", with: "$1_$2", options: .regularExpression
-                    )
+                    ))
                     if workerKeyPattern.firstMatch(in: snake, range: NSRange(snake.startIndex..., in: snake)) != nil {
                         return "key \(key)"
                     }
@@ -137,13 +153,58 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         XCTAssertNil(Self.workerImageFinding(in: cleaned))
     }
 
+    // MARK: JavaScript parity — `trimStart()` whitespace and ASCII-only case folding
+
+    func testByteOrderMarkPrefixedDataURLIsStripped() {
+        // JS `trimStart()` removes U+FEFF, so the Worker sees `data:image/` and rejects it.
+        let value = "\u{FEFF}data:image/png;base64,AAAA"
+        XCTAssertTrue(OutfitEngineClient.looksLikeImageData(value))
+        XCTAssertNil(OutfitEngineClient.strippingImagePayload(["notes": value])["notes"])
+    }
+
+    func testNextLinePrefixedDataURLIsKeptLikeTheWorker() {
+        // U+0085 is not ECMAScript whitespace: the Worker keeps the value, so must we.
+        let value = "\u{0085}data:image/png;base64,AAAA"
+        XCTAssertFalse(OutfitEngineClient.looksLikeImageData(value))
+        XCTAssertEqual(OutfitEngineClient.strippingImagePayload(["notes": value])["notes"] as? String, value)
+        XCTAssertNil(Self.workerImageFinding(in: ["notes": value]))
+    }
+
+    func testEveryECMAScriptWhitespaceScalarIsTrimmedBeforeMatching() {
+        for scalar in Self.ecmaScriptWhitespace {
+            let prefix = String(Unicode.Scalar(scalar)!)
+            let hex = String(format: "U+%04X", scalar)
+            XCTAssertTrue(OutfitEngineClient.looksLikeImageData(prefix + "data:image/png;base64,AAAA"), hex)
+            XCTAssertTrue(OutfitEngineClient.looksLikeImageData(prefix + prefix + "/9j/4AAQ"), hex)
+            XCTAssertTrue(OutfitEngineClient.looksLikeImageData(prefix + "iVBORw0KGgoAAAA"), hex)
+        }
+        // A non-whitespace prefix is not trimmed.
+        XCTAssertFalse(OutfitEngineClient.looksLikeImageData("x data:image/png;base64,AAAA"))
+    }
+
+    func testCaseFoldingIsASCIIOnly() {
+        // `ſ` (U+017F) does not fold to `s` under the JS `i` flag, so the Worker keeps this key.
+        XCTAssertFalse(OutfitEngineClient.isImageBearingKey("maſterimage"))
+        XCTAssertEqual(OutfitEngineClient.strippingImagePayload(["maſterimage": 1])["maſterimage"] as? Int, 1)
+        XCTAssertNil(Self.workerImageFinding(in: ["maſterimage": 1]))
+        // ASCII case still folds on both sides.
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey("MASTERIMAGE"))
+        XCTAssertTrue(OutfitEngineClient.looksLikeImageData("DATA:IMAGE/PNG;base64,AAAA"))
+        XCTAssertTrue(OutfitEngineClient.looksLikeImageData("IVBORW0KGGO"))
+        // Kelvin sign (U+212A) is not ASCII `k`.
+        XCTAssertFalse(OutfitEngineClient.looksLikeImageData("iVBORw0\u{212A}Ggo"))
+    }
+
     // MARK: (d) the bodies the client actually encodes carry nothing image-bearing
 
     func testGenerateBodyContainsNoImagePayload() throws {
         let (garments, _) = try Self.fixtureBackedGarments(minCount: 3)
         let anchor = garments[0]
         let locked = try XCTUnwrap(garments.first { $0.slot != anchor.slot })
-        let sets = [StubSet(id: UUID(), displayName: "Suit", keepTogether: true, memberGarmentIds: [anchor.id, locked.id], notes: nil)]
+        // A BOM-prefixed data URL rides in on the only free-text set field; the
+        // Worker's `trimStart()` would expose it, so the client must drop it.
+        let bomDataURL = "\u{FEFF}data:image/png;base64,AAAA"
+        let sets = [StubSet(id: UUID(), displayName: "Suit", keepTogether: true, memberGarmentIds: [anchor.id, locked.id], notes: bomDataURL)]
         let data = try OutfitEngineClient.makeRequestBody(
             garments: garments,
             sets: sets,
@@ -154,6 +215,9 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertNil(Self.workerImageFinding(in: body))
         XCTAssertEqual((body["wardrobe"] as? [[String: Any]])?.count, garments.count)
+        let sentSet = try XCTUnwrap((body["sets"] as? [[String: Any]])?.first)
+        XCTAssertNil(sentSet["notes"], "BOM-prefixed data URL must not reach the Worker")
+        XCTAssertEqual(sentSet["displayName"] as? String, "Suit")
         Self.exportIfRequested(data, name: "generate-body.json")
     }
 
