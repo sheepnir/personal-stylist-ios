@@ -1,6 +1,7 @@
+import { deepFreeze } from "../promptImmutability.js";
 import type { StylistPromptModule } from "../promptVersionTypes.js";
 import { OUTFIT_T2_V1_ANSWER_TYPES } from "./outfit-t2-v1-answerTypes.js";
-import { OUTFIT_T2_V1_OPTION_DESCRIPTIONS } from "./outfit-t2-v1-optionDescriptions.js";
+import { OUTFIT_T2_V1_INPUT_SECTIONS } from "./outfit-t2-v1-inputSections.js";
 
 const INSTRUCTION_TEXT = `You are a personal stylist selecting garments from a fixed shortlist only.
 
@@ -11,12 +12,12 @@ Rules:
 - If a required slot cannot be filled, set garment to null and provide gapReason (≤120 chars).
 - Respond using the configured answer types exactly. No extra properties.`;
 
-export const outfitT2V1: StylistPromptModule = {
+export const outfitT2V1: StylistPromptModule = deepFreeze({
   version: "outfit-t2-v1",
   instructionText: INSTRUCTION_TEXT,
-  optionDescriptions: OUTFIT_T2_V1_OPTION_DESCRIPTIONS,
+  inputSections: OUTFIT_T2_V1_INPUT_SECTIONS,
   answerTypes: OUTFIT_T2_V1_ANSWER_TYPES,
-};
+});
 
 export { OUTFIT_T2_V1_ANSWER_TYPES } from "./outfit-t2-v1-answerTypes.js";
-export { OUTFIT_T2_V1_OPTION_DESCRIPTIONS } from "./outfit-t2-v1-optionDescriptions.js";
+export { OUTFIT_T2_V1_INPUT_SECTIONS } from "./outfit-t2-v1-inputSections.js";

@@ -1,6 +1,6 @@
 export type {
   StylistPromptModule,
-  StylistPromptOptionDescription,
+  StylistPromptInputSection,
 } from "./promptVersionTypes.js";
 export {
   hashStylistPromptModule,
@@ -13,12 +13,15 @@ export {
   REGISTERED_PROMPT_CONTENT_HASHES,
   STYLIST_PROMPT_MODULES,
   getStylistPromptByVersion,
+  resolveRegisteredStylistPrompt,
   assertPromptRegistryIntegrity,
+  UnregisteredPromptVersionError,
+  PromptRegistryHashMismatchError,
 } from "./registry.js";
 export {
   outfitT2V1,
   OUTFIT_T2_V1_ANSWER_TYPES,
-  OUTFIT_T2_V1_OPTION_DESCRIPTIONS,
+  OUTFIT_T2_V1_INPUT_SECTIONS,
 } from "./prompts/outfit-t2-v1.js";
 export {
   buildProviderSuccessGeneration,

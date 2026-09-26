@@ -1,4 +1,5 @@
 import type { JSONSchema7 } from "../jsonSchemaTypes.js";
+import { deepFreeze } from "../promptImmutability.js";
 
 const SLOT_ENUM = [
   "TOP",
@@ -11,7 +12,7 @@ const SLOT_ENUM = [
 ] as const;
 
 /** Structured answer types for outfit-t2-v1 (ADR-0001 §6 step 1). Part of the prompt version. */
-export const OUTFIT_T2_V1_ANSWER_TYPES: JSONSchema7 = {
+export const OUTFIT_T2_V1_ANSWER_TYPES: JSONSchema7 = deepFreeze({
   type: "object",
   additionalProperties: false,
   required: ["assignments", "rationale"],
@@ -52,4 +53,4 @@ export const OUTFIT_T2_V1_ANSWER_TYPES: JSONSchema7 = {
       },
     },
   },
-};
+});

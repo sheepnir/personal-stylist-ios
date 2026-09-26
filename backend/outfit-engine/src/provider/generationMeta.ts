@@ -1,5 +1,7 @@
-import { CURRENT_STYLIST_PROMPT } from "./registry.js";
-import type { StylistPromptModule } from "./promptVersionTypes.js";
+import {
+  CURRENT_STYLIST_PROMPT_VERSION,
+  resolveRegisteredStylistPrompt,
+} from "./registry.js";
 
 export type ProviderFallbackLevel = "NONE" | "DETERMINISTIC";
 
@@ -21,7 +23,8 @@ export interface BuildProviderSuccessGenerationOptions {
   candidateSetHash: string | null;
   latencyMs: number;
   modelId?: string;
-  prompt?: StylistPromptModule;
+  /** Must match a registered prompt version with a valid pinned hash. */
+  promptVersion?: string;
   inputTokens?: number | null;
   outputTokens?: number | null;
   costUSD?: number | null;
@@ -35,7 +38,8 @@ export interface BuildProviderSuccessGenerationOptions {
 export function buildProviderSuccessGeneration(
   options: BuildProviderSuccessGenerationOptions,
 ): ProviderSuccessGenerationMeta {
-  const prompt = options.prompt ?? CURRENT_STYLIST_PROMPT;
+  const version = options.promptVersion ?? CURRENT_STYLIST_PROMPT_VERSION;
+  const prompt = resolveRegisteredStylistPrompt(version);
   return {
     modelId: options.modelId ?? "mock/stylist-v0",
     promptVersion: prompt.version,

@@ -67,6 +67,7 @@ export {
   REGISTERED_PROMPT_CONTENT_HASHES,
   STYLIST_PROMPT_MODULES,
   getStylistPromptByVersion,
+  resolveRegisteredStylistPrompt,
   assertPromptRegistryIntegrity,
   hashStylistPromptModule,
   buildProviderSuccessGeneration,
@@ -74,7 +75,7 @@ export {
 } from "./provider/index.js";
 export type {
   StylistPromptModule,
-  StylistPromptOptionDescription,
+  StylistPromptInputSection,
   ProviderSuccessGenerationMeta,
   BuildProviderSuccessGenerationOptions,
 } from "./provider/index.js";

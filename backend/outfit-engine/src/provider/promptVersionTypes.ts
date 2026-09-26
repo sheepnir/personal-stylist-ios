@@ -3,19 +3,22 @@
  * Pure definitions — no network, no chat roles or message arrays.
  */
 
-/** Describes one decision input facet (option descriptions in the Decisions API). */
-export interface StylistPromptOptionDescription {
-  readonly id: string;
+/**
+ * Describes a logical input section for documentation and hashing only.
+ * `sectionKey` is NOT a Decisions question id (those are owned by A-2: slot_<SLOT>, etc.).
+ */
+export interface StylistPromptInputSection {
+  readonly sectionKey: string;
   readonly description: string;
 }
 
 /**
- * Immutable prompt version: instruction text, option descriptions, and answer types.
+ * Immutable prompt version: instruction text, input-section descriptors, and answer types.
  * Hashed together for the registry guard (ADR-0001 §8).
  */
 export interface StylistPromptModule {
   readonly version: string;
   readonly instructionText: string;
-  readonly optionDescriptions: readonly StylistPromptOptionDescription[];
+  readonly inputSections: readonly StylistPromptInputSection[];
   readonly answerTypes: unknown;
 }
