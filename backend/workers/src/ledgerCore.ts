@@ -272,10 +272,6 @@ function isProtectedBucketEvictionWindow(key: string, now: Date): boolean {
 }
 
 function enforceBucketLimit(state: LedgerState, now: Date): void {
-  if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
-    return;
-  }
-
   const deletable = Object.keys(state.days)
     .filter((key) => {
       const day = state.days[key];
@@ -294,15 +290,22 @@ function enforceBucketLimit(state: LedgerState, now: Date): void {
     });
 
   for (const key of deletable) {
-    if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
-      break;
-    }
     delete state.days[key];
   }
 }
 
-export function ledgerExceedsBucketLimit(state: LedgerState): boolean {
-  return Object.keys(state.days).length > LEDGER_DAY_BUCKETS;
+/** Settled buckets outside today−30…today+1 (used to prove age-based retention). */
+export function countSettledBucketsOutsideEvictionWindow(state: LedgerState, now: Date): number {
+  let count = 0;
+  for (const key of Object.keys(state.days)) {
+    if (isProtectedBucketEvictionWindow(key, now)) {
+      continue;
+    }
+    if (dayIsFullySettled(state.days[key])) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function dayHasOpenAttempts(day: DayRecord): boolean {
@@ -411,9 +414,6 @@ export function reserveAttempt(
   const configMicro = configToMicro(config);
   if (!configMicro.ok) {
     return { ok: false, reason: 'config_error' };
-  }
-  if (ledgerExceedsBucketLimit(state)) {
-    return { ok: false, reason: 'hard_cap' };
   }
   const { capMicro } = configMicro;
 

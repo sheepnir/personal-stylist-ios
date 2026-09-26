@@ -9,7 +9,6 @@ import {
   capUsdToMicro,
   costUsdToMicro,
   emptyLedgerState,
-  ledgerExceedsBucketLimit,
   pruneOldDays,
   reconcileAttempt,
   removeEmptyDayBucket,
@@ -135,7 +134,6 @@ describe('ledgerCore reserve / reconcile', () => {
       }
       state.days[dayKey] = settledDay(dayKey, 1);
     }
-    expect(ledgerExceedsBucketLimit(state)).toBe(true);
     expect(
       reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowAtReserve)
     ).toEqual({ ok: true });
@@ -146,7 +144,7 @@ describe('ledgerCore reserve / reconcile', () => {
     ).toEqual({ ok: true });
     expect(
       reserveAttempt(state, 'new-hold', 0.01, '2026-09-28', CONFIG, 'generate', nowPastReservationDay)
-    ).toEqual({ ok: false, reason: 'hard_cap' });
+    ).toEqual({ ok: true });
   });
 
   it('rejects unsafe reserve task names', () => {
@@ -341,7 +339,7 @@ describe('ledgerCore retention', () => {
     expect(state.days['1999-01-01']).toBeUndefined();
   });
 
-  it('does not delete today when 31 stale open buckets exceed the bucket limit', () => {
+  it('does not delete today when 31 stale open buckets pin spend at the money cap', () => {
     const now = new Date(`${DAY}T12:00:00.000Z`);
     const state = emptyLedgerState();
     const capMicro = 1_000_000;
@@ -375,7 +373,6 @@ describe('ledgerCore retention', () => {
 
     expect(state.days[DAY]).toBeDefined();
     expect(state.days[DAY].spentMicro).toBe(capMicro);
-    expect(ledgerExceedsBucketLimit(state)).toBe(true);
     expect(summarizeDay(state, DAY, CONFIG).hardCapReached).toBe(true);
     expect(reserveAttempt(state, 'blocked', 0.01, DAY, CONFIG, 'unknown', now)).toEqual({
       ok: false,
