@@ -4,17 +4,25 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  MAX_ATTEMPT_USD,
+  MAX_ATTEMPTS_PER_DAY,
+  MAX_BUCKET_BYTES,
+  MICRO_USD,
   emptyLedgerState,
   isDayStorageCorrupt,
   reserveAttempt,
-  MAX_ATTEMPT_USD,
 } from '../src/ledgerCore.js';
 import {
   bucketStorageKey,
   loadLedgerFromStorage,
   parseBucketStorageKey,
+  persistLedgerToStorage,
+  storedDayBucketJsonByteLength,
   validateStoredDayBucket,
 } from '../src/ledgerBucketStorage.js';
+import { createDeviceSpendLedgerHarness } from './helpers.js';
+import type { DayRecord } from '../src/ledgerCore.js';
+import { worstCaseAttemptId } from './ledgerCore.bucketBytes.test.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 10_000, softThresholdUSD: 5000 };
@@ -109,6 +117,83 @@ describe('loadLedgerFromStorage fail-closed', () => {
     expect(Object.hasOwn(state.days, '__proto__')).toBe(false);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+function maxLengthTaskUnique(index: number): string {
+  const suffix = String(index).padStart(4, '0');
+  return `${'T'.repeat(16 - suffix.length)}${suffix}`;
+}
+
+/** Exceeds {@link MAX_BUCKET_BYTES} when encoded (for persist-guard tests only). */
+function buildPersistOversizedDay(dayKey: string) {
+  const micro = MAX_ATTEMPT_USD * MICRO_USD;
+  const iso = `${dayKey}T23:59:59.999Z`;
+  const attempts = Object.create(null);
+  const tasks = Object.create(null);
+  let i = 0;
+  let day: DayRecord;
+  do {
+    const attemptId = worstCaseAttemptId(i);
+    const task = maxLengthTaskUnique(i);
+    attempts[attemptId] = {
+      attemptId,
+      upperBoundMicro: micro,
+      actualMicro: micro,
+      task,
+      state: 'reconciled',
+      createdAt: iso,
+      reconciledAt: iso,
+      overReservation: true,
+    };
+    tasks[task] = (tasks[task] ?? 0) + micro;
+    day = {
+      date: dayKey,
+      spentMicro: micro * (i + 1),
+      reservedMicro: 0,
+      overReservationCount: i + 1,
+      attempts,
+      tasks,
+    };
+    i += 1;
+  } while (storedDayBucketJsonByteLength(day) <= MAX_BUCKET_BYTES && i < 650);
+  expect(storedDayBucketJsonByteLength(day)).toBeGreaterThan(MAX_BUCKET_BYTES);
+  return day;
+}
+
+describe('persistLedgerToStorage bucket size guard', () => {
+  it('refuses persist without writing when an encoded day exceeds MAX_BUCKET_BYTES', () => {
+    const kv = memoryKv();
+    const state = emptyLedgerState();
+    state.days[DAY] = buildPersistOversizedDay(DAY);
+    expect(persistLedgerToStorage(kv, state, new Set())).toEqual({
+      ok: false,
+      reason: 'bucket_too_large',
+    });
+    expect([...kv.list({ prefix: 'bucket:' })]).toHaveLength(0);
+  });
+});
+
+describe('DeviceSpendLedger persist guard', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns storage_error on persist when an encoded day exceeds MAX_BUCKET_BYTES', () => {
+    const initial = emptyLedgerState();
+    initial.days[DAY] = buildPersistOversizedDay(DAY);
+    const { ledger } = createDeviceSpendLedgerHarness(initial, {
+      maxValueBytes: MAX_BUCKET_BYTES * 2,
+    });
+    expect(
+      ledger.reconcile(DAY, worstCaseAttemptId(0), MAX_ATTEMPT_USD, maxLengthTaskUnique(0))
+    ).toEqual({
+      ok: false,
+      reason: 'storage_error',
+    });
   });
 });
 

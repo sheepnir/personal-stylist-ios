@@ -10,6 +10,7 @@ import {
   isValidReserveTaskName,
   markDayStorageCorrupt,
   isDayStorageCorrupt,
+  MAX_BUCKET_BYTES,
   type AttemptEntry,
   type AttemptState,
   type DayRecord,
@@ -304,7 +305,18 @@ export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
 }
 
 /** Write touched day buckets; delete pruned days and drop the legacy monolith key. */
-export function persistLedgerToStorage(kv: WritableKv, state: LedgerState, dayKeysBefore: Set<string>): void {
+export type PersistLedgerResult = { ok: true } | { ok: false; reason: 'bucket_too_large' };
+
+export function persistLedgerToStorage(
+  kv: WritableKv,
+  state: LedgerState,
+  dayKeysBefore: Set<string>
+): PersistLedgerResult {
+  for (const day of Object.keys(state.days)) {
+    if (storedDayBucketJsonByteLength(state.days[day]!) > MAX_BUCKET_BYTES) {
+      return { ok: false, reason: 'bucket_too_large' };
+    }
+  }
   kv.delete(LEGACY_LEDGER_KEY);
   const dayKeysAfter = new Set(Object.keys(state.days));
   for (const day of dayKeysBefore) {
@@ -315,4 +327,5 @@ export function persistLedgerToStorage(kv: WritableKv, state: LedgerState, dayKe
   for (const day of dayKeysAfter) {
     kv.put(bucketStorageKey(day), encodeDayForStorage(state.days[day]!));
   }
+  return { ok: true };
 }

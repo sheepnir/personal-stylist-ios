@@ -78,7 +78,7 @@ export interface ReserveResult {
 
 export interface ReconcileResult {
   ok: boolean;
-  reason?: 'not_found' | 'invalid' | 'overflow';
+  reason?: 'not_found' | 'invalid' | 'overflow' | 'storage_error';
 }
 
 export interface DaySummary {

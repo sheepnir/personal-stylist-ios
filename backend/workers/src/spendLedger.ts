@@ -39,8 +39,8 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   private persist(
     state: ReturnType<typeof loadLedgerFromStorage>,
     dayKeysBefore: Set<string>
-  ): void {
-    persistLedgerToStorage(this.ctx.storage.kv, state, dayKeysBefore);
+  ): boolean {
+    return persistLedgerToStorage(this.ctx.storage.kv, state, dayKeysBefore).ok;
   }
 
   reserve(
@@ -53,8 +53,8 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
       if (!configToMicro(config).ok) {
-        if (pruned) {
-          this.persist(state, dayKeysBefore);
+        if (pruned && !this.persist(state, dayKeysBefore)) {
+          return toRpcReserveResult({ ok: false, reason: 'storage_error' });
         }
         return toRpcReserveResult({ ok: false, reason: 'config_error' });
       }
@@ -63,7 +63,9 @@ export class DeviceSpendLedger extends DurableObject<Env> {
         removeEmptyDayBucket(state, day);
       }
       if (result.ok || pruned) {
-        this.persist(state, dayKeysBefore);
+        if (!this.persist(state, dayKeysBefore)) {
+          return toRpcReserveResult({ ok: false, reason: 'storage_error' });
+        }
       }
       return toRpcReserveResult(result);
     });
@@ -74,7 +76,9 @@ export class DeviceSpendLedger extends DurableObject<Env> {
       const { dayKeysBefore, state, pruned } = this.touch();
       const result = reconcileAttempt(state, day, attemptId, actualUSD, task);
       if (result.ok || pruned) {
-        this.persist(state, dayKeysBefore);
+        if (!this.persist(state, dayKeysBefore)) {
+          return toRpcReconcileResult({ ok: false, reason: 'storage_error' });
+        }
       }
       return toRpcReconcileResult(result);
     });
@@ -89,14 +93,14 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     return this.ctx.storage.transactionSync(() => {
       const { dayKeysBefore, state, pruned } = this.touch();
       if (!configToMicro(config).ok) {
-        if (pruned) {
-          this.persist(state, dayKeysBefore);
+        if (pruned && !this.persist(state, dayKeysBefore)) {
+          return toRpcDaySummary(failClosedDaySummary(day));
         }
         return toRpcDaySummary(failClosedDaySummary(day));
       }
       const summary = summarizeDay(state, day, config);
-      if (pruned) {
-        this.persist(state, dayKeysBefore);
+      if (pruned && !this.persist(state, dayKeysBefore)) {
+        return toRpcDaySummary(failClosedDaySummary(day));
       }
       return toRpcDaySummary(summary);
     });
