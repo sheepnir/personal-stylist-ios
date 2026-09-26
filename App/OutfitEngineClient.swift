@@ -347,6 +347,19 @@ enum OutfitEngineClient {
             && calendar.component(.day, from: date) == day
     }
 
+    private static func rfc3339TimeComponentsValid(hour: Int, minute: Int, second: Int) -> Bool {
+        (0...23).contains(hour) && (0...59).contains(minute) && (0...60).contains(second)
+    }
+
+    private static func rfc3339NumericOffsetValid(_ offset: String) -> Bool {
+        guard offset.count == 6, offset.first == "+" || offset.first == "-" else { return false }
+        let hourSlice = offset.index(offset.startIndex, offsetBy: 1)..<offset.index(offset.startIndex, offsetBy: 3)
+        let minuteSlice = offset.index(offset.startIndex, offsetBy: 4)..<offset.index(offset.startIndex, offsetBy: 6)
+        guard offset[offset.index(offset.startIndex, offsetBy: 3)] == ":" else { return false }
+        guard let hour = Int(offset[hourSlice]), let minute = Int(offset[minuteSlice]) else { return false }
+        return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+
     private static func isAllowedWardrobeImagesAcceptedAtRfc3339(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= wardrobeImagesAcceptedAtMaxLength else { return false }
         guard !consentTimestampHasControlCharacter(value) else { return false }
@@ -361,8 +374,14 @@ enum OutfitEngineClient {
             guard let range = Range(match.range(at: index), in: value) else { return nil }
             return Int(value[range])
         }
-        guard let year = intAt(1), let month = intAt(2), let day = intAt(3) else { return false }
-        return rfc3339CalendarDateValid(year: year, month: month, day: day)
+        guard let year = intAt(1), let month = intAt(2), let day = intAt(3),
+              let hour = intAt(4), let minute = intAt(5), let second = intAt(6) else { return false }
+        guard rfc3339CalendarDateValid(year: year, month: month, day: day),
+              rfc3339TimeComponentsValid(hour: hour, minute: minute, second: second) else { return false }
+        guard let offsetRange = Range(match.range(at: 8), in: value) else { return false }
+        let offset = String(value[offsetRange])
+        if offset == "Z" { return true }
+        return rfc3339NumericOffsetValid(offset)
     }
 
     private static func isAllowedWardrobeImagesAcceptedAtValue(_ value: Any) -> Bool {
@@ -381,10 +400,12 @@ enum OutfitEngineClient {
     /// Recursively removes image-bearing keys and image-looking string values from
     /// an outgoing JSON object. Everything else is passed through untouched.
     static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
-        strippingImagePayload(object, path: [], pathLen: 0, pastConsentDepth: false, underArrayAncestor: false)
+        stripImagePayloadObject(object, path: [], pathLen: 0, pastConsentDepth: false, underArrayAncestor: false)
     }
 
-    private static func strippingImagePayload(
+    /// Walks object keys (consent path + forbidden keys). Separate from `stripImagePayloadValue`
+    /// so nested `[String: Any]` values do not re-enter the `Any` overload (stack overflow).
+    private static func stripImagePayloadObject(
         _ object: [String: Any],
         path: [String],
         pathLen: Int,
@@ -408,7 +429,7 @@ enum OutfitEngineClient {
                 }
             }
             guard !isImageBearingKey(key) else { continue }
-            if let kept = strippingImagePayload(
+            if let kept = stripImagePayloadValue(
                 value,
                 path: childPath,
                 pathLen: childPathLen,
@@ -422,7 +443,7 @@ enum OutfitEngineClient {
     }
 
     /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
-    private static func strippingImagePayload(
+    private static func stripImagePayloadValue(
         _ value: Any,
         path: [String],
         pathLen: Int,
@@ -431,7 +452,7 @@ enum OutfitEngineClient {
     ) -> Any? {
         switch value {
         case let object as [String: Any]:
-            return strippingImagePayload(
+            return stripImagePayloadObject(
                 object,
                 path: path,
                 pathLen: pathLen,
@@ -440,7 +461,7 @@ enum OutfitEngineClient {
             )
         case let array as [Any]:
             return array.compactMap {
-                strippingImagePayload(
+                stripImagePayloadValue(
                     $0,
                     path: path,
                     pathLen: pathLen,

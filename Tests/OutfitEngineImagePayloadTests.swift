@@ -102,6 +102,19 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         }
     }
 
+    private static func workerRfc3339TimeValid(hour: Int, minute: Int, second: Int) -> Bool {
+        (0...23).contains(hour) && (0...59).contains(minute) && (0...60).contains(second)
+    }
+
+    private static func workerRfc3339NumericOffsetValid(_ offset: String) -> Bool {
+        guard offset.count == 6, offset.first == "+" || offset.first == "-" else { return false }
+        guard offset[offset.index(offset.startIndex, offsetBy: 3)] == ":" else { return false }
+        let hourSlice = offset.index(offset.startIndex, offsetBy: 1)..<offset.index(offset.startIndex, offsetBy: 3)
+        let minuteSlice = offset.index(offset.startIndex, offsetBy: 4)..<offset.index(offset.startIndex, offsetBy: 6)
+        guard let hour = Int(offset[hourSlice]), let minute = Int(offset[minuteSlice]) else { return false }
+        return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+
     private static func workerAllowedConsent(_ value: Any) -> Bool {
         guard let string = value as? String, !string.isEmpty, string.count <= 64 else { return false }
         guard !workerConsentTimestampHasControlCharacter(string) else { return false }
@@ -116,8 +129,14 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             guard let range = Range(match.range(at: index), in: string) else { return nil }
             return Int(string[range])
         }
-        guard let year = intAt(1), let month = intAt(2), let day = intAt(3) else { return false }
-        return workerRfc3339CalendarValid(year: year, month: month, day: day)
+        guard let year = intAt(1), let month = intAt(2), let day = intAt(3),
+              let hour = intAt(4), let minute = intAt(5), let second = intAt(6) else { return false }
+        guard workerRfc3339CalendarValid(year: year, month: month, day: day),
+              workerRfc3339TimeValid(hour: hour, minute: minute, second: second) else { return false }
+        guard let offsetRange = Range(match.range(at: 8), in: string) else { return false }
+        let offset = String(string[offsetRange])
+        if offset == "Z" { return true }
+        return workerRfc3339NumericOffsetValid(offset)
     }
 
     private static let workerConsentPathDepth = 2

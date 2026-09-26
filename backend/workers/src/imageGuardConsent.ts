@@ -29,6 +29,18 @@ export function rfc3339CalendarDateValid(year: number, month: number, day: numbe
   );
 }
 
+export function rfc3339TimeComponentsValid(hour: number, minute: number, second: number): boolean {
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 60;
+}
+
+export function rfc3339NumericOffsetValid(offset: string): boolean {
+  if (offset.length !== 6 || (offset[0] !== '+' && offset[0] !== '-')) return false;
+  if (offset[3] !== ':') return false;
+  const hour = Number(offset.slice(1, 3));
+  const minute = Number(offset.slice(4, 6));
+  return Number.isInteger(hour) && Number.isInteger(minute) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
 export function isAllowedWardrobeImagesAcceptedAtRfc3339(value: string): boolean {
   if (value.length === 0 || value.length > WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH) return false;
   if (consentTimestampHasControlCharacter(value)) return false;
@@ -37,7 +49,14 @@ export function isAllowedWardrobeImagesAcceptedAtRfc3339(value: string): boolean
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  return rfc3339CalendarDateValid(year, month, day);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (!rfc3339CalendarDateValid(year, month, day)) return false;
+  if (!rfc3339TimeComponentsValid(hour, minute, second)) return false;
+  const offset = match[8];
+  if (offset === 'Z') return true;
+  return rfc3339NumericOffsetValid(offset);
 }
 
 export function isAllowedWardrobeImagesAcceptedAtValue(value: unknown): boolean {

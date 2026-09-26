@@ -10,10 +10,18 @@ import {
 } from '../src/imageGuardConsent.js';
 
 describe('imageGuardConsent RFC 3339 (#36)', () => {
-  it('rejects non-ASCII digits, trailing newline, and accepts year 0050', () => {
+  it('rejects non-ASCII digits, trailing newline, and accepts year 0050 and 0000', () => {
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('２026-09-20T12:00:00Z')).toBe(false);
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T12:00:00Z\n')).toBe(false);
     expect(isAllowedWardrobeImagesAcceptedAtRfc3339('0050-06-15T12:00:00Z')).toBe(true);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('0000-01-01T00:00:00Z')).toBe(true);
+  });
+
+  it('rejects out-of-range time and offset components', () => {
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T24:00:00Z')).toBe(false);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T12:60:00Z')).toBe(false);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T12:00:00+24:00')).toBe(false);
+    expect(isAllowedWardrobeImagesAcceptedAtRfc3339('2026-09-20T12:00:61Z')).toBe(false);
   });
 
   it('rejects consent values longer than 64 characters before regex', () => {
