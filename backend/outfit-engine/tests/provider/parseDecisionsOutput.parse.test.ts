@@ -88,6 +88,20 @@ describe("parseDecisionsResponseBody", () => {
     });
   });
 
+  it("rejects reserved own answer keys including literal __proto__ in JSON", () => {
+    const validTop = { type: "choice", choice: "g_1" };
+    for (const key of ["__proto__", "constructor", "prototype"]) {
+      expect(
+        parseDecisionsResponseBody(
+          body({ [key]: validTop, slot_TOP: validTop }),
+        ),
+      ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+    }
+    const literalProto = `{"model":"${MODEL}","usage":{"input_tokens":1,"output_tokens":1},"answers":{"__proto__":{"type":"choice","choice":"g_evil"},"slot_TOP":{"type":"choice","choice":"g_1"}}}`;
+    const result = parseDecisionsResponseBody(literalProto);
+    expect(result).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+  });
+
   it("maps malformed answer shapes to OUTPUT_SCHEMA", () => {
     const result = parseDecisionsResponseBody(
       body({ slot_TOP: "not-an-object" }),

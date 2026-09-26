@@ -1,6 +1,6 @@
 import { answersObjectHasDuplicateKeys } from "./parseDecisionsDuplicateKeys.js";
 import { MAX_PROVIDER_RESPONSE_BYTES } from "./constants.js";
-import { createOwnRecord, ownHas } from "./safeOwn.js";
+import { createOwnRecord, isReservedMapKey, ownHas } from "./safeOwn.js";
 import type {
   DecisionsAnswer,
   DecisionsUsage,
@@ -60,6 +60,7 @@ function buildAnswersMap(
   const answers = createOwnRecord<DecisionsAnswer>();
   for (const key of Object.keys(rawAnswers)) {
     if (!ownHas(rawAnswers, key)) continue;
+    if (isReservedMapKey(key)) return null;
     const parsed = parseAnswerShape(rawAnswers[key]);
     if (!parsed) return null;
     answers[key] = parsed;

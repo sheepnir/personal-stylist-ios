@@ -27,6 +27,10 @@ export function ownGetString(
 
 const RESERVED_MAP_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+export function isReservedMapKey(key: string): boolean {
+  return RESERVED_MAP_KEYS.has(key);
+}
+
 function isPlainTokenMapObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
