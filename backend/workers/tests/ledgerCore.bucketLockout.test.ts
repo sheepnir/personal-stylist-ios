@@ -82,7 +82,7 @@ describe('bucket limit lockout regressions', () => {
     state.days[tomorrow] = openDay(tomorrow, 'tomorrow-open');
     expect(Object.keys(state.days).length).toBe(LEDGER_DAY_BUCKETS + 1);
 
-    expect(reconcileAttempt(state, 'tomorrow-open', 0.02)).toEqual({ ok: true });
+    expect(reconcileAttempt(state, tomorrow, 'tomorrow-open', 0.02)).toEqual({ ok: true });
     expect(Object.keys(state.days).length).toBe(LEDGER_DAY_BUCKETS + 1);
     expect(summarizeDay(state, DAY, CONFIG).hardCapReached).toBe(false);
     expect(reserveAttempt(state, 'new-b', 0.1, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
@@ -159,7 +159,7 @@ describe('ledger storage bounds', () => {
     state.days[staleKey] = openDay(staleKey, 'gone');
     pruneOldDays(state, NOW);
     const snapshot = JSON.stringify(state);
-    expect(reconcileAttempt(state, 'gone', 0.01)).toEqual({ ok: false, reason: 'not_found' });
+    expect(reconcileAttempt(state, staleKey, 'gone', 0.01)).toEqual({ ok: false, reason: 'not_found' });
     expect(JSON.stringify(state)).toBe(snapshot);
   });
 
@@ -192,4 +192,43 @@ describe('ledger storage bounds', () => {
     });
     expect(reserveAttempt(state, 'keep', 0.000001, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
   });
+
+  it('stale expiry with spentMicro overflow still prunes buckets beyond the window', () => {
+    const state = emptyLedgerState();
+    const staleKey = utcDayKeyMinusDays(DAY, 35);
+    const upper = 50_000;
+    state.days[staleKey] = openDay(staleKey, 'overflow-open');
+    state.days[staleKey].spentMicro = Number.MAX_SAFE_INTEGER - 10;
+    state.days[staleKey].reservedMicro = upper;
+    for (let age = 0; age <= 30; age += 1) {
+      const dayKey = utcDayKeyMinusDays(DAY, age);
+      if (!state.days[dayKey]) {
+        state.days[dayKey] = settledDay(dayKey);
+      }
+    }
+    expect(pruneOldDays(state, NOW)).toBe(true);
+    expect(state.days[staleKey]).toBeUndefined();
+    expect(Object.keys(state.days).length).toBeLessThanOrEqual(LEDGER_DAY_BUCKETS + 1);
+  });
+
+  it('late reconcile is scoped to reservation day and cannot touch a reused attemptId', () => {
+    const state = emptyLedgerState();
+    const oldDay = utcDayKeyMinusDays(DAY, 40);
+    state.days[oldDay] = openDay(oldDay, 'shared-id');
+    pruneOldDays(state, NOW);
+    expect(findAttemptState(state, oldDay, 'shared-id')).toBeNull();
+    expect(reserveAttempt(state, 'shared-id', 0.1, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
+    const reservedBefore = state.days[DAY]?.reservedMicro ?? 0;
+    expect(reconcileAttempt(state, oldDay, 'shared-id', 0.05)).toEqual({ ok: false, reason: 'not_found' });
+    expect(state.days[DAY]?.reservedMicro).toBe(reservedBefore);
+    expect(state.days[DAY]?.attempts['shared-id']?.state).toBe('reserved');
+  });
 });
+
+function findAttemptState(
+  state: ReturnType<typeof emptyLedgerState>,
+  dayKey: string,
+  attemptId: string
+): unknown {
+  return state.days[dayKey]?.attempts[attemptId] ?? null;
+}

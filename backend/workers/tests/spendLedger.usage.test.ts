@@ -138,7 +138,7 @@ describe('usage helpers with in-memory spend ledger', () => {
     const { env } = envWithSpend();
     const token = generateDeviceToken();
     expect(await reserveSpend(token, 'paid-1', 0.35, env, undefined, 'generate')).toEqual({ ok: true });
-    expect(await reconcileSpend(token, 'paid-1', 0.08, env, 'generate')).toEqual({ ok: true });
+    expect(await reconcileSpend(token, 'paid-1', 0.08, env, undefined, 'generate')).toEqual({ ok: true });
     const record = await getSpendRecord(token, env);
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
@@ -152,7 +152,7 @@ describe('usage helpers with in-memory spend ledger', () => {
     const digest = await hashFromTokens(token);
 
     await reserveSpend(token, 'attempt-privacy', 0.05, env);
-    await reconcileSpend(token, 'attempt-privacy', 0.04, env, 'generate');
+    await reconcileSpend(token, 'attempt-privacy', 0.04, env, undefined, 'generate');
 
     const persisted = JSON.stringify(dump(locator));
     expect(persisted).not.toContain(token);

@@ -27,14 +27,14 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     expect(ledger.reserve('r1', 0.2, DAY, CONFIG)).toEqual({ ok: true });
     resetPutCount();
-    expect(ledger.reconcile('r1', 0.05)).toEqual({ ok: true });
+    expect(ledger.reconcile(DAY, 'r1', 0.05)).toEqual({ ok: true });
     expect(putCount()).toBe(1);
   });
 
   it('does not write when reconcile not_found and nothing pruned', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     resetPutCount();
-    expect(ledger.reconcile('nope', 0.01)).toEqual({ ok: false, reason: 'not_found' });
+    expect(ledger.reconcile(DAY, 'nope', 0.01)).toEqual({ ok: false, reason: 'not_found' });
     expect(putCount()).toBe(0);
   });
 

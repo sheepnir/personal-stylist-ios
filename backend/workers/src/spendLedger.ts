@@ -64,10 +64,10 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     });
   }
 
-  reconcile(attemptId: string, actualUSD: number, task?: string): ReconcileResult {
+  reconcile(day: string, attemptId: string, actualUSD: number, task?: string): ReconcileResult {
     return this.ctx.storage.transactionSync(() => {
       const { state, pruned } = this.touch();
-      const result = reconcileAttempt(state, attemptId, actualUSD, task);
+      const result = reconcileAttempt(state, day, attemptId, actualUSD, task);
       if (result.ok || pruned) {
         this.saveState(state);
       }
@@ -76,7 +76,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   }
 
   /** Reserved for #13-b — not implemented in #13-a. */
-  markUnknown(_attemptId: string, _generationId?: string): { ok: boolean } {
+  markUnknown(_day: string, _attemptId: string, _generationId?: string): { ok: boolean } {
     return { ok: false };
   }
 

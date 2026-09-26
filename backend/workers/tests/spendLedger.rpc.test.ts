@@ -35,10 +35,10 @@ describe('DeviceSpendLedger RPC return values', () => {
   it('reserve and reconcile results are plain objects', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     assertRpcPlainDeep(ledger.reserve('a1', 0.01, DAY, CONFIG, 'generate'));
-    assertRpcPlainDeep(ledger.reconcile('a1', 0.01, 'generate'));
+    assertRpcPlainDeep(ledger.reconcile(DAY, 'a1', 0.01, 'generate'));
     assertRpcPlainDeep(ledger.reserve('a2', 0.01, DAY, BAD_CONFIG));
-    assertRpcPlainDeep(ledger.reconcile('missing', 0.01));
-    assertRpcPlainDeep(ledger.markUnknown('x'));
+    assertRpcPlainDeep(ledger.reconcile(DAY, 'missing', 0.01));
+    assertRpcPlainDeep(ledger.markUnknown(DAY, 'x'));
   });
 
   it('RPC byTask omits unsafe keys from legacy storage without polluting clones', () => {

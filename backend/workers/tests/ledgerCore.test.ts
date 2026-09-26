@@ -39,7 +39,7 @@ describe('ledgerCore USD ↔ micro-USD conversion', () => {
   it('reconcile attempt 1000 at 0.0004 USD records at least 400 micro', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, '1000', 0.001, DAY, CONFIG);
-    reconcileAttempt(state, '1000', 0.0004);
+    reconcileAttempt(state, DAY, '1000', 0.0004);
     expect(state.days[DAY].spentMicro).toBeGreaterThanOrEqual(400);
   });
 
@@ -77,7 +77,7 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(summary.spentUSD).toBe(0);
     expect(summary.reservedUSD).toBeCloseTo(0.4);
 
-    expect(reconcileAttempt(state, 'a1', 0.12)).toEqual({ ok: true });
+    expect(reconcileAttempt(state, DAY, 'a1', 0.12)).toEqual({ ok: true });
     summary = summarizeDay(state, DAY, CONFIG);
     expect(summary.spentUSD).toBeCloseTo(0.12);
     expect(summary.reservedUSD).toBeCloseTo(0);
@@ -87,7 +87,7 @@ describe('ledgerCore reserve / reconcile', () => {
   it('sets per-attempt overReservation flag when actual exceeds bound', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'a1', 0.2, DAY, CONFIG);
-    reconcileAttempt(state, 'a1', 0.35);
+    reconcileAttempt(state, DAY, 'a1', 0.35);
     const entry = state.days[DAY].attempts.a1;
     expect(entry.overReservation).toBe(true);
     expect(summarizeDay(state, DAY, CONFIG).overReservationCount).toBe(1);
@@ -98,7 +98,7 @@ describe('ledgerCore reserve / reconcile', () => {
     reserveAttempt(state, 'big', 0.01, DAY, { dailyCapUSD: 20_000, softThresholdUSD: 10_000 });
     const actualUsd = 15_000;
     expect(actualUsdToMicro(actualUsd).ok).toBe(true);
-    expect(reconcileAttempt(state, 'big', actualUsd)).toEqual({ ok: true });
+    expect(reconcileAttempt(state, DAY, 'big', actualUsd)).toEqual({ ok: true });
     expect(state.days[DAY].spentMicro).toBe(15_000 * MICRO_USD);
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
   });
@@ -107,8 +107,8 @@ describe('ledgerCore reserve / reconcile', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'z', 0.1, DAY, CONFIG);
     const reservedBefore = state.days[DAY].reservedMicro;
-    expect(reconcileAttempt(state, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
-    expect(reconcileAttempt(state, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
     expect(state.days[DAY].reservedMicro).toBe(reservedBefore);
     expect(state.days[DAY].attempts.z.state).toBe('reserved');
   });
@@ -116,7 +116,7 @@ describe('ledgerCore reserve / reconcile', () => {
   it('rejects reconcile task override with unsafe task name', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'a1', 0.2, DAY, CONFIG, 'generate');
-    expect(reconcileAttempt(state, 'a1', 0.1, '__proto__')).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'a1', 0.1, '__proto__')).toEqual({ ok: false, reason: 'invalid' });
   });
 
   it('idempotent reserve retry succeeds after reservation day becomes past or bucket limit is hit', () => {
@@ -157,6 +157,20 @@ describe('ledgerCore reserve / reconcile', () => {
     }
   });
 
+  it('rejects attemptId and task strings outside allowed length and charset', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a'.repeat(65), 0.1, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(reserveAttempt(state, 'bad id', 0.1, DAY, CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 't'.repeat(33))).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+  });
+
   it('rejects reserve when spent + reserved + upper bound exceeds hard cap', () => {
     const state = emptyLedgerState();
     expect(reserveAttempt(state, 'a1', 0.6, DAY, CONFIG)).toEqual({ ok: true });
@@ -182,7 +196,7 @@ describe('ledgerCore reserve / reconcile', () => {
   it('returns already_settled when re-reserving a reconciled attemptId', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'done', 0.2, DAY, CONFIG);
-    reconcileAttempt(state, 'done', 0.15);
+    reconcileAttempt(state, DAY, 'done', 0.15);
     expect(reserveAttempt(state, 'done', 0.2, DAY, CONFIG)).toEqual({
       ok: false,
       reason: 'already_settled',
@@ -203,12 +217,12 @@ describe('ledgerCore reserve / reconcile', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'big1', 0.01, DAY, CONFIG);
     reserveAttempt(state, 'big2', 0.01, DAY, CONFIG);
-    reconcileAttempt(state, 'big1', 0.01);
+    reconcileAttempt(state, DAY, 'big1', 0.01);
     const day = state.days[DAY];
     day.spentMicro = Number.MAX_SAFE_INTEGER - 500;
     day.reservedMicro = 0;
     day.attempts.big2.state = 'reserved';
-    expect(reconcileAttempt(state, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
+    expect(reconcileAttempt(state, DAY, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
     expect(day.spentMicro).toBe(Number.MAX_SAFE_INTEGER - 500);
   });
 });
@@ -308,7 +322,7 @@ describe('ledgerCore retention', () => {
     };
     pruneOldDays(state, new Date(`${DAY}T00:00:00.000Z`));
     expect(state.days['bad-key']).toBeDefined();
-    expect(reserveAttempt(state, 'open', 0.2, DAY, CONFIG)).toEqual({ ok: false, reason: 'already_settled' });
+    expect(reserveAttempt(state, 'open', 0.2, DAY, CONFIG)).toEqual({ ok: true });
   });
 
   it('removes settled malformed buckets with no open attempts', () => {

@@ -164,6 +164,7 @@ export async function reconcileSpend(
   attemptId: string,
   actualUSD: number,
   env: Env,
+  day: string = getTodayDateString(),
   task?: string
 ): Promise<{ ok: boolean; reason?: string }> {
   const access = await accessLedger(deviceToken, env);
@@ -173,7 +174,7 @@ export async function reconcileSpend(
   if (access.kind === 'legacy') {
     return { ok: false, reason: 'no_ledger' };
   }
-  const result = await callLedger(access, (stub) => stub.reconcile(attemptId, actualUSD, task));
+  const result = await callLedger(access, (stub) => stub.reconcile(day, attemptId, actualUSD, task));
   if (result === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
   }
@@ -186,10 +187,11 @@ export async function recordSpend(
   costUSD: number,
   env: Env
 ): Promise<void> {
-  const attemptId = `test-record:${task}:${costUSD}`;
+  const safeCost = String(costUSD).replace(/\./g, 'p').replace(/[^A-Za-z0-9_-]/g, 'p');
+  const attemptId = `test-record_${task}_${safeCost}`.slice(0, 64);
   const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
   if (!reserved.ok) return;
-  await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
+  await reconcileSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
 }
 
 export async function isHardCapReached(deviceToken: string, env: Env): Promise<boolean> {

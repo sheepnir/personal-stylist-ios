@@ -89,10 +89,10 @@ export function createSpendLedgerMock(): SpendLedgerMock {
         }
         return result;
       },
-      reconcile: async (attemptId: string, actualUSD: number, task?: string) => {
+      reconcile: async (day: string, attemptId: string, actualUSD: number, task?: string) => {
         const state = stateFor(deviceId);
         ageLedger(state, new Date());
-        return reconcileAttempt(state, attemptId, actualUSD, task);
+        return reconcileAttempt(state, day, attemptId, actualUSD, task);
       },
       summary: async (day: string, config: SpendConfig) => {
         const state = stateFor(deviceId);
