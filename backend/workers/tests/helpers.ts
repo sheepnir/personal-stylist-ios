@@ -71,17 +71,17 @@ export function spendLedger(): DurableObjectNamespace {
         attemptId: string,
         upperBoundUSD: number,
         day: string,
-        config: SpendConfig
+        config: SpendConfig,
+        task = 'unknown'
       ) => {
         const state = stateFor(deviceId);
         ageLedger(state, new Date());
-        const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config);
-        return result;
+        return reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
       },
-      reconcile: async (attemptId: string, actualUSD: number) => {
+      reconcile: async (attemptId: string, actualUSD: number, task?: string) => {
         const state = stateFor(deviceId);
         ageLedger(state, new Date());
-        return reconcileAttempt(state, attemptId, actualUSD);
+        return reconcileAttempt(state, attemptId, actualUSD, task);
       },
       summary: async (day: string, config: SpendConfig) => {
         const state = stateFor(deviceId);

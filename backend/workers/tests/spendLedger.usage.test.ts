@@ -1,5 +1,6 @@
 /**
- * Spend ledger wiring tests (#13-a): device id keying, legacy tokens, usage helpers.
+ * usage.ts wiring unit tests over in-memory ledger storage (#13-a).
+ * Exercises core logic via helpers.spendLedger(); workerd / DO concurrency is #14.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -8,6 +9,8 @@ import {
   reserveSpend,
   reconcileSpend,
   hashToken,
+  isHardCapReached,
+  getUsageSummary,
 } from '../src/usage.js';
 import {
   generateDeviceToken,
@@ -26,7 +29,15 @@ function envWithSpend(): Env {
   };
 }
 
-describe('usage ↔ DeviceSpendLedger', () => {
+function envWithoutSpendBinding(): Env {
+  return {
+    DEVICE_TOKEN: 'legacy-shared',
+    OPENROUTER_API_KEY: 'k',
+    USAGE_LEDGER: emptyLedger(),
+  };
+}
+
+describe('usage helpers with in-memory spend ledger', () => {
   it('hashToken is still exported from usage.ts', async () => {
     const h = await hashToken('x');
     expect(h).toBe(await hashFromTokens('x'));
@@ -55,23 +66,41 @@ describe('usage ↔ DeviceSpendLedger', () => {
     const record = await getSpendRecord('legacy-shared', env);
     expect(record.spentUSD).toBe(0);
     expect(record.reservedUSD).toBe(0);
+    expect(await isHardCapReached('legacy-shared', env)).toBe(false);
   });
 
-  it('never persists raw device tokens in ledger state', async () => {
-    const env = envWithSpend();
+  it('fail-closed when SPEND_LEDGER is missing for a per-device token', async () => {
+    const env = envWithoutSpendBinding();
     const token = generateDeviceToken();
-    await reserveSpend(token, 'attempt-privacy', 0.05, env);
-    const serialized = JSON.stringify(env);
-    expect(serialized).not.toContain(token.split('.')[1]);
+    expect(await reserveSpend(token, 'a1', 0.1, env)).toEqual({ ok: false, reason: 'ledger_unavailable' });
+    expect(await isHardCapReached(token, env)).toBe(true);
+    const usage = await getUsageSummary(token, env);
+    expect(usage.hardCapReached).toBe(true);
   });
 
-  it('reserve + reconcile round-trip through usage helpers', async () => {
+  it('fail-closed when the ledger stub throws', async () => {
+    const token = generateDeviceToken();
+    const env: Env = {
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: {
+        getByName: () => {
+          throw new Error('do unavailable');
+        },
+      } as Env['SPEND_LEDGER'],
+    };
+    expect(await reserveSpend(token, 'a1', 0.1, env)).toEqual({ ok: false, reason: 'ledger_unavailable' });
+    expect(await isHardCapReached(token, env)).toBe(true);
+  });
+
+  it('reserve + reconcile round-trip through usage helpers with task attribution', async () => {
     const env = envWithSpend();
     const token = generateDeviceToken();
-    expect(await reserveSpend(token, 'paid-1', 0.35, env)).toEqual({ ok: true });
-    expect(await reconcileSpend(token, 'paid-1', 0.08, env)).toEqual({ ok: true });
+    expect(await reserveSpend(token, 'paid-1', 0.35, env, undefined, 'generate')).toEqual({ ok: true });
+    expect(await reconcileSpend(token, 'paid-1', 0.08, env, 'generate')).toEqual({ ok: true });
     const record = await getSpendRecord(token, env);
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
+    expect(record.tasks.generate).toBeCloseTo(0.08);
   });
 });

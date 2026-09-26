@@ -13,18 +13,44 @@ function spendConfig(env: Env) {
   return resolveSpendConfig(env);
 }
 
-function ledgerStub(deviceLocator: string, env: Env) {
-  if (!env.SPEND_LEDGER) throw new Error('Spend ledger unavailable');
-  return env.SPEND_LEDGER.getByName(deviceLocator);
+function isLegacySharedToken(deviceToken: string): boolean {
+  return deviceLocatorFromToken(deviceToken) === null;
 }
 
-/**
- * Legacy shared tokens and missing bindings have no ledger.
- */
-function locatorForLedger(deviceToken: string, env: Env): string | null {
+function deviceLocator(deviceToken: string): string {
   const locator = deviceLocatorFromToken(deviceToken);
-  if (!locator || !env.SPEND_LEDGER) return null;
+  if (!locator) throw new Error('expected per-device token');
   return locator;
+}
+
+type LedgerAccess =
+  | { kind: 'legacy' }
+  | { kind: 'unavailable' }
+  | { kind: 'ready'; stub: ReturnType<NonNullable<Env['SPEND_LEDGER']>['getByName']> };
+
+async function accessLedger(deviceToken: string, env: Env): Promise<LedgerAccess> {
+  if (isLegacySharedToken(deviceToken)) {
+    return { kind: 'legacy' };
+  }
+  if (!env.SPEND_LEDGER) {
+    return { kind: 'unavailable' };
+  }
+  try {
+    return { kind: 'ready', stub: env.SPEND_LEDGER.getByName(deviceLocator(deviceToken)) };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+}
+
+function emptySpendRecord(tokenHash: string, today: string): SpendRecord {
+  return {
+    tokenHash,
+    date: today,
+    spentUSD: 0,
+    reservedUSD: 0,
+    tasks: {},
+    lastUpdated: new Date().toISOString(),
+  };
 }
 
 /**
@@ -36,20 +62,13 @@ export async function getSpendRecord(
 ): Promise<SpendRecord> {
   const today = getTodayDateString();
   const tokenHash = await hashToken(deviceToken);
-  const locator = locatorForLedger(deviceToken, env);
+  const access = await accessLedger(deviceToken, env);
 
-  if (!locator) {
-    return {
-      tokenHash,
-      date: today,
-      spentUSD: 0,
-      reservedUSD: 0,
-      tasks: {},
-      lastUpdated: new Date().toISOString(),
-    };
+  if (access.kind === 'legacy' || access.kind === 'unavailable') {
+    return emptySpendRecord(tokenHash, today);
   }
 
-  const summary = await ledgerStub(locator, env).summary(today, spendConfig(env));
+  const summary = await access.stub.summary(today, spendConfig(env));
   return {
     tokenHash,
     date: today,
@@ -61,18 +80,24 @@ export async function getSpendRecord(
 }
 
 /**
- * Reserve an upper bound for a paid attempt (no-op for legacy shared tokens).
+ * Reserve an upper bound for a paid attempt (legacy shared tokens only → `no_ledger`).
  */
 export async function reserveSpend(
   deviceToken: string,
   attemptId: string,
   upperBoundUSD: number,
   env: Env,
-  day: string = getTodayDateString()
+  day: string = getTodayDateString(),
+  task = 'unknown'
 ): Promise<{ ok: boolean; reason?: string }> {
-  const locator = locatorForLedger(deviceToken, env);
-  if (!locator) return { ok: false, reason: 'no_ledger' };
-  return ledgerStub(locator, env).reserve(attemptId, upperBoundUSD, day, spendConfig(env));
+  const access = await accessLedger(deviceToken, env);
+  if (access.kind === 'legacy') {
+    return { ok: false, reason: 'no_ledger' };
+  }
+  if (access.kind === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  return access.stub.reserve(attemptId, upperBoundUSD, day, spendConfig(env), task);
 }
 
 /**
@@ -82,11 +107,17 @@ export async function reconcileSpend(
   deviceToken: string,
   attemptId: string,
   actualUSD: number,
-  env: Env
+  env: Env,
+  task?: string
 ): Promise<{ ok: boolean; reason?: string }> {
-  const locator = locatorForLedger(deviceToken, env);
-  if (!locator) return { ok: false, reason: 'no_ledger' };
-  return ledgerStub(locator, env).reconcile(attemptId, actualUSD);
+  const access = await accessLedger(deviceToken, env);
+  if (access.kind === 'legacy') {
+    return { ok: false, reason: 'no_ledger' };
+  }
+  if (access.kind === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  return access.stub.reconcile(attemptId, actualUSD, task);
 }
 
 /**
@@ -99,9 +130,9 @@ export async function recordSpend(
   env: Env
 ): Promise<void> {
   const attemptId = `test-record:${task}:${costUSD}`;
-  const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env);
+  const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
   if (!reserved.ok) return;
-  await reconcileSpend(deviceToken, attemptId, costUSD, env);
+  await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
 }
 
 /**
@@ -111,9 +142,15 @@ export async function isHardCapReached(
   deviceToken: string,
   env: Env
 ): Promise<boolean> {
-  const record = await getSpendRecord(deviceToken, env);
-  const totalSpent = record.spentUSD + record.reservedUSD;
-  return totalSpent >= spendConfig(env).dailyCapUSD;
+  const access = await accessLedger(deviceToken, env);
+  if (access.kind === 'unavailable') {
+    return true;
+  }
+  if (access.kind === 'legacy') {
+    return false;
+  }
+  const summary = await access.stub.summary(getTodayDateString(), spendConfig(env));
+  return summary.hardCapReached;
 }
 
 /**
@@ -123,9 +160,15 @@ export async function isSoftThresholdReached(
   deviceToken: string,
   env: Env
 ): Promise<boolean> {
-  const record = await getSpendRecord(deviceToken, env);
-  const totalSpent = record.spentUSD + record.reservedUSD;
-  return totalSpent >= spendConfig(env).softThresholdUSD;
+  const access = await accessLedger(deviceToken, env);
+  if (access.kind === 'unavailable') {
+    return true;
+  }
+  if (access.kind === 'legacy') {
+    return false;
+  }
+  const summary = await access.stub.summary(getTodayDateString(), spendConfig(env));
+  return summary.softThresholdReached;
 }
 
 /**
@@ -146,8 +189,41 @@ export async function getUsageSummary(
   ledgerDayEndsAt: string | null;
   byTask: Record<string, number>;
 }> {
-  const record = await getSpendRecord(deviceToken, env);
+  const access = await accessLedger(deviceToken, env);
   const config = spendConfig(env);
+
+  if (access.kind === 'unavailable') {
+    return {
+      last7DaysUSD: 0,
+      last30DaysUSD: 0,
+      dailyCapUSD: config.dailyCapUSD,
+      softThresholdUSD: config.softThresholdUSD,
+      spentTodayUSD: 0,
+      reservedTodayUSD: 0,
+      softThresholdReached: true,
+      hardCapReached: true,
+      ledgerDayEndsAt: getEndOfDayISO(),
+      byTask: {},
+    };
+  }
+
+  if (access.kind === 'ready') {
+    const summary = await access.stub.summary(getTodayDateString(), config);
+    return {
+      last7DaysUSD: summary.spentUSD,
+      last30DaysUSD: summary.spentUSD,
+      dailyCapUSD: config.dailyCapUSD,
+      softThresholdUSD: config.softThresholdUSD,
+      spentTodayUSD: summary.spentUSD,
+      reservedTodayUSD: summary.reservedUSD,
+      softThresholdReached: summary.softThresholdReached,
+      hardCapReached: summary.hardCapReached,
+      ledgerDayEndsAt: getEndOfDayISO(),
+      byTask: summary.byTask,
+    };
+  }
+
+  const record = await getSpendRecord(deviceToken, env);
   const totalSpent = record.spentUSD + record.reservedUSD;
 
   return {

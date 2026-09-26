@@ -35,21 +35,22 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     attemptId: string,
     upperBoundUSD: number,
     day: string,
-    config: SpendConfig
+    config: SpendConfig,
+    task = 'unknown'
   ): ReserveResult {
     return this.ctx.storage.transactionSync(() => {
       const state = this.touch();
-      const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config);
-      if (result.ok) this.saveState(state);
+      const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
+      this.saveState(state);
       return result;
     });
   }
 
-  reconcile(attemptId: string, actualUSD: number): ReconcileResult {
+  reconcile(attemptId: string, actualUSD: number, task?: string): ReconcileResult {
     return this.ctx.storage.transactionSync(() => {
       const state = this.touch();
-      const result = reconcileAttempt(state, attemptId, actualUSD);
-      if (result.ok) this.saveState(state);
+      const result = reconcileAttempt(state, attemptId, actualUSD, task);
+      this.saveState(state);
       return result;
     });
   }

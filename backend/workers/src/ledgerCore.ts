@@ -1,16 +1,19 @@
 /**
  * Pure spend-ledger logic (reserve / reconcile / summary / prune).
- * Used inside DeviceSpendLedger transactions and unit-tested without workerd.
+ * All monetary amounts inside the ledger are integer micro-USD (1 USD = 1_000_000 micro).
  */
 
 import type { SpendConfig } from './types.js';
+
+export const MICRO_USD = 1_000_000;
 
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
 
 export interface AttemptEntry {
   attemptId: string;
-  upperBoundUSD: number;
-  actualUSD?: number;
+  upperBoundMicro: number;
+  actualMicro?: number;
+  task: string;
   state: AttemptState;
   createdAt: string;
   reconciledAt?: string;
@@ -19,10 +22,12 @@ export interface AttemptEntry {
 
 export interface DayRecord {
   date: string;
-  spentUSD: number;
-  reservedUSD: number;
+  spentMicro: number;
+  reservedMicro: number;
+  /** Count of reconciles where actual cost exceeded the reserved upper bound. */
+  overReservationCount: number;
   attempts: Record<string, AttemptEntry>;
-  /** Aggregated reconciled spend by task label (content-free). */
+  /** Reconciled spend by task label (micro-USD). */
   tasks: Record<string, number>;
 }
 
@@ -30,6 +35,7 @@ export interface LedgerState {
   days: Record<string, DayRecord>;
 }
 
+/** UTC calendar days retained (inclusive); buckets strictly older than this are pruned. */
 export const LEDGER_RETENTION_DAYS = 31;
 
 export interface ReserveResult {
@@ -48,7 +54,23 @@ export interface DaySummary {
   reservedUSD: number;
   softThresholdReached: boolean;
   hardCapReached: boolean;
+  overReservationCount: number;
   byTask: Record<string, number>;
+}
+
+export function usdToMicro(usd: number): number {
+  return Math.round(usd * MICRO_USD);
+}
+
+export function microToUsd(micro: number): number {
+  return micro / MICRO_USD;
+}
+
+export function configToMicro(config: SpendConfig): { capMicro: number; softMicro: number } {
+  return {
+    capMicro: usdToMicro(config.dailyCapUSD),
+    softMicro: usdToMicro(config.softThresholdUSD),
+  };
 }
 
 export function emptyLedgerState(): LedgerState {
@@ -58,25 +80,53 @@ export function emptyLedgerState(): LedgerState {
 function emptyDay(date: string): DayRecord {
   return {
     date,
-    spentUSD: 0,
-    reservedUSD: 0,
+    spentMicro: 0,
+    reservedMicro: 0,
+    overReservationCount: 0,
     attempts: {},
     tasks: {},
   };
 }
 
 function getDay(state: LedgerState, date: string): DayRecord {
-  return state.days[date] ?? emptyDay(date);
+  const existing = state.days[date];
+  if (existing) return existing;
+  const day = emptyDay(date);
+  state.days[date] = day;
+  return day;
 }
 
-/** Drop day buckets older than {@link LEDGER_RETENTION_DAYS} UTC calendar days. */
+function utcDayString(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function utcDayAgeDays(day: string, now: Date): number {
+  const dayMs = Date.parse(`${day}T00:00:00.000Z`);
+  const nowMs = Date.parse(`${utcDayString(now)}T00:00:00.000Z`);
+  return Math.floor((nowMs - dayMs) / 86_400_000);
+}
+
+/**
+ * Prune day buckets strictly older than {@link LEDGER_RETENTION_DAYS} UTC calendar days.
+ * A bucket on the boundary (exactly 31 days old) is kept.
+ */
 export function pruneOldDays(state: LedgerState, now: Date): void {
-  const cutoff = utcDateString(addUtcDays(now, -LEDGER_RETENTION_DAYS));
   for (const key of Object.keys(state.days)) {
-    if (key < cutoff) {
+    if (utcDayAgeDays(key, now) > LEDGER_RETENTION_DAYS) {
       delete state.days[key];
     }
   }
+}
+
+function findAttempt(
+  state: LedgerState,
+  attemptId: string
+): { day: DayRecord; entry: AttemptEntry } | null {
+  for (const day of Object.values(state.days)) {
+    const entry = day.attempts[attemptId];
+    if (entry) return { day, entry };
+  }
+  return null;
 }
 
 export function reserveAttempt(
@@ -84,67 +134,84 @@ export function reserveAttempt(
   attemptId: string,
   upperBoundUSD: number,
   day: string,
-  config: SpendConfig
+  config: SpendConfig,
+  task = 'unknown'
 ): ReserveResult {
   if (!attemptId || !Number.isFinite(upperBoundUSD) || upperBoundUSD < 0) {
     return { ok: false, reason: 'invalid' };
   }
 
-  const dayRecord = getDay(state, day);
-  const existing = dayRecord.attempts[attemptId];
-  if (existing) {
-    if (existing.upperBoundUSD === upperBoundUSD) {
-      state.days[day] = dayRecord;
+  const upperBoundMicro = usdToMicro(upperBoundUSD);
+  const { capMicro, softMicro: _softMicro } = configToMicro(config);
+
+  const existingGlobal = findAttempt(state, attemptId);
+  if (existingGlobal) {
+    if (existingGlobal.entry.upperBoundMicro === upperBoundMicro) {
       return { ok: true };
     }
     return { ok: false, reason: 'invalid' };
   }
 
-  const totalCommitted = dayRecord.spentUSD + dayRecord.reservedUSD;
-  if (totalCommitted + upperBoundUSD > config.dailyCapUSD) {
+  const dayRecord = getDay(state, day);
+
+  if (dayRecord.spentMicro >= capMicro) {
+    return { ok: false, reason: 'hard_cap' };
+  }
+
+  const totalCommitted = dayRecord.spentMicro + dayRecord.reservedMicro;
+  if (totalCommitted + upperBoundMicro > capMicro) {
     return { ok: false, reason: 'hard_cap' };
   }
 
   dayRecord.attempts[attemptId] = {
     attemptId,
-    upperBoundUSD,
+    upperBoundMicro,
+    task,
     state: 'reserved',
     createdAt: new Date().toISOString(),
   };
-  dayRecord.reservedUSD += upperBoundUSD;
-  state.days[day] = dayRecord;
+  dayRecord.reservedMicro += upperBoundMicro;
   return { ok: true };
 }
 
 export function reconcileAttempt(
   state: LedgerState,
   attemptId: string,
-  actualUSD: number
+  actualUSD: number,
+  task?: string
 ): ReconcileResult {
   if (!attemptId || !Number.isFinite(actualUSD) || actualUSD < 0) {
     return { ok: false, reason: 'invalid' };
   }
 
-  for (const day of Object.values(state.days)) {
-    const entry = day.attempts[attemptId];
-    if (!entry) continue;
-
-    if (entry.state === 'reconciled' && entry.actualUSD === actualUSD) {
-      return { ok: true };
-    }
-    if (entry.state !== 'reserved') {
-      return { ok: false, reason: 'invalid' };
-    }
-
-    day.reservedUSD -= entry.upperBoundUSD;
-    day.spentUSD += actualUSD;
-    entry.state = 'reconciled';
-    entry.actualUSD = actualUSD;
-    entry.reconciledAt = new Date().toISOString();
-    return { ok: true };
+  const located = findAttempt(state, attemptId);
+  if (!located) {
+    return { ok: false, reason: 'not_found' };
   }
 
-  return { ok: false, reason: 'not_found' };
+  const { day, entry } = located;
+  const actualMicro = usdToMicro(actualUSD);
+
+  if (entry.state === 'reconciled' && entry.actualMicro === actualMicro) {
+    return { ok: true };
+  }
+  if (entry.state !== 'reserved') {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  day.reservedMicro -= entry.upperBoundMicro;
+  day.spentMicro += actualMicro;
+  if (actualMicro > entry.upperBoundMicro) {
+    day.overReservationCount += 1;
+  }
+
+  const taskKey = task ?? entry.task;
+  day.tasks[taskKey] = (day.tasks[taskKey] ?? 0) + actualMicro;
+
+  entry.state = 'reconciled';
+  entry.actualMicro = actualMicro;
+  entry.reconciledAt = new Date().toISOString();
+  return { ok: true };
 }
 
 export function summarizeDay(
@@ -153,28 +220,24 @@ export function summarizeDay(
   config: SpendConfig
 ): DaySummary {
   const record = getDay(state, day);
-  const totalCommitted = record.spentUSD + record.reservedUSD;
+  const { capMicro, softMicro } = configToMicro(config);
+  const totalCommitted = record.spentMicro + record.reservedMicro;
+  const byTask: Record<string, number> = {};
+  for (const [task, micro] of Object.entries(record.tasks)) {
+    byTask[task] = microToUsd(micro);
+  }
   return {
     date: day,
-    spentUSD: record.spentUSD,
-    reservedUSD: record.reservedUSD,
-    softThresholdReached: totalCommitted >= config.softThresholdUSD,
-    hardCapReached: totalCommitted >= config.dailyCapUSD,
-    byTask: { ...record.tasks },
+    spentUSD: microToUsd(record.spentMicro),
+    reservedUSD: microToUsd(record.reservedMicro),
+    softThresholdReached: totalCommitted >= softMicro,
+    hardCapReached: record.spentMicro >= capMicro,
+    overReservationCount: record.overReservationCount,
+    byTask,
   };
 }
 
-/** Placeholder for #13-b; prunes only today via {@link pruneOldDays}. */
+/** Placeholder for #13-b; prunes stale day buckets on every call. */
 export function ageLedger(state: LedgerState, now: Date): void {
   pruneOldDays(state, now);
-}
-
-function utcDateString(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function addUtcDays(d: Date, delta: number): Date {
-  const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  copy.setUTCDate(copy.getUTCDate() + delta);
-  return copy;
 }
