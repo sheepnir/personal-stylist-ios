@@ -14,6 +14,11 @@ import {
   type ReserveResult,
   type DaySummary,
 } from './ledgerCore.js';
+import {
+  toRpcDaySummary,
+  toRpcReconcileResult,
+  toRpcReserveResult,
+} from './rpcPlain.js';
 
 const STATE_KEY = 'ledger';
 
@@ -46,7 +51,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
         if (pruned) {
           this.saveState(state);
         }
-        return { ok: false, reason: 'config_error' };
+        return toRpcReserveResult({ ok: false, reason: 'config_error' });
       }
       const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
       if (!result.ok) {
@@ -55,7 +60,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
       if (result.ok || pruned) {
         this.saveState(state);
       }
-      return result;
+      return toRpcReserveResult(result);
     });
   }
 
@@ -66,7 +71,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
       if (result.ok || pruned) {
         this.saveState(state);
       }
-      return result;
+      return toRpcReconcileResult(result);
     });
   }
 
@@ -82,13 +87,13 @@ export class DeviceSpendLedger extends DurableObject<Env> {
         if (pruned) {
           this.saveState(state);
         }
-        return failClosedDaySummary(day);
+        return toRpcDaySummary(failClosedDaySummary(day));
       }
       const summary = summarizeDay(state, day, config);
       if (pruned) {
         this.saveState(state);
       }
-      return summary;
+      return toRpcDaySummary(summary);
     });
   }
 }

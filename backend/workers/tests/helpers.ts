@@ -12,6 +12,7 @@ import {
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
+import { DeviceSpendLedger } from '../src/spendLedger.js';
 
 export class MemoryKV {
   store = new Map<string, string>();
@@ -110,4 +111,37 @@ export function createSpendLedgerMock(): SpendLedgerMock {
 
 export function spendLedger(): DurableObjectNamespace {
   return createSpendLedgerMock().namespace;
+}
+
+/** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */
+export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
+  ledger: DeviceSpendLedger;
+  putCount: () => number;
+  resetPutCount: () => void;
+  getStoredState: () => LedgerState | undefined;
+} {
+  const kvStore = new Map<string, unknown>();
+  const putLog: unknown[] = [];
+  if (initialState) {
+    kvStore.set('ledger', structuredClone(initialState));
+  }
+  const storage = {
+    kv: {
+      get: <T>(key: string): T | undefined => kvStore.get(key) as T | undefined,
+      put: (key: string, value: unknown) => {
+        putLog.push(value);
+        kvStore.set(key, value);
+      },
+    },
+    transactionSync: <T>(fn: () => T): T => fn(),
+  };
+  const ledger = new DeviceSpendLedger({ storage } as DurableObjectState, {} as import('../src/types.js').Env);
+  return {
+    ledger,
+    putCount: () => putLog.length,
+    resetPutCount: () => {
+      putLog.length = 0;
+    },
+    getStoredState: () => kvStore.get('ledger') as LedgerState | undefined,
+  };
 }
