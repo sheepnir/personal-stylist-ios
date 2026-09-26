@@ -45,43 +45,65 @@ describe("decisionsQuestionIds (ADR §7.1.2 / A-1 SLOT_ENUM)", () => {
 
   it("providerQuestionsMatchSlotIdContract rejects duplicate question ids", () => {
     expect(
-      providerQuestionsMatchSlotIdContract([
-        {
-          id: slotChoiceQuestionId("TOP"),
-          type: "choice",
-          slot: "TOP",
-          options: { g_1: {} },
-        },
-        {
-          id: slotChoiceQuestionId("TOP"),
-          type: "choice",
-          slot: "BOTTOM",
-          options: { g_2: {} },
-        },
-      ]),
+      providerQuestionsMatchSlotIdContract(
+        [
+          {
+            id: slotChoiceQuestionId("TOP"),
+            type: "choice",
+            slot: "TOP",
+            options: { g_1: {} },
+          },
+          {
+            id: slotChoiceQuestionId("TOP"),
+            type: "choice",
+            slot: "BOTTOM",
+            options: { g_2: {} },
+          },
+        ],
+        new Set(),
+      ),
     ).toBe(false);
   });
 
   it("providerQuestionsMatchSlotIdContract requires matching choice ids", () => {
     expect(
-      providerQuestionsMatchSlotIdContract([
-        {
-          id: slotChoiceQuestionId("TOP"),
-          type: "choice",
-          slot: "TOP",
-          options: { g_1: {} },
-        },
-      ]),
+      providerQuestionsMatchSlotIdContract(
+        [
+          {
+            id: slotChoiceQuestionId("TOP"),
+            type: "choice",
+            slot: "TOP",
+            options: { g_1: {} },
+          },
+        ],
+        new Set(),
+      ),
     ).toBe(true);
     expect(
-      providerQuestionsMatchSlotIdContract([
-        {
-          id: "not_slot_TOP",
-          type: "choice",
-          slot: "TOP",
-          options: { g_1: {} },
-        },
-      ]),
+      providerQuestionsMatchSlotIdContract(
+        [
+          {
+            id: "not_slot_TOP",
+            type: "choice",
+            slot: "TOP",
+            options: { g_1: {} },
+          },
+        ],
+        new Set(),
+      ),
+    ).toBe(false);
+    expect(
+      providerQuestionsMatchSlotIdContract(
+        [
+          {
+            id: "slot_top",
+            type: "choice",
+            slot: "TOP",
+            options: { g_1: {} },
+          },
+        ],
+        new Set(),
+      ),
     ).toBe(false);
   });
 });
