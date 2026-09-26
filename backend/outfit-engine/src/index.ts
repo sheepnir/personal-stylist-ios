@@ -29,6 +29,20 @@ export { completesForbiddenPair } from "./stage3/combination.js";
 
 export { runStage4 } from "./stage4/runStage4.js";
 
+export {
+  validateProviderOutput,
+  PROVIDER_PATH_RATIONALE_SUMMARY,
+} from "./provider/index.js";
+export type {
+  ProviderQuestion,
+  ProviderChoiceQuestion,
+  ProviderNoulQuestion,
+  ProviderSetToken,
+  ProviderOutputFailureCause,
+  ValidateProviderOutputInput,
+  ValidateProviderOutputResult,
+} from "./provider/index.js";
+
 export type * from "./types.js";
 export {
   DEFAULT_REQUIRE_SLOTS,
