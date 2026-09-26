@@ -73,6 +73,8 @@ export interface SpendRecord {
   date: string; // YYYY-MM-DD
   spentUSD: number;
   reservedUSD: number;
+  /** Unknown-outcome attempts still awaiting provider reconciliation (VF-13). */
+  unresolvedAttempts: number;
   tasks: Record<string, number>; // task -> cost
   lastUpdated: string; // ISO timestamp
 }

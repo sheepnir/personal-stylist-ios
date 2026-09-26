@@ -4,10 +4,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getSpendRecord, recordSpend, hashToken, reserveSpend } from '../src/usage.js';
-import { generateDeviceToken } from '../src/tokens.js';
+import worker from '../src/index.js';
+import {
+  getSpendRecord,
+  recordSpend,
+  hashToken,
+  reserveSpend,
+  markUnknownSpend,
+} from '../src/usage.js';
+import { generateDeviceToken, issueDeviceToken } from '../src/tokens.js';
 import type { Env } from '../src/types.js';
-import { spendLedger, emptyLedger } from './helpers.js';
+import { spendLedger, emptyLedger, tokenRegistry } from './helpers.js';
+
+const ctx = {} as ExecutionContext;
 
 function envWithSpend(): Env {
   return {
@@ -15,6 +24,18 @@ function envWithSpend(): Env {
     OPENROUTER_API_KEY: 'k',
     USAGE_LEDGER: emptyLedger(),
     SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
+  };
+}
+
+function usageRouteEnv(): Env {
+  return {
+    DEVICE_TOKENS: tokenRegistry() as Env['DEVICE_TOKENS'],
+    SPEND_LEDGER: spendLedger() as Env['SPEND_LEDGER'],
+    OPENROUTER_API_KEY: 'k',
+    USAGE_LEDGER: emptyLedger(),
+    REQUEST_RATE_LIMITER: {
+      limit: async () => ({ success: true }),
+    } as Env['REQUEST_RATE_LIMITER'],
   };
 }
 
@@ -48,5 +69,29 @@ describe('usage ledger token privacy (#174)', () => {
     const a = await hashToken('token-A');
     const b = await hashToken('token-B');
     expect(a).not.toBe(b);
+  });
+});
+
+describe('GET /v1/usage unresolvedAttempts (#14)', () => {
+  it('reports one unresolved attempt after markUnknownSpend', async () => {
+    const env = usageRouteEnv();
+    const { deviceToken } = await issueDeviceToken(env);
+    await reserveSpend(deviceToken, 'usage-unknown-1', 0.15, env);
+    await markUnknownSpend(deviceToken, 'usage-unknown-1', env, 'gen-usage-1');
+
+    const response = await worker.fetch(
+      new Request('http://test.com/v1/usage', {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+      }),
+      env,
+      ctx
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      unresolvedAttempts: number;
+      reservedTodayUSD: number;
+    };
+    expect(body.unresolvedAttempts).toBe(1);
+    expect(body.reservedTodayUSD).toBeCloseTo(0.15);
   });
 });

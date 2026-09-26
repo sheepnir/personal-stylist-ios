@@ -44,6 +44,7 @@ export async function getSpendRecord(
       date: today,
       spentUSD: 0,
       reservedUSD: 0,
+      unresolvedAttempts: 0,
       tasks: {},
       lastUpdated: new Date().toISOString(),
     };
@@ -55,6 +56,7 @@ export async function getSpendRecord(
     date: today,
     spentUSD: summary.spentUSD,
     reservedUSD: summary.reservedUSD,
+    unresolvedAttempts: summary.unresolvedAttempts,
     tasks: summary.byTask,
     lastUpdated: new Date().toISOString(),
   };
@@ -155,6 +157,7 @@ export async function getUsageSummary(
   softThresholdUSD: number;
   spentTodayUSD: number;
   reservedTodayUSD: number;
+  unresolvedAttempts: number;
   softThresholdReached: boolean;
   hardCapReached: boolean;
   ledgerDayEndsAt: string | null;
@@ -171,6 +174,7 @@ export async function getUsageSummary(
     softThresholdUSD: config.softThresholdUSD,
     spentTodayUSD: record.spentUSD,
     reservedTodayUSD: record.reservedUSD,
+    unresolvedAttempts: record.unresolvedAttempts,
     softThresholdReached: totalSpent >= config.softThresholdUSD,
     hardCapReached: totalSpent >= config.dailyCapUSD,
     ledgerDayEndsAt: getEndOfDayISO(),
