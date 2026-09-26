@@ -105,3 +105,79 @@ export function parseDecisionsResponseBody(
     },
   };
 }
+
+export function validateDecisionsAnswersAgainstQuestions(
+  answers: Record<string, DecisionsAnswer>,
+  questions: ProviderQuestion[],
+): boolean {
+  const questionIdList = questions.map((q) => q.id);
+  const questionIds = new Set(questionIdList);
+  if (questionIds.size !== questionIdList.length) {
+    return false;
+  }
+
+  const answerKeys = ownKeys(answers);
+  if (answerKeys.length !== questionIds.size) return false;
+  for (const id of questionIds) {
+    if (!ownHas(answers, id)) return false;
+  }
+  for (const key of answerKeys) {
+    if (!questionIds.has(key)) return false;
+  }
+
+  for (const q of questions) {
+    const answer = answers[q.id];
+    if (!answer) return false;
+    if (q.type === "choice") {
+      if (answer.type !== "choice") return false;
+      if (!ownHas(q.options, answer.choice)) return false;
+    } else if (q.type === "noul") {
+      if (answer.type !== "noul") return false;
+      if (answer.noul < 0 || answer.noul > 1) return false;
+    }
+  }
+  return true;
+}
+
+export function validateProviderChoiceAnswers(params: {
+  answers: Record<string, DecisionsAnswer>;
+  questions: ProviderQuestion[];
+  requiredSlots: Set<Slot>;
+  setTokens?: ProviderSetToken[];
+}): boolean {
+  const { answers, questions, requiredSlots, setTokens = [] } = params;
+  const setByToken = new Map(setTokens.map((s) => [s.token, s]));
+
+  for (const q of questions) {
+    if (q.type !== "choice") continue;
+    const answer = answers[q.id];
+    if (!answer || answer.type !== "choice") continue;
+    const choice = answer.choice;
+
+    if (choice === "none") {
+      if (requiredSlots.has(q.slot)) return false;
+      if (!ownHas(q.options, "none")) return false;
+      continue;
+    }
+
+    if (choice.startsWith("s_")) {
+      const setInfo = setByToken.get(choice);
+      if (!setInfo) return false;
+      if (q.slot !== setInfo.firstSlot) return false;
+      if (setInfo.memberGarmentIds.length === 0) return false;
+      if (!ownHas(q.options, choice)) return false;
+      continue;
+    }
+
+    if (!ownHas(q.options, choice)) return false;
+  }
+
+  for (const q of questions) {
+    if (q.type !== "choice") continue;
+    if (requiredSlots.has(q.slot) && ownHas(q.options, "none")) {
+      return false;
+    }
+  }
+
+  return true;
+}
