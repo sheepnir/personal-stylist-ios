@@ -482,13 +482,13 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         let rejectBodies = try XCTUnwrap(json["rejectBodies"] as? [[String: Any]])
         for entry in rejectBodies {
             let label = entry["label"] as? String ?? "reject"
-            let body = try XCTUnwrap(entry["body"] as? [String: Any])
+            let body = try XCTUnwrap(entry["body"])
             XCTAssertNotNil(Self.workerImageFinding(in: body), label)
         }
         let allowBodies = try XCTUnwrap(json["allowBodies"] as? [[String: Any]])
         for entry in allowBodies {
             let label = entry["label"] as? String ?? "allow"
-            let body = try XCTUnwrap(entry["body"] as? [String: Any])
+            let body = try XCTUnwrap(entry["body"])
             XCTAssertNil(Self.workerImageFinding(in: body), label)
         }
     }

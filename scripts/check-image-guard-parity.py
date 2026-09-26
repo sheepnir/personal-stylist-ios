@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Fail when the iOS client's image-payload guard drifts from the Worker's.
 
-Compares forbidden-token lists, consent path segments, the RFC 3339 consent regex,
-and the image-value regex extracted from backend/workers and App/OutfitEngineClient.swift,
-runs a legitimate-key sweep (OpenAPI + fixtures + corpus), then runs
-fixtures/image-guard/corpus.json through the Worker's vitest harness.
+Compares forbidden-token lists, consent path segments, RFC 3339 consent regex,
+printable-ASCII key bounds, key-separator and ECMAScript-whitespace code points,
+image-value regex and prefix lists (Worker vs App/OutfitEngineClient.swift), runs
+a legitimate-key sweep (OpenAPI + fixtures + corpus), then runs
+fixtures/image-guard/corpus.json through the Worker's vitest harness. Swift corpus
+coverage is in Tests/OutfitEngineImagePayloadTests (Xcode CI).
 """
 
 from __future__ import annotations

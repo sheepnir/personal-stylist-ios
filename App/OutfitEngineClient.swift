@@ -236,8 +236,9 @@ enum OutfitEngineClient {
     // (U+0020–U+007E); otherwise the payload is treated as image-bearing. Allowed keys are
     // lowercased (ASCII A–Z only), `_`, `-`, `.`, and ECMAScript whitespace are stripped,
     // then forbidden tokens are matched anywhere in the segment.
-    // `scripts/check-image-guard-parity.py` runs `fixtures/image-guard/corpus.json`
-    // through both implementations.
+    // `scripts/check-image-guard-parity.py` compares guard constants and runs the shared
+    // corpus through the Worker; the same corpus is exercised in Xcode via
+    // `testImageGuardCorpusMatchesClientGuard`.
     //
     /// docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt. Path segments
     /// `["privacyConsent","wardrobeImagesAcceptedAt"]` from the body root through objects

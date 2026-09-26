@@ -8,7 +8,10 @@
  *   rejected before the engine runs.
  * - #36: printable-ASCII object keys only; normalize allowed keys (lowercase,
  *   strip `_` / `-` / `.` / ECMAScript whitespace) and match forbidden tokens
- *   anywhere in the segment.
+ *   anywhere in the segment. Consent matching keeps at most a two-segment path
+ *   (`privacyConsent` → `wardrobeImagesAcceptedAt`); deeper objects reuse that
+ *   prefix without copying unbounded path vectors. Request size is capped separately
+ *   by {@link MAX_BODY_BYTES} (#170), not by nesting depth.
  */
 
 import type { Env, ProblemDetail } from './types.js';
@@ -161,7 +164,7 @@ function consentPathMatches(path: readonly string[], pathLen: number): boolean {
 const CONSENT_PATH_DEPTH = IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.length;
 
 function containsImage(value: unknown): boolean {
-  // Iterative traversal: no depth-based fail-open or call-stack exhaustion.
+  // Iterative traversal: consent path is two segments only; no unbounded path copying.
   type Frame = {
     item: unknown;
     path: string[];
