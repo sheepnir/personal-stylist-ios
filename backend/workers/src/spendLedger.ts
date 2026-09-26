@@ -8,6 +8,7 @@ import {
   reconcileAttempt,
   reserveAttempt,
   summarizeDay,
+  countUnresolvedAttemptsAcrossDays,
   type LedgerState,
   type MarkUnknownResult,
   type ReconcileResult,
@@ -71,6 +72,15 @@ export class DeviceSpendLedger extends DurableObject<Env> {
       const state = this.touch();
       this.saveState(state);
       return summarizeDay(state, day, config);
+    });
+  }
+
+  /** Count unknown attempts on every retained ledger day (not yet aged to spent). */
+  unresolvedAttempts(): number {
+    return this.ctx.storage.transactionSync(() => {
+      const state = this.touch();
+      this.saveState(state);
+      return countUnresolvedAttemptsAcrossDays(state);
     });
   }
 }

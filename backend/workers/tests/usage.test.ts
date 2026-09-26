@@ -94,4 +94,30 @@ describe('GET /v1/usage unresolvedAttempts (#14)', () => {
     expect(body.unresolvedAttempts).toBe(1);
     expect(body.reservedTodayUSD).toBeCloseTo(0.15);
   });
+
+  it('counts unknown on a previous UTC ledger day in unresolvedAttempts', async () => {
+    const env = usageRouteEnv();
+    const { deviceToken } = await issueDeviceToken(env);
+    const prior = new Date();
+    prior.setUTCDate(prior.getUTCDate() - 1);
+    const priorDay = prior.toISOString().split('T')[0];
+
+    await reserveSpend(deviceToken, 'usage-unknown-prior', 0.12, env, priorDay);
+    await markUnknownSpend(deviceToken, 'usage-unknown-prior', env, 'gen-prior');
+
+    const response = await worker.fetch(
+      new Request('http://test.com/v1/usage', {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+      }),
+      env,
+      ctx
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      unresolvedAttempts: number;
+      reservedTodayUSD: number;
+    };
+    expect(body.unresolvedAttempts).toBe(1);
+    expect(body.reservedTodayUSD).toBeCloseTo(0);
+  });
 });

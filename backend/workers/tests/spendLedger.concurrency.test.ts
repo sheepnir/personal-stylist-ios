@@ -47,6 +47,7 @@ describe('DeviceSpendLedger concurrency (workerd)', () => {
 
       const accepted = results.filter((r) => r.ok);
       const rejected = results.filter((r) => !r.ok && r.reason === 'hard_cap');
+      expect(accepted.length).toBe(8);
       expect(accepted.length * upper).toBeLessThanOrEqual(CONFIG.dailyCapUSD);
       expect(accepted.length + rejected.length).toBe(n);
 

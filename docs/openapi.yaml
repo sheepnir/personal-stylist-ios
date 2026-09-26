@@ -1522,7 +1522,7 @@ components:
         unresolvedAttempts:
           type: integer
           minimum: 0
-          description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13). Each ages to "spent" after 24 h.
+          description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13), counted across retained ledger days and not yet aged to spent. Each ages to "spent" after 24 h.
         softThresholdReached: { type: boolean }
         hardCapReached: { type: boolean }
         ledgerDayEndsAt:

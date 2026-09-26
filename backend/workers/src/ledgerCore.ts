@@ -74,6 +74,17 @@ export function countUnresolvedAttempts(state: LedgerState, day: string): number
   return Object.values(record.attempts).filter((entry) => entry.state === 'unknown').length;
 }
 
+/** Unknown-outcome attempts across all retained day buckets (VF-13 usage rollup). */
+export function countUnresolvedAttemptsAcrossDays(state: LedgerState): number {
+  let count = 0;
+  for (const day of Object.values(state.days)) {
+    for (const entry of Object.values(day.attempts)) {
+      if (entry.state === 'unknown') count += 1;
+    }
+  }
+  return count;
+}
+
 export function emptyLedgerState(): LedgerState {
   return { days: {} };
 }

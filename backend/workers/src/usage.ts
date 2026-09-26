@@ -50,13 +50,15 @@ export async function getSpendRecord(
     };
   }
 
-  const summary = await ledgerStub(locator, env).summary(today, spendConfig(env));
+  const stub = ledgerStub(locator, env);
+  const summary = await stub.summary(today, spendConfig(env));
+  const unresolvedAttempts = await stub.unresolvedAttempts();
   return {
     tokenHash,
     date: today,
     spentUSD: summary.spentUSD,
     reservedUSD: summary.reservedUSD,
-    unresolvedAttempts: summary.unresolvedAttempts,
+    unresolvedAttempts,
     tasks: summary.byTask,
     lastUpdated: new Date().toISOString(),
   };

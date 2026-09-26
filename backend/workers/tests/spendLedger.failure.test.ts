@@ -11,6 +11,7 @@ import {
   reserveAttempt,
   summarizeDay,
   countUnresolvedAttempts,
+  countUnresolvedAttemptsAcrossDays,
   COST_LOOKUP_BACKOFF_MS,
   UNKNOWN_OUTCOME_AGING_MS,
 } from '../src/ledgerCore.js';
@@ -29,6 +30,18 @@ describe('spendLedger failure paths (ledgerCore)', () => {
 
   afterEach(() => {
     fetchSpy.mockRestore();
+  });
+
+  it('rolls up unknown attempts across ledger days for usage', () => {
+    const state = emptyLedgerState();
+    const priorDay = '2026-09-25';
+    reserveAttempt(state, 'cross-day', 0.2, priorDay, CONFIG);
+    markAttemptUnknown(state, 'cross-day', 'gen-cross');
+
+    expect(countUnresolvedAttempts(state, DAY)).toBe(0);
+    expect(countUnresolvedAttemptsAcrossDays(state)).toBe(1);
+    expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBeCloseTo(0);
+    expect(summarizeDay(state, priorDay, CONFIG).reservedUSD).toBeCloseTo(0.2);
   });
 
   it('markUnknown counts toward reservedUSD and unresolvedAttempts until reconcile', () => {

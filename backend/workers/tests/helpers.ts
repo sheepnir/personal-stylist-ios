@@ -10,6 +10,7 @@ import {
   reconcileAttempt,
   reserveAttempt,
   summarizeDay,
+  countUnresolvedAttemptsAcrossDays,
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
@@ -101,6 +102,11 @@ export function spendLedger(): SpendLedgerTestHarness {
         ageLedger(state, new Date(), NO_COST_SOURCE);
         const result = markAttemptUnknown(state, attemptId, generationId);
         return result;
+      },
+      unresolvedAttempts: async () => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return countUnresolvedAttemptsAcrossDays(state);
       },
     }),
     markUnknownCalls,
