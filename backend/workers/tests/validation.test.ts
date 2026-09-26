@@ -76,6 +76,11 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     expect(res?.status).toBe(415);
   });
 
+  it('rejects openapi image and thumbnails keys (#36 AC6)', () => {
+    expect(rejectImagePayload({ thumbnails: [] })?.status).toBe(415);
+    expect(rejectImagePayload({ image: { data: 'x', mediaType: 'image/png' } })?.status).toBe(415);
+  });
+
   it('rejects all-lowercase compound keys (#36)', () => {
     expect(rejectImagePayload({ imagepath: 'x' })?.status).toBe(415);
     expect(rejectImagePayload({ imageblob: 'x' })?.status).toBe(415);
@@ -106,6 +111,14 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     expect(
       rejectImagePayload({
         privacyConsent: { wardrobeImagesAcceptedAt: 'not-a-date', policyVersion: '1' },
+      })?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: {
+          wardrobeImagesAcceptedAt: '2026-09-20',
+          policyVersion: '1',
+        },
       })?.status
     ).toBe(415);
     expect(

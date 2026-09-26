@@ -22,12 +22,13 @@ export const RATE_LIMIT_WINDOW_SECONDS = 60;
 
 /**
  * Sole named exception: docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt.
- * Matched on full dotted path only; value must be a bounded ISO date-time string.
+ * Matched on the full dotted path from the request body root only. The value must parse
+ * as an ISO-8601 date-time and be at most 64 characters (openapi maxLength is tracked separately).
  * Additional exceptions require Architect approval and an openapi.yaml reference.
  */
 export const IMAGE_GUARD_CONSENT_FIELD_PATH = 'privacyConsent.wardrobeImagesAcceptedAt';
 
-export const WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH = 64;
+const WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH = 64;
 
 /** Substrings matched against {@link normalizeImageGuardKey} on each object key segment. */
 export const FORBIDDEN_IMAGE_KEY_TOKENS = [
@@ -45,9 +46,6 @@ export const FORBIDDEN_IMAGE_KEY_TOKENS = [
   'photography',
   'thumbsup',
 ] as const;
-
-const WARDROBE_IMAGES_ACCEPTED_AT_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /** Detects data: URLs and common raw image encodings inside string values. */
 const IMAGE_VALUE_PATTERN = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
@@ -71,7 +69,10 @@ export function normalizedKeyContainsForbiddenImageToken(key: string): boolean {
 export function isAllowedWardrobeImagesAcceptedAtValue(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   if (value.length === 0 || value.length > WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH) return false;
-  return WARDROBE_IMAGES_ACCEPTED_AT_PATTERN.test(value);
+  // OpenAPI `format: date-time` — require a time component, not a date-only string.
+  if (!value.includes('T')) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed);
 }
 
 function problem(status: number, title: string, code: string, detail: string, extra: Record<string, unknown> = {}): Response {

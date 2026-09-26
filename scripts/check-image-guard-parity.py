@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,10 +43,19 @@ ECMA_WHITESPACE = {
     0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
     0x2008, 0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
 }
-CONSENT_TIMESTAMP = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"
-)
 CONSENT_MAX_LEN = 64
+
+
+def parse_iso8601_datetime(value: str) -> bool:
+    """Match Worker/Swift: ISO-8601 date-time with a time component, real parse."""
+    if "T" not in value:
+        return False
+    normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    try:
+        datetime.fromisoformat(normalized)
+        return True
+    except ValueError:
+        return False
 
 
 def extract_tokens(path: Path, pattern: re.Pattern[str]) -> list[str]:
@@ -98,7 +108,7 @@ def allowed_consent_timestamp(value: object) -> bool:
         return False
     if not value or len(value) > CONSENT_MAX_LEN:
         return False
-    return CONSENT_TIMESTAMP.match(value) is not None
+    return parse_iso8601_datetime(value)
 
 
 def join_path(parent: str, key: str) -> str:
@@ -165,6 +175,11 @@ def main() -> int:
             ok = False
             print(f"FAIL keySegments {key!r}: expected imageBearing={expect}, got {got}")
 
+    for key in corpus.get("allowGuardedEndpointKeys", []):
+        if segment_image_bearing(key, worker_tokens):
+            ok = False
+            print(f"FAIL allowGuardedEndpointKeys {key!r}: must not be image-bearing")
+
     for entry in corpus["rejectBodies"]:
         body = entry["body"]
         if not body_contains_image(body, worker_consent, worker_tokens):
@@ -181,6 +196,7 @@ def main() -> int:
         return 1
 
     print(f"OK corpus: {len(corpus['keySegments'])} keys, "
+          f"{len(corpus.get('allowGuardedEndpointKeys', []))} guarded-endpoint keys, "
           f"{len(corpus['rejectBodies'])} reject bodies, "
           f"{len(corpus['allowBodies'])} allow bodies")
 

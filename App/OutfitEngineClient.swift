@@ -237,7 +237,9 @@ enum OutfitEngineClient {
     // `scripts/check-image-guard-parity.py` runs `fixtures/image-guard/corpus.json`
     // through both implementations.
     //
-    /// docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt (full path only).
+    /// docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt. Full path from the
+    /// request body root only; value must parse as ISO-8601 date-time and be at most
+    /// 64 characters (openapi maxLength is tracked separately).
     private static let imageGuardConsentFieldPath = "privacyConsent.wardrobeImagesAcceptedAt"
     private static let wardrobeImagesAcceptedAtMaxLength = 64
     private static let forbiddenImageKeyTokens = [
@@ -245,9 +247,16 @@ enum OutfitEngineClient {
         "masterimage", "processedimage", "pixeldata", "bitmap",
         "imagery", "photography", "thumbsup",
     ]
-    private static let wardrobeImagesAcceptedAtPattern = try! NSRegularExpression(
-        pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#
-    )
+    private static let wardrobeImagesAcceptedAtParser: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let wardrobeImagesAcceptedAtParserNoFraction: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
     private static let imageValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
@@ -295,7 +304,9 @@ enum OutfitEngineClient {
     private static func isAllowedWardrobeImagesAcceptedAtValue(_ value: Any) -> Bool {
         guard let string = value as? String else { return false }
         guard !string.isEmpty, string.count <= wardrobeImagesAcceptedAtMaxLength else { return false }
-        return matches(wardrobeImagesAcceptedAtPattern, string)
+        guard string.contains("T") else { return false }
+        if wardrobeImagesAcceptedAtParser.date(from: string) != nil { return true }
+        return wardrobeImagesAcceptedAtParserNoFraction.date(from: string) != nil
     }
 
     private static func joinKeyPath(_ parentPath: String, _ key: String) -> String {

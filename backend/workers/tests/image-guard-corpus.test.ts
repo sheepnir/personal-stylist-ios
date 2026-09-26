@@ -18,6 +18,7 @@ const corpusPath = join(dirname(fileURLToPath(import.meta.url)), '../../../fixtu
 
 type Corpus = {
   keySegments: Array<{ key: string; imageBearing: boolean }>;
+  allowGuardedEndpointKeys?: string[];
   rejectBodies: Array<{ label?: string; body: Record<string, unknown> }>;
   allowBodies: Array<{ label?: string; body: Record<string, unknown> }>;
 };
@@ -32,6 +33,10 @@ describe('image-guard corpus (#36)', () => {
 
   it.each(corpus.keySegments)('key segment $key → imageBearing=$imageBearing', ({ key, imageBearing }) => {
     expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(imageBearing);
+  });
+
+  it.each(corpus.allowGuardedEndpointKeys ?? [])('guarded endpoint key $key is not image-bearing', (key) => {
+    expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(false);
   });
 
   it.each(corpus.rejectBodies)('rejects body: $label', ({ body }) => {

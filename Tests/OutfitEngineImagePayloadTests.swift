@@ -5,6 +5,12 @@ import XCTest
 /// value with 415 `IMAGE_NOT_ALLOWED` (VF-03, fail-closed). Bundled fixture rows
 /// carry a local `imagePath`, so the client must strip it before posting.
 final class OutfitEngineImagePayloadTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Self.workerConsentISO8601WithFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        Self.workerConsentISO8601Plain.formatOptions = [.withInternetDateTime]
+    }
+
     override func tearDown() {
         EngineURLSessionStub.tearDownClientHooks()
         super.tearDown()
@@ -21,9 +27,8 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     private static let workerValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
-    private static let workerConsentTimestampPattern = try! NSRegularExpression(
-        pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#
-    )
+    private static let workerConsentISO8601WithFraction = ISO8601DateFormatter()
+    private static let workerConsentISO8601Plain = ISO8601DateFormatter()
 
     /// ECMAScript WhiteSpace + LineTerminator — what `String.prototype.trimStart` removes.
     static let ecmaScriptWhitespace: [UInt32] = [
@@ -62,7 +67,9 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
 
     private static func workerAllowedConsent(_ value: Any) -> Bool {
         guard let string = value as? String, !string.isEmpty, string.count <= 64 else { return false }
-        return workerConsentTimestampPattern.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) != nil
+        guard string.contains("T") else { return false }
+        if workerConsentISO8601WithFraction.date(from: string) != nil { return true }
+        return workerConsentISO8601Plain.date(from: string) != nil
     }
 
     private static func workerJoinPath(_ parent: String, _ key: String) -> String {
@@ -161,13 +168,34 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     func testKeyNormalisationMirrorsWorker() {
-        for key in ["image", "imagePath", "image_path", "image-path", "imagepath", "image_blob", "ImageData", "thumbnail", "thumb", "photoUrl", "masterImage", "processedImage", "pixeldata", "pixelData", "PIXELDATA", "bitmap", "IMAGEBASE64", "garmentimages", "imagery", "photography", "thumbs_up"] {
+        for key in ["image", "thumbnails", "imagePath", "image_path", "image-path", "imagepath", "image_blob", "ImageData", "thumbnail", "thumb", "photoUrl", "masterImage", "processedImage", "pixeldata", "pixelData", "PIXELDATA", "bitmap", "IMAGEBASE64", "garmentimages", "imagery", "photography", "thumbs_up"] {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
         }
         for key in ["id", "slot", "displayName", "colorPrimary", "readiness", "memberGarmentIds", "policyVersion"] {
             XCTAssertFalse(OutfitEngineClient.isImageBearingKey(key), key)
         }
         XCTAssertTrue(OutfitEngineClient.isImageBearingKey("wardrobeImagesAcceptedAt"))
+    }
+
+    func testGuardedEndpointAndFixtureGarmentKeysAreNotImageBearing() {
+        let keys = [
+            "wardrobe", "sets", "anchorGarmentId", "context", "options", "lockedAssignments",
+            "occasion", "occasionFormality", "temperatureBand", "precipitation",
+            "requireSlots", "excludeGarmentSets", "currentAssignments", "limit", "profile",
+            "activeRules", "garmentId", "isLocked", "isAnchor", "gapReason", "keepTogether",
+            "notes", "availability", "displayNameSource", "category", "colorSecondary",
+            "pattern", "materials", "surface", "formality", "warmth", "seasons", "fit",
+            "lastWornOn", "daysSinceIntake", "isFavorite", "wantToWearMore", "comfortIssue",
+            "setId", "attributeConfidence", "family", "hex", "name",
+        ]
+        for key in keys {
+            XCTAssertFalse(OutfitEngineClient.isImageBearingKey(key), key)
+        }
+    }
+
+    func testOpenApiImageAndThumbnailKeysRejectInWorkerOracle() {
+        XCTAssertNotNil(Self.workerImageFinding(in: ["thumbnails": []]))
+        XCTAssertNotNil(Self.workerImageFinding(in: ["image": ["data": "x", "mediaType": "image/png"]]))
     }
 
     func testConsentExceptionPathIsPreservedWhenValid() {
@@ -186,6 +214,12 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
 
     func testConsentExceptionRejectedAtWrongPathOrBadValue() {
         XCTAssertNotNil(Self.workerImageFinding(in: ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z"]))
+        XCTAssertNotNil(Self.workerImageFinding(in: [
+            "privacyConsent": ["wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1"],
+        ]))
+        XCTAssertNotNil(Self.workerImageFinding(in: [
+            "privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20", "policyVersion": "1"],
+        ]))
         let bad = OutfitEngineClient.strippingImagePayload([
             "privacyConsent": ["wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1"],
         ])
