@@ -49,4 +49,23 @@ describe("mapDecisionsToAssignments", () => {
     expect(ids).toContain(SUIT_JACKET);
     expect(ids).toContain(SUIT_TROUSERS);
   });
+
+  it("reports noul token when mapped garment is missing from wardrobe", () => {
+    const noulId = "noul_belt";
+    const token = "g_belt";
+    const garmentId = "a1000007-0007-4000-8000-000000000099";
+    const { assignments, unknownTokens } = mapDecisionsToAssignments({
+      questions: [
+        { id: noulId, type: "noul", garmentToken: token },
+      ],
+      answers: { [noulId]: { type: "noul", noul: 0.9 } },
+      tokenToGarmentId: { [token]: garmentId },
+      seedAssignments: [],
+      wardrobe: [],
+      context: mildWorkContext(),
+      requiredSlots: new Set(),
+    });
+    expect(assignments.filter((a) => a.slot === "ACCESSORY")).toHaveLength(0);
+    expect(unknownTokens).toContain(token);
+  });
 });

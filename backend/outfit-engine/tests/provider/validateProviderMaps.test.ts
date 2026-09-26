@@ -21,6 +21,25 @@ describe("validateProviderMaps", () => {
     expect(optionKeyIsOffered(opts, "toString")).toBe(false);
   });
 
+  it("validateSetTokens rejects duplicate set tokens", () => {
+    expect(
+      validateSetTokens([
+        {
+          token: "s_dup",
+          firstSlot: "JACKET",
+          memberGarmentIds: ["a"],
+          memberSlots: ["JACKET"],
+        },
+        {
+          token: "s_dup",
+          firstSlot: "BOTTOM",
+          memberGarmentIds: ["b"],
+          memberSlots: ["BOTTOM"],
+        },
+      ]),
+    ).toBe(false);
+  });
+
   it("validateSetTokens checks member shape", () => {
     expect(
       validateSetTokens([

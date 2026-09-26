@@ -8,7 +8,10 @@ export function validateTokenToGarmentId(
 }
 
 export function validateSetTokens(setTokens: ProviderSetToken[]): boolean {
+  const seenTokens = new Set<string>();
   for (const s of setTokens) {
+    if (seenTokens.has(s.token)) return false;
+    seenTokens.add(s.token);
     if (typeof s.token !== "string" || !s.token.startsWith("s_")) {
       return false;
     }

@@ -96,7 +96,10 @@ export function mapDecisionsToAssignments(params: {
         continue;
       }
       const g = byWardrobe.get(garmentId);
-      if (!g) continue;
+      if (!g) {
+        unknownTokens.push(token);
+        continue;
+      }
       accessoryAssignments.push({
         slot: "ACCESSORY",
         garmentId,
