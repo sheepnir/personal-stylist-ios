@@ -230,8 +230,69 @@ enum OutfitEngineClient {
     static let defaultSeasons = ["SPRING", "SUMMER", "FALL", "WINTER"]
     static let excludeGarmentSetsCap = 10
 
+    // MARK: - Image-payload guard (VF-03)
+
+    // Mirrors `backend/workers/src/validation.ts` (`IMAGE_KEY_PATTERN` /
+    // `IMAGE_VALUE_PATTERN`). The Worker fails closed with 415 `IMAGE_NOT_ALLOWED`
+    // when a body carries any of these, so nothing matching may ever be sent.
+    // Fixture rows carry a local image reference (`imagePath`) that is client-only
+    // state; the engine contract never needs it.
+    private static let imageKeyPattern = try! NSRegularExpression(
+        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)",
+        options: [.caseInsensitive]
+    )
+    private static let imageValuePattern = try! NSRegularExpression(
+        pattern: "^data:image/|^/9j/|^iVBORw0KGgo",
+        options: [.caseInsensitive]
+    )
+    private static let camelCaseBoundary = try! NSRegularExpression(pattern: "([a-z])([A-Z])")
+
+    /// `imagePath` → `image_path` → matches `image`, exactly as the Worker normalises.
+    static func isImageBearingKey(_ key: String) -> Bool {
+        let snake = camelCaseBoundary.stringByReplacingMatches(
+            in: key, range: NSRange(key.startIndex..., in: key), withTemplate: "$1_$2"
+        )
+        return imageKeyPattern.firstMatch(in: snake, range: NSRange(snake.startIndex..., in: snake)) != nil
+    }
+
+    /// Data URLs and raw base64 JPEG / PNG prefixes (after leading whitespace).
+    static func looksLikeImageData(_ value: String) -> Bool {
+        let trimmed = String(value.drop(while: \.isWhitespace))
+        return imageValuePattern.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) != nil
+    }
+
+    /// Recursively removes image-bearing keys and image-looking string values from
+    /// an outgoing JSON object. Everything else is passed through untouched.
+    static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
+        var cleaned: [String: Any] = [:]
+        for (key, value) in object where !isImageBearingKey(key) {
+            if let kept = strippingImagePayload(value) { cleaned[key] = kept }
+        }
+        return cleaned
+    }
+
+    /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
+    private static func strippingImagePayload(_ value: Any) -> Any? {
+        switch value {
+        case let object as [String: Any]:
+            return strippingImagePayload(object)
+        case let array as [Any]:
+            return array.compactMap(strippingImagePayload)
+        case let string as String:
+            return looksLikeImageData(string) ? nil : string
+        default:
+            return value
+        }
+    }
+
+    /// Single choke point for every JSON body this client posts.
+    static func encodeRequestBody(_ body: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: strippingImagePayload(body), options: [])
+    }
+
     /// Live store garments are the source of truth. Fixture JSON is an overlay for
     /// bundled ids only — user-added UUIDs are serialized from `StubGarment` (#97).
+    /// Rows are stripped of image-bearing keys before they leave this function.
     static func wardrobeRows(from garments: [StubGarment]) -> [[String: Any]] {
         let fixtureById = Dictionary(
             uniqueKeysWithValues: FixtureWardrobeLoader.loadGarmentJSONObjects().compactMap { row -> (String, [String: Any])? in
@@ -263,7 +324,7 @@ enum OutfitEngineClient {
                 if let keep = live.keepTogether {
                     fixture["keepTogether"] = keep
                 }
-                wardrobe.append(fixture)
+                wardrobe.append(strippingImagePayload(fixture))
             } else {
                 wardrobe.append(garmentSummary(from: live))
             }
@@ -385,7 +446,7 @@ enum OutfitEngineClient {
         if !locks.isEmpty {
             body["lockedAssignments"] = locks
         }
-        return try JSONSerialization.data(withJSONObject: body, options: [])
+        return try encodeRequestBody(body)
     }
 
     static func generate(
@@ -520,7 +581,7 @@ enum OutfitEngineClient {
                 "activeRules": [] as [Any],
             ] as [String: Any],
         ]
-        return try JSONSerialization.data(withJSONObject: body, options: [])
+        return try encodeRequestBody(body)
     }
 
     static func fetchAlternatives(
