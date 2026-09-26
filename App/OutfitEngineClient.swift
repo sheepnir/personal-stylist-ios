@@ -232,24 +232,25 @@ enum OutfitEngineClient {
 
     // MARK: - Image-payload guard (VF-03)
 
-    // Mirrors `backend/workers/src/validation.ts` (`IMAGE_KEY_PATTERN` /
-    // `IMAGE_VALUE_PATTERN`). The Worker fails closed with 415 `IMAGE_NOT_ALLOWED`
-    // when a body carries any of these, so nothing matching may ever be sent.
-    // Fixture rows carry a local image reference (`imagePath`) that is client-only
-    // state; the engine contract never needs it.
+    // Mirrors `backend/workers/src/validation.ts`. Keys are lowercased (ASCII A–Z only),
+    // `_` and `-` are stripped, then forbidden tokens are matched anywhere in the segment.
+    // `scripts/check-image-guard-parity.py` runs `fixtures/image-guard/corpus.json`
+    // through both implementations.
     //
-    // The Worker's patterns use the JavaScript `i` flag, which on these ASCII-only
-    // patterns folds ASCII letters and nothing else (`ſ` never matches `s`). ICU's
-    // `.caseInsensitive` folds more, so inputs are ASCII-folded by hand and matched
-    // against lowercase patterns instead. `scripts/check-image-guard-parity.py`
-    // fails CI if the token lists below drift from the Worker's.
-    private static let imageKeyPattern = try! NSRegularExpression(
-        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)"
+    /// docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt (full path only).
+    private static let imageGuardConsentFieldPath = "privacyConsent.wardrobeImagesAcceptedAt"
+    private static let wardrobeImagesAcceptedAtMaxLength = 64
+    private static let forbiddenImageKeyTokens = [
+        "image", "imagedata", "imagebase64", "thumbnail", "thumb", "photo",
+        "masterimage", "processedimage", "pixeldata", "bitmap",
+        "imagery", "photography", "thumbsup",
+    ]
+    private static let wardrobeImagesAcceptedAtPattern = try! NSRegularExpression(
+        pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#
     )
     private static let imageValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
-    private static let camelCaseBoundary = try! NSRegularExpression(pattern: "([a-z])([A-Z])")
 
     /// ECMAScript WhiteSpace + LineTerminator, i.e. what JavaScript `trimStart()`
     /// removes. U+0085 (NEL) is deliberately absent: JavaScript keeps it, so a value
@@ -273,12 +274,32 @@ enum OutfitEngineClient {
         pattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
 
-    /// `imagePath` → `image_path` → matches `image`, exactly as the Worker normalises.
+    private static func normalizeImageGuardKey(_ key: String) -> String {
+        var normalized = ""
+        for scalar in key.unicodeScalars {
+            if (0x41...0x5A).contains(scalar.value) {
+                normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
+            } else if scalar.value != 0x5F && scalar.value != 0x2D {
+                normalized.unicodeScalars.append(scalar)
+            }
+        }
+        return normalized
+    }
+
+    /// True when the key segment contains a forbidden image token after normalisation.
     static func isImageBearingKey(_ key: String) -> Bool {
-        let snake = camelCaseBoundary.stringByReplacingMatches(
-            in: key, range: NSRange(key.startIndex..., in: key), withTemplate: "$1_$2"
-        )
-        return matches(imageKeyPattern, foldingASCIICase(snake))
+        let normalized = normalizeImageGuardKey(key)
+        return forbiddenImageKeyTokens.contains { normalized.contains($0) }
+    }
+
+    private static func isAllowedWardrobeImagesAcceptedAtValue(_ value: Any) -> Bool {
+        guard let string = value as? String else { return false }
+        guard !string.isEmpty, string.count <= wardrobeImagesAcceptedAtMaxLength else { return false }
+        return matches(wardrobeImagesAcceptedAtPattern, string)
+    }
+
+    private static func joinKeyPath(_ parentPath: String, _ key: String) -> String {
+        parentPath.isEmpty ? key : "\(parentPath).\(key)"
     }
 
     /// Data URLs and raw base64 JPEG / PNG prefixes, after JavaScript `trimStart()`.
@@ -291,21 +312,29 @@ enum OutfitEngineClient {
 
     /// Recursively removes image-bearing keys and image-looking string values from
     /// an outgoing JSON object. Everything else is passed through untouched.
-    static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
+    static func strippingImagePayload(_ object: [String: Any], pathPrefix: String = "") -> [String: Any] {
         var cleaned: [String: Any] = [:]
-        for (key, value) in object where !isImageBearingKey(key) {
-            if let kept = strippingImagePayload(value) { cleaned[key] = kept }
+        for (key, value) in object {
+            let keyPath = joinKeyPath(pathPrefix, key)
+            if keyPath == imageGuardConsentFieldPath {
+                if isAllowedWardrobeImagesAcceptedAtValue(value) {
+                    cleaned[key] = value
+                }
+                continue
+            }
+            guard !isImageBearingKey(key) else { continue }
+            if let kept = strippingImagePayload(value, pathPrefix: keyPath) { cleaned[key] = kept }
         }
         return cleaned
     }
 
     /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
-    private static func strippingImagePayload(_ value: Any) -> Any? {
+    private static func strippingImagePayload(_ value: Any, pathPrefix: String) -> Any? {
         switch value {
         case let object as [String: Any]:
-            return strippingImagePayload(object)
+            return strippingImagePayload(object, pathPrefix: pathPrefix)
         case let array as [Any]:
-            return array.compactMap(strippingImagePayload)
+            return array.compactMap { strippingImagePayload($0, pathPrefix: pathPrefix) }
         case let string as String:
             return looksLikeImageData(string) ? nil : string
         default:

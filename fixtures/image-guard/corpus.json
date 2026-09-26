@@ -1,0 +1,64 @@
+{
+  "description": "Shared image-guard corpus (#36). Each keySegment entry is evaluated with normalizedKeyContainsForbiddenImageToken / isImageBearingKey. body entries use full rejectImagePayload / stripping parity.",
+  "keySegments": [
+    { "key": "image", "imageBearing": true },
+    { "key": "imagePath", "imageBearing": true },
+    { "key": "imagepath", "imageBearing": true },
+    { "key": "image_path", "imageBearing": true },
+    { "key": "image-path", "imageBearing": true },
+    { "key": "image_blob", "imageBearing": true },
+    { "key": "ImageData", "imageBearing": true },
+    { "key": "IMAGEBASE64", "imageBearing": true },
+    { "key": "thumbnail", "imageBearing": true },
+    { "key": "thumb", "imageBearing": true },
+    { "key": "photoUrl", "imageBearing": true },
+    { "key": "masterImage", "imageBearing": true },
+    { "key": "processedImage", "imageBearing": true },
+    { "key": "pixeldata", "imageBearing": true },
+    { "key": "pixelData", "imageBearing": true },
+    { "key": "PIXELDATA", "imageBearing": true },
+    { "key": "bitmap", "imageBearing": true },
+    { "key": "garmentimages", "imageBearing": true },
+    { "key": "imagery", "imageBearing": true },
+    { "key": "photography", "imageBearing": true },
+    { "key": "thumbs_up", "imageBearing": true },
+    { "key": "id", "imageBearing": false },
+    { "key": "slot", "imageBearing": false },
+    { "key": "displayName", "imageBearing": false },
+    { "key": "colorPrimary", "imageBearing": false },
+    { "key": "readiness", "imageBearing": false },
+    { "key": "memberGarmentIds", "imageBearing": false },
+    { "key": "anchorGarmentId", "imageBearing": false },
+    { "key": "policyVersion", "imageBearing": false },
+    { "key": "wardrobeImagesAcceptedAt", "imageBearing": true }
+  ],
+  "rejectBodies": [
+    { "label": "lowercase compound imagepath", "body": { "meta": { "imagepath": "/x" } } },
+    { "label": "garmentimages", "body": { "wardrobe": [{ "id": "1", "garmentimages": [] }] } },
+    { "label": "consent field wrong path", "body": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z" } },
+    { "label": "consent bad timestamp", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1" } } },
+    { "label": "consent oversized value", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z000000000000000000000000000000000000000000000000000000000000", "policyVersion": "1" } } },
+    { "label": "nested imagery", "body": { "context": { "tags": { "imagery": "x" } } } },
+    { "label": "clean generate plus nested photo key", "body": { "wardrobe": [{ "garmentId": "1", "slot": "TOP" }], "context": { "photography": true } } }
+  ],
+  "allowBodies": [
+    {
+      "label": "openapi-shaped generate subset",
+      "body": {
+        "wardrobe": [{ "id": "a1000001-0001-4000-8000-000000000001", "displayName": "Shirt", "slot": "TOP", "colorPrimary": { "family": "navy" }, "pattern": "SOLID", "surface": "SMOOTH", "formality": 3, "warmth": 2 }],
+        "context": { "occasion": "WORK_STANDARD" },
+        "anchorGarmentId": "a1000001-0001-4000-8000-000000000001"
+      }
+    },
+    {
+      "label": "named consent exception path",
+      "body": {
+        "privacyConsent": {
+          "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z",
+          "policyVersion": "2026-09-01"
+        },
+        "wardrobe": [{ "id": "1", "slot": "TOP", "displayName": "Top", "colorPrimary": { "family": "navy" }, "pattern": "SOLID", "surface": "SMOOTH", "formality": 3, "warmth": 2 }]
+      }
+    }
+  ]
+}

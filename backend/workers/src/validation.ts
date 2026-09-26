@@ -6,6 +6,8 @@
  * - #171: fail-closed rejection of image/thumbnail payloads (VF-03). The
  *   backend holds no user image content, so any image-bearing field is
  *   rejected before the engine runs.
+ * - #36: normalize keys (lowercase, strip `_` / `-`) and match forbidden tokens
+ *   anywhere in the segment, not only at non-letter boundaries.
  */
 
 import type { Env, ProblemDetail } from './types.js';
@@ -18,12 +20,59 @@ export const MAX_BODY_BYTES = 512 * 1024; // 512 KiB
 export const RATE_LIMIT_MAX = 60;
 export const RATE_LIMIT_WINDOW_SECONDS = 60;
 
-/** Field names that indicate an image/thumbnail payload (case-insensitive). */
-const IMAGE_KEY_PATTERN =
-  /(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)/i;
+/**
+ * Sole named exception: docs/openapi.yaml → PrivacyConsent.wardrobeImagesAcceptedAt.
+ * Matched on full dotted path only; value must be a bounded ISO date-time string.
+ * Additional exceptions require Architect approval and an openapi.yaml reference.
+ */
+export const IMAGE_GUARD_CONSENT_FIELD_PATH = 'privacyConsent.wardrobeImagesAcceptedAt';
+
+export const WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH = 64;
+
+/** Substrings matched against {@link normalizeImageGuardKey} on each object key segment. */
+export const FORBIDDEN_IMAGE_KEY_TOKENS = [
+  'image',
+  'imagedata',
+  'imagebase64',
+  'thumbnail',
+  'thumb',
+  'photo',
+  'masterimage',
+  'processedimage',
+  'pixeldata',
+  'bitmap',
+  'imagery',
+  'photography',
+  'thumbsup',
+] as const;
+
+const WARDROBE_IMAGES_ACCEPTED_AT_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /** Detects data: URLs and common raw image encodings inside string values. */
 const IMAGE_VALUE_PATTERN = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
+
+/** Lowercase ASCII A–Z; strip `_` and `-` so every casing/spelling variant matches. */
+export function normalizeImageGuardKey(key: string): string {
+  let normalized = '';
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    if (code >= 65 && code <= 90) normalized += String.fromCharCode(code + 32);
+    else if (key[i] !== '_' && key[i] !== '-') normalized += key[i];
+  }
+  return normalized;
+}
+
+export function normalizedKeyContainsForbiddenImageToken(key: string): boolean {
+  const normalized = normalizeImageGuardKey(key);
+  return FORBIDDEN_IMAGE_KEY_TOKENS.some((token) => normalized.includes(token));
+}
+
+export function isAllowedWardrobeImagesAcceptedAtValue(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (value.length === 0 || value.length > WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH) return false;
+  return WARDROBE_IMAGES_ACCEPTED_AT_PATTERN.test(value);
+}
 
 function problem(status: number, title: string, code: string, detail: string, extra: Record<string, unknown> = {}): Response {
   const body: ProblemDetail = {
@@ -118,18 +167,27 @@ export function rejectImagePayload(body: unknown): Response | null {
   return null;
 }
 
+function joinKeyPath(parentPath: string, key: string): string {
+  return parentPath ? `${parentPath}.${key}` : key;
+}
+
 function containsImage(value: unknown): boolean {
   // Iterative traversal: no depth-based fail-open or call-stack exhaustion.
-  const pending: unknown[] = [value];
+  const pending: Array<{ item: unknown; path: string }> = [{ item: value, path: '' }];
   while (pending.length) {
-    const item = pending.pop();
+    const { item, path } = pending.pop()!;
     if (typeof item === 'string' && IMAGE_VALUE_PATTERN.test(item.trimStart())) return true;
     if (Array.isArray(item)) {
-      for (const child of item) pending.push(child);
+      for (const child of item) pending.push({ item: child, path });
     } else if (item !== null && typeof item === 'object') {
       for (const [key, child] of Object.entries(item)) {
-        if (IMAGE_KEY_PATTERN.test(key.replace(/([a-z])([A-Z])/g, '$1_$2'))) return true;
-        pending.push(child);
+        const keyPath = joinKeyPath(path, key);
+        if (keyPath === IMAGE_GUARD_CONSENT_FIELD_PATH) {
+          if (!isAllowedWardrobeImagesAcceptedAtValue(child)) return true;
+          continue;
+        }
+        if (normalizedKeyContainsForbiddenImageToken(key)) return true;
+        pending.push({ item: child, path: keyPath });
       }
     }
   }

@@ -76,6 +76,21 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
     expect(res?.status).toBe(415);
   });
 
+  it('rejects all-lowercase compound keys (#36)', () => {
+    expect(rejectImagePayload({ imagepath: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ imageblob: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ wardrobe: [{ garmentimages: [] }] })?.status).toBe(415);
+    expect(rejectImagePayload({ pixelData: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ image_blob: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ 'image-blob': 'x' })?.status).toBe(415);
+  });
+
+  it('rejects imagery, photography, and thumbs_up spellings (#36)', () => {
+    expect(rejectImagePayload({ imagery: 'x' })?.status).toBe(415);
+    expect(rejectImagePayload({ photography: true })?.status).toBe(415);
+    expect(rejectImagePayload({ thumbs_up: 1 })?.status).toBe(415);
+  });
+
   it('rejects a nested thumbnail key', () => {
     const res = rejectImagePayload({ context: { garment: { thumbnail: 'x' } } });
     expect(res?.status).toBe(415);
@@ -84,6 +99,34 @@ describe('rejectImagePayload — VF-03 fail-closed (#171)', () => {
   it('rejects a data: image URL value', () => {
     const res = rejectImagePayload({ note: 'data:image/png;base64,iVBORw0KGgo=' });
     expect(res?.status).toBe(415);
+  });
+
+  it('rejects consent timestamp at the wrong path or with bad values (#36)', () => {
+    expect(rejectImagePayload({ wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z' })?.status).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: { wardrobeImagesAcceptedAt: 'not-a-date', policyVersion: '1' },
+      })?.status
+    ).toBe(415);
+    expect(
+      rejectImagePayload({
+        privacyConsent: {
+          wardrobeImagesAcceptedAt: `${'2026-09-20T12:00:00Z'}${'0'.repeat(40)}`,
+          policyVersion: '1',
+        },
+      })?.status
+    ).toBe(415);
+  });
+
+  it('allows the named consent exception on the full path (#36)', () => {
+    const res = rejectImagePayload({
+      privacyConsent: {
+        wardrobeImagesAcceptedAt: '2026-09-20T12:00:00Z',
+        policyVersion: '2026-09-01',
+      },
+      wardrobe: [{ garmentId: '1', slot: 'TOP', color: 'navy' }],
+    });
+    expect(res).toBeNull();
   });
 
   it('allows a clean wardrobe payload', () => {

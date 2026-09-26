@@ -12,11 +12,17 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
 
     // MARK: Independent oracle — the Worker's rule, re-stated in the test
 
-    private static let workerKeyPattern = try! NSRegularExpression(
-        pattern: "(^|[^a-z])(image|imagedata|imagebase64|thumbnail|thumb|photo|masterimage|processedimage|pixeldata|bitmap)([^a-z]|$)"
-    )
+    private static let workerConsentFieldPath = "privacyConsent.wardrobeImagesAcceptedAt"
+    private static let workerForbiddenTokens = [
+        "image", "imagedata", "imagebase64", "thumbnail", "thumb", "photo",
+        "masterimage", "processedimage", "pixeldata", "bitmap",
+        "imagery", "photography", "thumbsup",
+    ]
     private static let workerValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
+    )
+    private static let workerConsentTimestampPattern = try! NSRegularExpression(
+        pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#
     )
 
     /// ECMAScript WhiteSpace + LineTerminator — what `String.prototype.trimStart` removes.
@@ -37,28 +43,57 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         String(String.UnicodeScalarView(s.unicodeScalars.drop { ecmaScriptWhitespace.contains($0.value) }))
     }
 
+    private static func normalizeWorkerKey(_ key: String) -> String {
+        var normalized = ""
+        for scalar in key.unicodeScalars {
+            if (0x41...0x5A).contains(scalar.value) {
+                normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
+            } else if scalar.value != 0x5F && scalar.value != 0x2D {
+                normalized.unicodeScalars.append(scalar)
+            }
+        }
+        return normalized
+    }
+
+    private static func workerSegmentImageBearing(_ key: String) -> Bool {
+        let normalized = normalizeWorkerKey(key)
+        return workerForbiddenTokens.contains { normalized.contains($0) }
+    }
+
+    private static func workerAllowedConsent(_ value: Any) -> Bool {
+        guard let string = value as? String, !string.isEmpty, string.count <= 64 else { return false }
+        return workerConsentTimestampPattern.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) != nil
+    }
+
+    private static func workerJoinPath(_ parent: String, _ key: String) -> String {
+        parent.isEmpty ? key : "\(parent).\(key)"
+    }
+
     /// Same traversal as `containsImage` in `backend/workers/src/validation.ts`.
     /// Returns the offending key or value prefix, or nil when the body is clean.
-    private static func workerImageFinding(in value: Any) -> String? {
-        var pending: [Any] = [value]
-        while let item = pending.popLast() {
-            if let s = item as? String {
-                let t = asciiLowercased(jsTrimStart(s))
-                if workerValuePattern.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
-                    return "value \(t.prefix(16))"
+    private static func workerImageFinding(in value: Any, path: String = "") -> String? {
+        if let s = value as? String {
+            let t = asciiLowercased(jsTrimStart(s))
+            if workerValuePattern.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
+                return "value \(t.prefix(16))"
+            }
+            return nil
+        }
+        if let array = value as? [Any] {
+            for child in array {
+                if let found = workerImageFinding(in: child, path: path) { return found }
+            }
+            return nil
+        }
+        if let object = value as? [String: Any] {
+            for (key, child) in object {
+                let keyPath = workerJoinPath(path, key)
+                if keyPath == workerConsentFieldPath {
+                    if !workerAllowedConsent(child) { return "consent \(keyPath)" }
+                    continue
                 }
-            } else if let array = item as? [Any] {
-                pending.append(contentsOf: array)
-            } else if let object = item as? [String: Any] {
-                for (key, child) in object {
-                    let snake = asciiLowercased(key.replacingOccurrences(
-                        of: "([a-z])([A-Z])", with: "$1_$2", options: .regularExpression
-                    ))
-                    if workerKeyPattern.firstMatch(in: snake, range: NSRange(snake.startIndex..., in: snake)) != nil {
-                        return "key \(key)"
-                    }
-                    pending.append(child)
-                }
+                if workerSegmentImageBearing(key) { return "key \(key)" }
+                if let found = workerImageFinding(in: child, path: keyPath) { return found }
             }
         }
         return nil
@@ -126,14 +161,35 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     func testKeyNormalisationMirrorsWorker() {
-        for key in ["image", "imagePath", "image_path", "ImageData", "thumbnail", "thumb", "photoUrl", "masterImage", "processedImage", "pixeldata", "PIXELDATA", "bitmap", "IMAGEBASE64"] {
+        for key in ["image", "imagePath", "image_path", "image-path", "imagepath", "image_blob", "ImageData", "thumbnail", "thumb", "photoUrl", "masterImage", "processedImage", "pixeldata", "pixelData", "PIXELDATA", "bitmap", "IMAGEBASE64", "garmentimages", "imagery", "photography", "thumbs_up"] {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
         }
-        // Same verdicts as the Worker, including its camelCase quirk: `pixelData`
-        // normalises to `pixel_Data`, which the `pixeldata` token no longer spans.
-        for key in ["id", "slot", "displayName", "colorPrimary", "thumbs_up", "photography", "imagery", "readiness", "pixelData"] {
+        for key in ["id", "slot", "displayName", "colorPrimary", "readiness", "memberGarmentIds", "policyVersion"] {
             XCTAssertFalse(OutfitEngineClient.isImageBearingKey(key), key)
         }
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey("wardrobeImagesAcceptedAt"))
+    }
+
+    func testConsentExceptionPathIsPreservedWhenValid() {
+        let body: [String: Any] = [
+            "privacyConsent": [
+                "wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z",
+                "policyVersion": "2026-09-01",
+            ],
+            "displayName": "ok",
+        ]
+        let cleaned = OutfitEngineClient.strippingImagePayload(body)
+        let consent = cleaned["privacyConsent"] as? [String: Any]
+        XCTAssertEqual(consent?["wardrobeImagesAcceptedAt"] as? String, "2026-09-20T12:00:00Z")
+        XCTAssertNil(Self.workerImageFinding(in: cleaned))
+    }
+
+    func testConsentExceptionRejectedAtWrongPathOrBadValue() {
+        XCTAssertNotNil(Self.workerImageFinding(in: ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z"]))
+        let bad = OutfitEngineClient.strippingImagePayload([
+            "privacyConsent": ["wardrobeImagesAcceptedAt": "not-a-date", "policyVersion": "1"],
+        ])
+        XCTAssertNil(bad["privacyConsent"])
     }
 
     // MARK: (c) image-looking values are dropped
