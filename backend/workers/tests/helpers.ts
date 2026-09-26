@@ -6,6 +6,7 @@ import {
   ageLedger,
   emptyLedgerState,
   reconcileAttempt,
+  removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
   type LedgerState,
@@ -81,7 +82,11 @@ export function createSpendLedgerMock(): SpendLedgerMock {
       ) => {
         const state = stateFor(deviceId);
         ageLedger(state, new Date());
-        return reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
+        const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
+        if (!result.ok) {
+          removeEmptyDayBucket(state, day);
+        }
+        return result;
       },
       reconcile: async (attemptId: string, actualUSD: number, task?: string) => {
         const state = stateFor(deviceId);

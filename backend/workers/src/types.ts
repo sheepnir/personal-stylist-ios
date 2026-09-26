@@ -64,10 +64,12 @@ export interface ProblemDetail {
 /**
  * Spend state for usage tracking.
  */
+export type SpendLedgerAccess = 'ok' | 'legacy' | 'unavailable';
+
 export interface SpendRecord {
   /**
-   * SHA-256 hash (hex) of the device token. The raw token is never persisted
-   * in the ledger value (#174); only this non-reversible identifier is stored.
+   * SHA-256 hash (hex) of the device token for correlating API responses only;
+   * never stored in the Durable Object spend ledger (#174).
    */
   tokenHash: string;
   date: string; // YYYY-MM-DD
@@ -75,6 +77,8 @@ export interface SpendRecord {
   reservedUSD: number;
   tasks: Record<string, number>; // task -> cost
   lastUpdated: string; // ISO timestamp
+  /** Distinguishes legacy (no ledger), unavailable (fail-closed), and normal reads. */
+  ledgerAccess: SpendLedgerAccess;
 }
 
 /**

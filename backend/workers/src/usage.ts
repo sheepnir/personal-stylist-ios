@@ -3,7 +3,7 @@
  * Hard cap and soft threshold come from `resolveSpendConfig(env)` (sample defaults, env-overridable).
  */
 
-import type { Env, SpendRecord } from './types.js';
+import type { Env, SpendRecord, SpendLedgerAccess } from './types.js';
 import { resolveSpendConfig } from './types.js';
 import { hashToken, deviceLocatorFromToken } from './tokens.js';
 
@@ -42,7 +42,7 @@ async function accessLedger(deviceToken: string, env: Env): Promise<LedgerAccess
   }
 }
 
-function emptySpendRecord(tokenHash: string, today: string): SpendRecord {
+function emptySpendRecord(tokenHash: string, today: string, ledgerAccess: SpendLedgerAccess): SpendRecord {
   return {
     tokenHash,
     date: today,
@@ -50,11 +50,26 @@ function emptySpendRecord(tokenHash: string, today: string): SpendRecord {
     reservedUSD: 0,
     tasks: {},
     lastUpdated: new Date().toISOString(),
+    ledgerAccess,
   };
 }
 
+async function callLedger<T>(
+  access: LedgerAccess,
+  fn: (stub: NonNullable<Extract<LedgerAccess, { kind: 'ready' }>['stub']>) => Promise<T>
+): Promise<T | 'unavailable'> {
+  if (access.kind !== 'ready') {
+    return 'unavailable';
+  }
+  try {
+    return await fn(access.stub);
+  } catch {
+    return 'unavailable';
+  }
+}
+
 /**
- * Get today's spend record for a device token (legacy tokens → empty in-memory shape).
+ * Get today's spend record for a device token.
  */
 export async function getSpendRecord(
   deviceToken: string,
@@ -64,11 +79,18 @@ export async function getSpendRecord(
   const tokenHash = await hashToken(deviceToken);
   const access = await accessLedger(deviceToken, env);
 
-  if (access.kind === 'legacy' || access.kind === 'unavailable') {
-    return emptySpendRecord(tokenHash, today);
+  if (access.kind === 'legacy') {
+    return emptySpendRecord(tokenHash, today, 'legacy');
+  }
+  if (access.kind === 'unavailable') {
+    return emptySpendRecord(tokenHash, today, 'unavailable');
   }
 
-  const summary = await access.stub.summary(today, spendConfig(env));
+  const summary = await callLedger(access, (stub) => stub.summary(today, spendConfig(env)));
+  if (summary === 'unavailable') {
+    return emptySpendRecord(tokenHash, today, 'unavailable');
+  }
+
   return {
     tokenHash,
     date: today,
@@ -76,6 +98,7 @@ export async function getSpendRecord(
     reservedUSD: summary.reservedUSD,
     tasks: summary.byTask,
     lastUpdated: new Date().toISOString(),
+    ledgerAccess: 'ok',
   };
 }
 
@@ -97,7 +120,13 @@ export async function reserveSpend(
   if (access.kind === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
   }
-  return access.stub.reserve(attemptId, upperBoundUSD, day, spendConfig(env), task);
+  const result = await callLedger(access, (stub) =>
+    stub.reserve(attemptId, upperBoundUSD, day, spendConfig(env), task)
+  );
+  if (result === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  return result;
 }
 
 /**
@@ -117,7 +146,11 @@ export async function reconcileSpend(
   if (access.kind === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
   }
-  return access.stub.reconcile(attemptId, actualUSD, task);
+  const result = await callLedger(access, (stub) => stub.reconcile(attemptId, actualUSD, task));
+  if (result === 'unavailable') {
+    return { ok: false, reason: 'ledger_unavailable' };
+  }
+  return result;
 }
 
 /**
@@ -149,7 +182,12 @@ export async function isHardCapReached(
   if (access.kind === 'legacy') {
     return false;
   }
-  const summary = await access.stub.summary(getTodayDateString(), spendConfig(env));
+  const summary = await callLedger(access, (stub) =>
+    stub.summary(getTodayDateString(), spendConfig(env))
+  );
+  if (summary === 'unavailable') {
+    return true;
+  }
   return summary.hardCapReached;
 }
 
@@ -167,7 +205,12 @@ export async function isSoftThresholdReached(
   if (access.kind === 'legacy') {
     return false;
   }
-  const summary = await access.stub.summary(getTodayDateString(), spendConfig(env));
+  const summary = await callLedger(access, (stub) =>
+    stub.summary(getTodayDateString(), spendConfig(env))
+  );
+  if (summary === 'unavailable') {
+    return true;
+  }
   return summary.softThresholdReached;
 }
 
@@ -193,22 +236,16 @@ export async function getUsageSummary(
   const config = spendConfig(env);
 
   if (access.kind === 'unavailable') {
-    return {
-      last7DaysUSD: 0,
-      last30DaysUSD: 0,
-      dailyCapUSD: config.dailyCapUSD,
-      softThresholdUSD: config.softThresholdUSD,
-      spentTodayUSD: 0,
-      reservedTodayUSD: 0,
-      softThresholdReached: true,
-      hardCapReached: true,
-      ledgerDayEndsAt: getEndOfDayISO(),
-      byTask: {},
-    };
+    return unavailableUsageSummary(config);
   }
 
   if (access.kind === 'ready') {
-    const summary = await access.stub.summary(getTodayDateString(), config);
+    const summary = await callLedger(access, (stub) =>
+      stub.summary(getTodayDateString(), config)
+    );
+    if (summary === 'unavailable') {
+      return unavailableUsageSummary(config);
+    }
     return {
       last7DaysUSD: summary.spentUSD,
       last30DaysUSD: summary.spentUSD,
@@ -237,6 +274,21 @@ export async function getUsageSummary(
     hardCapReached: totalSpent >= config.dailyCapUSD,
     ledgerDayEndsAt: getEndOfDayISO(),
     byTask: record.tasks,
+  };
+}
+
+function unavailableUsageSummary(config: ReturnType<typeof spendConfig>) {
+  return {
+    last7DaysUSD: 0,
+    last30DaysUSD: 0,
+    dailyCapUSD: config.dailyCapUSD,
+    softThresholdUSD: config.softThresholdUSD,
+    spentTodayUSD: 0,
+    reservedTodayUSD: 0,
+    softThresholdReached: true,
+    hardCapReached: true,
+    ledgerDayEndsAt: getEndOfDayISO(),
+    byTask: {},
   };
 }
 

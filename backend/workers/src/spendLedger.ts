@@ -4,6 +4,7 @@ import {
   ageLedger,
   emptyLedgerState,
   reconcileAttempt,
+  removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
   type LedgerState,
@@ -13,6 +14,10 @@ import {
 } from './ledgerCore.js';
 
 const STATE_KEY = 'ledger';
+
+function dayKeySnapshot(state: LedgerState): string {
+  return Object.keys(state.days).sort().join('\0');
+}
 
 /** Per-device spend ledger (keyed by device locator id, not token hash). */
 export class DeviceSpendLedger extends DurableObject<Env> {
@@ -24,11 +29,10 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     this.ctx.storage.kv.put(STATE_KEY, state);
   }
 
-  /** Lazy aging hook (#13-b extends this); always prunes stale day buckets. */
-  private touch(now = new Date()): LedgerState {
+  private touch(now = new Date()): { state: LedgerState; pruned: boolean } {
     const state = this.loadState();
-    ageLedger(state, now);
-    return state;
+    const pruned = ageLedger(state, now);
+    return { state, pruned };
   }
 
   reserve(
@@ -39,18 +43,25 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     task = 'unknown'
   ): ReserveResult {
     return this.ctx.storage.transactionSync(() => {
-      const state = this.touch();
+      const { state, pruned } = this.touch();
       const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
-      this.saveState(state);
+      if (!result.ok) {
+        removeEmptyDayBucket(state, day);
+      }
+      if (result.ok || pruned) {
+        this.saveState(state);
+      }
       return result;
     });
   }
 
   reconcile(attemptId: string, actualUSD: number, task?: string): ReconcileResult {
     return this.ctx.storage.transactionSync(() => {
-      const state = this.touch();
+      const { state, pruned } = this.touch();
       const result = reconcileAttempt(state, attemptId, actualUSD, task);
-      this.saveState(state);
+      if (result.ok || pruned) {
+        this.saveState(state);
+      }
       return result;
     });
   }
@@ -62,9 +73,21 @@ export class DeviceSpendLedger extends DurableObject<Env> {
 
   summary(day: string, config: SpendConfig): DaySummary {
     return this.ctx.storage.transactionSync(() => {
-      const state = this.touch();
-      this.saveState(state);
-      return summarizeDay(state, day, config);
+      const { state, pruned } = this.touch();
+      const summary = summarizeDay(state, day, config);
+      if (pruned) {
+        this.saveState(state);
+      }
+      return summary;
     });
   }
+}
+
+export function shouldPersistInMemoryLedger(
+  resultOk: boolean,
+  pruned: boolean,
+  keysBefore: string,
+  keysAfter: string
+): boolean {
+  return resultOk || pruned || keysBefore !== keysAfter;
 }

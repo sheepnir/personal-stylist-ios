@@ -80,6 +80,37 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(await isHardCapReached(token, env)).toBe(true);
     const usage = await getUsageSummary(token, env);
     expect(usage.hardCapReached).toBe(true);
+    const record = await getSpendRecord(token, env);
+    expect(record.ledgerAccess).toBe('unavailable');
+  });
+
+  it('legacy token record is distinct from unavailable ledger', async () => {
+    const { env } = envWithSpend();
+    const legacy = await getSpendRecord('legacy-shared', env);
+    expect(legacy.ledgerAccess).toBe('legacy');
+    const token = generateDeviceToken();
+    const missing = await getSpendRecord(token, envWithoutSpendBinding());
+    expect(missing.ledgerAccess).toBe('unavailable');
+  });
+
+  it('fail-closed when summary RPC rejects after getByName', async () => {
+    const token = generateDeviceToken();
+    const env: Env = {
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: {
+        getByName: () => ({
+          summary: async () => {
+            throw new Error('rpc failed');
+          },
+          reserve: async () => ({ ok: true }),
+          reconcile: async () => ({ ok: true }),
+        }),
+      } as Env['SPEND_LEDGER'],
+    };
+    const record = await getSpendRecord(token, env);
+    expect(record.ledgerAccess).toBe('unavailable');
+    expect(await isHardCapReached(token, env)).toBe(true);
   });
 
   it('fail-closed when the ledger stub throws', async () => {
