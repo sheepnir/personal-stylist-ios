@@ -16,7 +16,7 @@ settings:
     INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
     INFOPLIST_KEY_UIRequiresFullScreen: YES
     INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2026092601"
     MARKETING_VERSION: "0.1.0"
     # HTTPS via Apple TLS / URLSession only — skip the export-compliance prompt.
     INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
