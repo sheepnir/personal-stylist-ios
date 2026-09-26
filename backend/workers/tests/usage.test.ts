@@ -6,11 +6,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   getSpendRecord,
-  recordSpend,
   hashToken,
   reserveSpend,
+  reconcileSpend,
   getUsageSummary,
 } from '../src/usage.js';
+import { recordSpend } from './recordSpendHelper.js';
 import { SPEND_CONFIG } from '../src/types.js';
 import { generateDeviceToken } from '../src/tokens.js';
 import type { Env } from '../src/types.js';

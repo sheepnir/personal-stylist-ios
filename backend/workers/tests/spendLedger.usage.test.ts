@@ -11,8 +11,8 @@ import {
   hashToken,
   isHardCapReached,
   getUsageSummary,
-  recordSpend,
 } from '../src/usage.js';
+import { recordSpend } from './recordSpendHelper.js';
 import { SPEND_CONFIG } from '../src/types.js';
 import {
   generateDeviceToken,
