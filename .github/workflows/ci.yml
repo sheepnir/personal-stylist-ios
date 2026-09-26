@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changed suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ steps.force.outputs.all == 'true' && 'true' || steps.filter.outputs.ios }}
+      backend: ${{ steps.force.outputs.all == 'true' && 'true' || steps.filter.outputs.backend }}
+      assets: ${{ steps.force.outputs.all == 'true' && 'true' || steps.filter.outputs.assets }}
+    steps:
+      - id: force
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "merge_group" ]]; then
+            echo "all=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - id: filter
+        if: steps.force.outputs.all != 'true'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ github.event_name == 'push' && github.ref || '' }}
+          filters: |
+            ios:
+              - 'App/**'
+              - 'Features/**'
+              - 'Persistence/**'
+              - 'Design/**'
+              - 'Tests/**'
+              - 'project.yml'
+              - 'Config/**'
+              - 'Assets.xcassets/**'
+              - 'fixtures/**'
+              - '.github/workflows/ios-ci.yml'
+              - '.github/workflows/ci.yml'
+            backend:
+              - 'backend/**'
+              - 'fixtures/**'
+              - 'docs/openapi.yaml'
+              - '.github/workflows/backend-ci.yml'
+              - '.github/workflows/ci.yml'
+            assets:
+              - 'Assets.xcassets/**'
+              - 'Design/AssetLibrary.swift'
+              - 'Design/AvailabilityToken.swift'
+              - 'scripts/check-asset-library.py'
+              - '.github/workflows/asset-library-check.yml'
+              - '.github/workflows/ci.yml'
+
+  repo:
+    name: Repo
+    needs: changes
+    uses: ./.github/workflows/repo-checks.yml
+
+  ios:
+    name: iOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/ios-ci.yml
+
+  backend:
+    name: Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+
+  assets:
+    name: Assets
+    needs: changes
+    if: needs.changes.outputs.assets == 'true'
+    uses: ./.github/workflows/asset-library-check.yml
+
+  ci:
+    name: ci
+    if: always()
+    needs: [changes, repo, ios, backend, assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate CI status
+        env:
+          RESULT_CHANGES: ${{ needs.changes.result }}
+          RESULT_REPO: ${{ needs.repo.result }}
+          RESULT_IOS: ${{ needs.ios.result }}
+          RESULT_BACKEND: ${{ needs.backend.result }}
+          RESULT_ASSETS: ${{ needs.assets.result }}
+          NEED_IOS: ${{ needs.changes.outputs.ios }}
+          NEED_BACKEND: ${{ needs.changes.outputs.backend }}
+          NEED_ASSETS: ${{ needs.changes.outputs.assets }}
+        run: |
+          set -euo pipefail
+          fail() { echo "$1" >&2; exit 1; }
+
+          [[ "$RESULT_CHANGES" == "success" ]] || fail "Detect changed suites did not succeed (result=$RESULT_CHANGES)"
+          [[ "$RESULT_REPO" == "success" ]] || fail "Repo did not succeed (result=$RESULT_REPO)"
+
+          check_suite() {
+            local need="$1"
+            local result="$2"
+            local label="$3"
+            if [[ "$need" == "true" ]]; then
+              [[ "$result" == "success" ]] || fail "$label was needed but result was $result"
+            else
+              [[ "$result" == "skipped" ]] || fail "$label was not needed but result was $result"
+            fi
+          }
+
+          check_suite "$NEED_IOS" "$RESULT_IOS" "iOS"
+          check_suite "$NEED_BACKEND" "$RESULT_BACKEND" "Backend"
+          check_suite "$NEED_ASSETS" "$RESULT_ASSETS" "Assets"
+
+          echo "Aggregate ci check passed"

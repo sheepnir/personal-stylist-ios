@@ -1,43 +1,12 @@
 name: iOS CI
 
 on:
-  pull_request:
-    paths:
-      - 'App/**'
-      - 'Features/**'
-      - 'Persistence/**'
-      - 'Design/**'
-      - 'Tests/**'
-      - 'project.yml'
-      - 'Config/**'
-      - 'Assets.xcassets/**'
-      - 'fixtures/**'
-      - '.github/workflows/ios-ci.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'App/**'
-      - 'Features/**'
-      - 'Persistence/**'
-      - 'Design/**'
-      - 'Tests/**'
-      - 'project.yml'
-      - 'Config/**'
-      - 'Assets.xcassets/**'
-      - 'fixtures/**'
-      - '.github/workflows/ios-ci.yml'
+  workflow_call:
   workflow_dispatch:
 
 # Least privilege: jobs only read the repository.
 permissions:
   contents: read
-
-# A new push to a PR cancels that PR's superseded run. Groups are per PR, so
-# PRs never cancel each other; pushes to main get a unique group and always finish.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ios-build-test:
