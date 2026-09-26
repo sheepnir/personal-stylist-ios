@@ -3,8 +3,26 @@ import XCTest
 
 /// Demonstration coverage for #220 slice A — recording stub + construction/dispatch seam.
 final class OutfitEngineClientStubTests: XCTestCase {
+    private var defaultsSuiteName: String!
+    private var isolatedDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        defaultsSuiteName = "OutfitEngineClientStubTests.\(UUID().uuidString)"
+        isolatedDefaults = UserDefaults(suiteName: defaultsSuiteName)!
+        DeviceTokenStore.resetTestHooks()
+        DeviceTokenStore.useTestMemory()
+        DeviceTokenEnrollment.resetTestHooks()
+    }
+
     override func tearDown() {
         EngineURLSessionStub.tearDownClientHooks()
+        OutfitEngineClient.resetTestHooks()
+        DeviceTokenEnrollment.resetTestHooks()
+        DeviceTokenStore.resetTestHooks()
+        UserDefaults.standard.removePersistentDomain(forName: defaultsSuiteName)
+        isolatedDefaults = nil
+        defaultsSuiteName = nil
         super.tearDown()
     }
 
@@ -173,6 +191,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
         XCTAssertTrue(model.deviceAccessRejected)
         XCTAssertNil(model.outfit)
         XCTAssertEqual(model.generateFailureMessage, DressingCopy.deviceAccessRejectedTitle)
+        XCTAssertEqual(model.generateFailureSubtitle, DressingCopy.deviceAccessRejectedNoOutfit)
         XCTAssertNotEqual(model.generateFailureSubtitle, DressingCopy.generateServiceError)
     }
 
@@ -290,7 +309,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
         XCTAssertFalse(model.outfitEngineActionsDisabled)
         model.markDeviceAccessRejected()
         XCTAssertTrue(model.outfitEngineActionsDisabled)
-        model.clearDeviceAccessRejected()
+        model.noteDeviceAccessCredentialStored()
         XCTAssertFalse(model.outfitEngineActionsDisabled)
     }
 
@@ -353,7 +372,11 @@ final class OutfitEngineClientStubTests: XCTestCase {
         DeviceTokenStore.useTestMemory()
         _ = DeviceTokenStore.save(DeviceAccessTestFixtures.validIssuedToken)
         let garments = try DeviceAccessTestFixtures.readyGarments()
-        let store = InMemoryPersistenceStore(garments: garments, sets: [], defaults: .standard)
+        let store = InMemoryPersistenceStore(
+            garments: garments,
+            sets: [],
+            defaults: isolatedDefaults
+        )
         let model = LoopDemoModel(store: store, preferences: .standard)
         await model.load()
         model.confirmProfileForDemoIfNeeded()

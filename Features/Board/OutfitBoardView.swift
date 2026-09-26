@@ -33,8 +33,8 @@ struct OutfitBoardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 contextBar
-                if model.deviceAccessRejected, let fail = model.generateFailureMessage {
-                    deviceAccessFailureBanner(fail)
+                if model.deviceAccessRejected {
+                    deviceAccessFailureBanner()
                 } else if let fail = model.generateFailureMessage {
                     generateFailureBanner(fail)
                 }
@@ -349,8 +349,11 @@ struct OutfitBoardView: View {
         .accessibilityLabel("No other combination. \(reason)")
     }
 
-    private func deviceAccessFailureBanner(_ title: String) -> some View {
-        let body = model.generateFailureSubtitle ?? DressingCopy.deviceAccessRejectedNoOutfit
+    private func deviceAccessFailureBanner() -> some View {
+        let title = DressingCopy.deviceAccessRejectedTitle
+        let body = model.outfit != nil
+            ? DressingCopy.deviceAccessRejectedWithOutfit
+            : DressingCopy.deviceAccessRejectedNoOutfit
         return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
@@ -783,15 +786,17 @@ private struct GapTileVoiceOver: ViewModifier {
     var onFind: () -> Void
 
     func body(content: Content) -> some View {
-        if suppressEngineActions {
-            content
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(combinedLabel)
-        } else {
+        if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
+            suppressEngineActions: suppressEngineActions
+        ) {
             content
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(combinedLabel)
                 .accessibilityAction(named: findActionName, onFind)
+        } else {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(combinedLabel)
         }
     }
 }
@@ -810,22 +815,26 @@ private struct FilledTileAccess: ViewModifier {
     func body(content: Content) -> some View {
         Group {
             if isAnchor {
-                if suppressEngineActions {
-                    content
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(label)
-                } else {
+                if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
+                    suppressEngineActions: suppressEngineActions
+                ) {
                     content
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(label)
                         .accessibilityAction(named: "Change starting item", onChangeAnchor)
+                } else {
+                    content
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(label)
                 }
             } else if isLocked {
                 content
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(label)
                     .accessibilityAction(named: "Unlock", onUnlock)
-            } else if suppressEngineActions {
+            } else if !OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
+                suppressEngineActions: suppressEngineActions
+            ) {
                 content
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(label)

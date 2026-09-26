@@ -528,6 +528,23 @@ final class LoopDemoModel: ObservableObject {
         scrollToDeviceAccessRequested = true
     }
 
+    /// Profile device-access UI after Keychain stores a token (#34).
+    func noteDeviceAccessCredentialStored() {
+        clearDeviceAccessRejected()
+    }
+
+    @MainActor
+    func enrollDeviceAccessFromProfile(enrollmentSecret: String) async -> Bool {
+        let ok = await DeviceTokenEnrollment.enrollAndSave(
+            baseURL: EngineConfig.baseURL,
+            enrollmentSecret: enrollmentSecret
+        )
+        if ok {
+            noteDeviceAccessCredentialStored()
+        }
+        return ok
+    }
+
     private func applyGenerateFailure(_ error: Error, generation: UInt64) {
         guard generation == activeGenerateGeneration, isCurrentStoreGeneration() else { return }
         if case OutfitEngineClient.ClientError.unauthorized = error {

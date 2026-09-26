@@ -174,7 +174,7 @@ struct ProfileDraftView: View {
             // TestFlight / Release device-token seed (#89 / D-46). No default secrets.
             DeviceAccessSection(model: model)
         }
-        .onChange(of: model.scrollToDeviceAccessRequested) { _, requested in
+        .onChange(of: model.scrollToDeviceAccessRequested, initial: true) { _, requested in
             guard requested else { return }
             if accessibilityReduceMotion {
                 proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
