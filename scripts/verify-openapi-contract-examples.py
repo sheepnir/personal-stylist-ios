@@ -140,6 +140,27 @@ GOLDEN: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "ModelConfigResponse-configured-mock",
+        "components/schemas/ModelConfigResponse",
+        {
+            "primary": {
+                "slug": "mock/stylist-v0",
+                "displayName": None,
+                "supportsVision": False,
+                "supportsStructuredOutput": False,
+                "contextWindow": 32000,
+            },
+            "secondary": None,
+            "promptVersion": "none",
+            "policyVersion": SERVED_POLICY_VERSION,
+            "dataPolicy": {
+                "excludesTrainingProviders": True,
+                "verifiedOn": None,
+                "note": None,
+            },
+        },
+    ),
+    (
         "UsageResponse-ledger-reset",
         "components/schemas/UsageResponse",
         {

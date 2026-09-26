@@ -52,6 +52,10 @@ export const SERVED_DATA_POLICY = {
   note: null,
 } as const;
 
+/**
+ * Placeholder until #26 A-3 wires the prompt registry — not a real prompt version.
+ * Stays `"none"` on GET /v1/models even when primary resolves to the mock in staging.
+ */
 const PROMPT_VERSION_NONE = 'none';
 
 function entryForSlug(slug: string): AllowlistEntry | undefined {
