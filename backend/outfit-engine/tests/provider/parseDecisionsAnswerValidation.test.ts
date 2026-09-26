@@ -101,6 +101,23 @@ describe("validateDecisionsAnswersAgainstQuestions", () => {
       ),
     ).toBe(false);
   });
+
+  it("rejects non-finite noul (JSON 1e400 becomes Infinity)", () => {
+    const noulId = "acc_q1";
+    const questions: ProviderQuestion[] = [
+      { id: noulId, type: "noul", garmentToken: "g_acc" },
+    ];
+    const inflated = JSON.parse(
+      `{"type":"noul","noul":1e400}`,
+    ) as { type: "noul"; noul: number };
+    expect(Number.isFinite(inflated.noul)).toBe(false);
+    expect(
+      validateDecisionsAnswersAgainstQuestions(
+        { [noulId]: inflated },
+        questions,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("validateProviderChoiceAnswers", () => {

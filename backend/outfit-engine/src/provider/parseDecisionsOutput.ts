@@ -1,11 +1,19 @@
 import { answersObjectHasDuplicateKeys } from "./parseDecisionsDuplicateKeys.js";
 import { MAX_PROVIDER_RESPONSE_BYTES } from "./constants.js";
-import { createOwnRecord, isReservedMapKey, ownHas } from "./safeOwn.js";
+import {
+  createOwnRecord,
+  isReservedMapKey,
+  ownHas,
+  ownKeys,
+} from "./safeOwn.js";
 import type {
   DecisionsAnswer,
   DecisionsUsage,
   ParsedDecisionsResponse,
+  ProviderQuestion,
+  ProviderSetToken,
 } from "./types.js";
+import type { Slot } from "../types.js";
 
 function isPlainJsonRecord(v: unknown): v is Record<string, unknown> {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
@@ -170,7 +178,13 @@ export function validateDecisionsAnswersAgainstQuestions(
       if (!ownHas(q.options, answer.choice)) return false;
     } else if (q.type === "noul") {
       if (answer.type !== "noul") return false;
-      if (answer.noul < 0 || answer.noul > 1) return false;
+      if (
+        !Number.isFinite(answer.noul) ||
+        answer.noul < 0 ||
+        answer.noul > 1
+      ) {
+        return false;
+      }
     }
   }
   return true;
