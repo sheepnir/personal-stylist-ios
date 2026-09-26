@@ -97,3 +97,7 @@ npm run dev     # wrangler dev --config wrangler.local.toml (needs the local con
 - **Spend cap:** per-device DO ledger with atomic reserve / reconcile, soft threshold and configurable hard cap (see above); no model-call path exists yet
 - **Path:** Deterministic only (no model calls yet)
 - **Privacy:** fail-closed provider data collection (`provider.data_collection: deny`)
+- **Image guard (VF-03):** `generate` / `alternatives` reject bodies whose object keys are not
+  printable ASCII (U+0020–U+007E) or that carry image-bearing keys / image-looking string values.
+  Rules are shared with the iOS client via `fixtures/image-guard/corpus.json` and
+  `scripts/check-image-guard-parity.py` (run after `npm ci` here).

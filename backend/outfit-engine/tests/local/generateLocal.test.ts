@@ -30,6 +30,7 @@ describe("generateLocal", () => {
     expect(result.assignments.length).toBeGreaterThanOrEqual(2);
     expect(result.rationale?.summary).toBeTruthy();
     expect(result.generation.fallbackLevel).toBe("DETERMINISTIC");
+    expect(result.generation.promptVersion).toBe("none");
     expect(result.generation.spendState).toBe("OK");
     expect(result.generation.costUSD).toBe(0);
     expect(result.generation.inputTokens).toBeNull();
