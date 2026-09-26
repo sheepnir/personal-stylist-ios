@@ -83,7 +83,7 @@ Optional `ATTRIBUTION_URL` sets the `HTTP-Referer` sent to the model provider (d
 ```bash
 npm ci          # lockfile required (CI + local)
 npm run typecheck
-npm test
+npm test        # vitest workspace: 74 node-pool + 4 workerd-pool tests in one run
 npm run dev     # wrangler dev --config wrangler.local.toml (needs the local config above)
 ```
 

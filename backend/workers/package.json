@@ -6,7 +6,7 @@
   "description": "Cloudflare Workers backend for Personal Stylist (M0-09)",
   "scripts": {
     "dev": "wrangler dev --config wrangler.local.toml",
-    "test": "vitest run && vitest run -c vitest.workers-pool.config.ts",
+    "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
