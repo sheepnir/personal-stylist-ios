@@ -1,12 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDeviceSpendLedgerHarness } from './helpers.js';
 import { emptyLedgerState } from '../src/ledgerCore.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
 const BAD_CONFIG = { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
 
 describe('DeviceSpendLedger persistence (fake DO storage)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: FROZEN_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('does not write storage when reserve fails without pruning', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     resetPutCount();
@@ -27,14 +35,14 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     expect(ledger.reserve('r1', 0.2, DAY, CONFIG)).toEqual({ ok: true });
     resetPutCount();
-    expect(ledger.reconcile('r1', 0.05)).toEqual({ ok: true });
+    expect(ledger.reconcile(DAY, 'r1', 0.05)).toEqual({ ok: true });
     expect(putCount()).toBe(1);
   });
 
   it('does not write when reconcile not_found and nothing pruned', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     resetPutCount();
-    expect(ledger.reconcile('nope', 0.01)).toEqual({ ok: false, reason: 'not_found' });
+    expect(ledger.reconcile(DAY, 'nope', 0.01)).toEqual({ ok: false, reason: 'not_found' });
     expect(putCount()).toBe(0);
   });
 
@@ -51,7 +59,7 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount, getStoredState } = createDeviceSpendLedgerHarness(state);
     resetPutCount();
     ledger.summary(DAY, BAD_CONFIG);
-    expect(putCount()).toBe(1);
+    expect(putCount()).toBe(0);
     expect(getStoredState()?.days['1999-01-01']).toBeUndefined();
   });
 
@@ -68,8 +76,7 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount, getStoredState } = createDeviceSpendLedgerHarness(state);
     resetPutCount();
     expect(ledger.reserve('x', 999, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
-    expect(putCount()).toBe(1);
-    expect(getStoredState()?.days['1999-01-01']).toBeUndefined();
+    expect(putCount()).toBe(0);
   });
 
   it('invalid config reserve persists only when prune occurred (touch-before-early-return)', () => {
@@ -96,6 +103,7 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
       ok: false,
       reason: 'config_error',
     });
-    expect(prunedHarness.putCount()).toBe(1);
+    expect(prunedHarness.putCount()).toBe(0);
+    expect(prunedHarness.getStoredState()?.days['1999-01-01']).toBeUndefined();
   });
 });

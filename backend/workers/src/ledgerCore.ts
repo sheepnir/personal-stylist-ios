@@ -7,8 +7,8 @@ import type { SpendConfig } from './types.js';
 
 export const MICRO_USD = 1_000_000;
 
-/** Largest deployable daily cap (USD); larger configured values are rejected. */
-export const MAX_DEPLOYABLE_CAP_USD = 1_000_000;
+/** Generic sanity ceiling for configured daily caps (not a production limit). */
+export const MAX_DEPLOYABLE_CAP_USD = 100;
 
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
 
@@ -34,26 +34,76 @@ export interface DayRecord {
   attempts: Record<string, AttemptEntry>;
   /** Reconciled spend by task label (micro-USD). */
   tasks: Record<string, number>;
+  /** Set when reconcile records actual over per-attempt ceiling; locks further reserves that day. */
+  hardCapLocked?: boolean;
 }
 
 export interface LedgerState {
   days: Record<string, DayRecord>;
+  /** Persisted buckets that failed validation — fail-closed for that UTC day. */
+  corruptDays?: Record<string, true>;
+  /** Old monolith `ledger` key still present — entire DO is fail-closed until cleared. */
+  legacyMonolithPresent?: true;
 }
 
 /** Retain today plus the 30 preceding UTC calendar days (31 buckets). */
 export const LEDGER_DAY_BUCKETS = 31;
 export const LEDGER_MAX_DAY_AGE = LEDGER_DAY_BUCKETS - 1;
 
+/**
+ * Max attempt records per UTC day bucket — sized to bound persisted record size.
+ */
+export const MAX_ATTEMPTS_PER_DAY = 500;
+
+/** UUID-length attempt ids (charset unchanged). */
+export const MAX_ATTEMPT_ID_LENGTH = 36;
+export const MAX_TASK_NAME_LENGTH = 16;
+
+/**
+ * Worst-case JSON for one UTC day bucket must stay under this (DO per-value limit headroom).
+ * Sized for 500 attempts at max id/task length and large micro-USD fields.
+ */
+export const MAX_BUCKET_BYTES = 100 * 1024;
+
+/** Per-attempt reserve / reconcile USD ceiling (keeps bucket JSON bounded). */
+export const MAX_ATTEMPT_USD = 1000;
+
+const MAX_ATTEMPT_MICRO = MAX_ATTEMPT_USD * MICRO_USD;
+
+function resolveReconcileActualMicro(
+  actualUSD: number
+): { ok: true; micro: number; overCeiling: boolean } | { ok: false } {
+  const bounded = boundedAttemptUsdToMicro(actualUSD);
+  if (bounded.ok) {
+    return { ok: true, micro: bounded.micro, overCeiling: false };
+  }
+  if (typeof actualUSD === 'number' && Number.isFinite(actualUSD) && actualUSD > MAX_ATTEMPT_USD) {
+    return { ok: true, micro: MAX_ATTEMPT_MICRO, overCeiling: true };
+  }
+  return { ok: false };
+}
+
+/** Max distinct task labels on one UTC day bucket (worst-case JSON sizing). */
+export const MAX_DISTINCT_TASKS_PER_DAY = 32;
+
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
   ok: boolean;
-  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error';
+  reason?:
+    | 'hard_cap'
+    | 'invalid'
+    | 'already_settled'
+    | 'config_error'
+    | 'attempt_limit'
+    | 'storage_error'
+    | 'task_limit'
+    | 'stale_hold';
 }
 
 export interface ReconcileResult {
   ok: boolean;
-  reason?: 'not_found' | 'invalid' | 'overflow';
+  reason?: 'not_found' | 'invalid' | 'overflow' | 'storage_error' | 'task_limit' | 'actual_over_ceiling';
 }
 
 export interface DaySummary {
@@ -62,8 +112,11 @@ export interface DaySummary {
   reservedUSD: number;
   softThresholdReached: boolean;
   hardCapReached: boolean;
+  attemptLimitReached: boolean;
   overReservationCount: number;
   byTask: Record<string, number>;
+  /** Set when the monolith `ledger` KV key blocks the whole DO (fail-closed summary). */
+  legacyStorageBlocked?: true;
 }
 
 export type CostMicroResult = { ok: true; micro: number } | { ok: false };
@@ -156,6 +209,7 @@ export function failClosedDaySummary(day: string): DaySummary {
     reservedUSD: 0,
     softThresholdReached: true,
     hardCapReached: true,
+    attemptLimitReached: true,
     overReservationCount: 0,
     byTask: nullRecord(),
   };
@@ -189,6 +243,34 @@ export function safeMicroSub(a: number, b: number): number | null {
   return Number.isSafeInteger(diff) ? diff : null;
 }
 
+const MICRO_CEILING = Number.MAX_SAFE_INTEGER;
+
+/** Ledger expiry uses saturating micro-USD math so stale buckets always settle and prune. */
+function saturatingMicroAdd(a: number, b: number): number {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    return MICRO_CEILING;
+  }
+  const sum = a + b;
+  if (!Number.isFinite(sum) || sum >= MICRO_CEILING) {
+    return MICRO_CEILING;
+  }
+  return sum;
+}
+
+function saturatingMicroSub(a: number, b: number): number {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    return 0;
+  }
+  const diff = a - b;
+  if (!Number.isFinite(diff) || diff <= 0) {
+    return 0;
+  }
+  if (diff >= MICRO_CEILING) {
+    return MICRO_CEILING;
+  }
+  return diff;
+}
+
 function mapAdd(map: Record<string, number>, key: string, delta: number): boolean {
   const next = safeMicroAdd(Object.hasOwn(map, key) ? map[key] : 0, delta);
   if (next === null) {
@@ -199,7 +281,118 @@ function mapAdd(map: Record<string, number>, key: string, delta: number): boolea
 }
 
 export function emptyLedgerState(): LedgerState {
-  return { days: {} };
+  return {
+    days: nullRecord() as Record<string, DayRecord>,
+    corruptDays: nullRecord() as Record<string, true>,
+  };
+}
+
+export function markDayStorageCorrupt(state: LedgerState, day: string): void {
+  if (!state.corruptDays) {
+    state.corruptDays = nullRecord() as Record<string, true>;
+  }
+  state.corruptDays[day] = true;
+  delete state.days[day];
+}
+
+export function isDayStorageCorrupt(state: LedgerState, day: string): boolean {
+  return state.corruptDays !== undefined && Object.hasOwn(state.corruptDays, day);
+}
+
+export function isLegacyStorageBlocked(state: LedgerState): boolean {
+  return state.legacyMonolithPresent === true;
+}
+
+/** Reserve / reconcile attempt costs above {@link MAX_ATTEMPT_USD} are rejected as invalid. */
+export function boundedAttemptUsdToMicro(usd: number): CostMicroResult {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0 || usd > MAX_ATTEMPT_USD) {
+    return { ok: false };
+  }
+  return costUsdToMicro(usd);
+}
+
+function distinctTasksOnDay(day: DayRecord): Set<string> {
+  const tasks = new Set<string>();
+  for (const id of Object.keys(day.attempts)) {
+    if (Object.hasOwn(day.attempts, id)) {
+      tasks.add(day.attempts[id]!.task);
+    }
+  }
+  return tasks;
+}
+
+/** Distinct task labels on a day after reconciling one attempt to taskKey. */
+export function distinctTasksAfterReconcile(day: DayRecord, attemptId: string, taskKey: string): number {
+  const tasks = new Set<string>();
+  for (const id of Object.keys(day.attempts)) {
+    if (!Object.hasOwn(day.attempts, id)) {
+      continue;
+    }
+    tasks.add(id === attemptId ? taskKey : day.attempts[id]!.task);
+  }
+  return tasks.size;
+}
+
+function reserveTaskAllowedOnDay(day: DayRecord, task: string): boolean {
+  const tasks = distinctTasksOnDay(day);
+  if (tasks.has(task)) {
+    return true;
+  }
+  return tasks.size < MAX_DISTINCT_TASKS_PER_DAY;
+}
+
+function reconcileTaskAllowedOnDay(day: DayRecord, attemptId: string, taskKey: string): boolean {
+  return distinctTasksAfterReconcile(day, attemptId, taskKey) <= MAX_DISTINCT_TASKS_PER_DAY;
+}
+
+/** Recompute day totals from attempt rows (storage decode invariant check). */
+export function recomputeDayTotalsFromAttempts(
+  attempts: Record<string, AttemptEntry>
+): {
+  spentMicro: number;
+  reservedMicro: number;
+  overReservationCount: number;
+  tasks: Record<string, number>;
+} | null {
+  let spentMicro = 0;
+  let reservedMicro = 0;
+  let overReservationCount = 0;
+  const tasks = nullRecord() as Record<string, number>;
+  for (const id of Object.keys(attempts)) {
+    if (!Object.hasOwn(attempts, id)) {
+      continue;
+    }
+    const entry = attempts[id]!;
+    if (entry.state === 'reserved' || entry.state === 'unknown') {
+      const next = safeMicroAdd(reservedMicro, entry.upperBoundMicro);
+      if (next === null) {
+        return null;
+      }
+      reservedMicro = next;
+      continue;
+    }
+    if (entry.state !== 'reconciled') {
+      return null;
+    }
+    if (entry.actualMicro === undefined) {
+      return null;
+    }
+    const nextSpent = safeMicroAdd(spentMicro, entry.actualMicro);
+    if (nextSpent === null) {
+      return null;
+    }
+    spentMicro = nextSpent;
+    const prevTask = Object.hasOwn(tasks, entry.task) ? tasks[entry.task]! : 0;
+    const nextTask = safeMicroAdd(prevTask, entry.actualMicro);
+    if (nextTask === null) {
+      return null;
+    }
+    tasks[entry.task] = nextTask;
+    if (entry.overReservation === true || entry.actualMicro > entry.upperBoundMicro) {
+      overReservationCount += 1;
+    }
+  }
+  return { spentMicro, reservedMicro, overReservationCount, tasks };
 }
 
 function emptyDay(date: string): DayRecord {
@@ -210,6 +403,31 @@ function emptyDay(date: string): DayRecord {
     overReservationCount: 0,
     attempts: nullRecord(),
     tasks: nullRecord(),
+  };
+}
+
+/** Rebuild maps with null prototypes after JSON storage reload (avoids prototype-key collisions). */
+export function hydrateDayRecord(raw: DayRecord): DayRecord {
+  const attempts = nullRecord() as Record<string, AttemptEntry>;
+  for (const key of Object.keys(raw.attempts ?? {})) {
+    if (Object.hasOwn(raw.attempts, key)) {
+      attempts[key] = raw.attempts[key]!;
+    }
+  }
+  const tasks = nullRecord() as Record<string, number>;
+  for (const key of Object.keys(raw.tasks ?? {})) {
+    if (Object.hasOwn(raw.tasks, key)) {
+      tasks[key] = raw.tasks[key]!;
+    }
+  }
+  return {
+    date: raw.date,
+    spentMicro: raw.spentMicro,
+    reservedMicro: raw.reservedMicro,
+    overReservationCount: raw.overReservationCount,
+    attempts,
+    tasks,
+    hardCapLocked: raw.hardCapLocked === true,
   };
 }
 
@@ -248,19 +466,28 @@ function utcDayAgeDays(day: string, now: Date): number {
   return Math.floor((nowMs - dayMs) / 86_400_000);
 }
 
-/** Valid ledger day for mutations: today or at most one UTC calendar day ahead. */
+/** Valid ledger day for new reserves: server's current UTC calendar day only. */
 export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
   if (!isValidLedgerDayKey(day)) {
     return false;
   }
-  const age = utcDayAgeDays(day, now);
-  return age >= -1 && age <= 0;
+  return utcDayAgeDays(day, now) === 0;
 }
 
 const UNSAFE_TASK_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+const ATTEMPT_ID_RE = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_ATTEMPT_ID_LENGTH}}$`);
+const TASK_NAME_RE = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TASK_NAME_LENGTH}}$`);
+
+export function isValidAttemptId(attemptId: string): boolean {
+  return typeof attemptId === 'string' && ATTEMPT_ID_RE.test(attemptId);
+}
 
 export function isValidReserveTaskName(task: string): boolean {
-  return typeof task === 'string' && task.length > 0 && !UNSAFE_TASK_NAMES.has(task);
+  return (
+    typeof task === 'string' &&
+    TASK_NAME_RE.test(task) &&
+    !UNSAFE_TASK_NAMES.has(task)
+  );
 }
 
 function isProtectedBucketEvictionWindow(key: string, now: Date): boolean {
@@ -272,10 +499,6 @@ function isProtectedBucketEvictionWindow(key: string, now: Date): boolean {
 }
 
 function enforceBucketLimit(state: LedgerState, now: Date): void {
-  if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
-    return;
-  }
-
   const deletable = Object.keys(state.days)
     .filter((key) => {
       const day = state.days[key];
@@ -294,15 +517,59 @@ function enforceBucketLimit(state: LedgerState, now: Date): void {
     });
 
   for (const key of deletable) {
-    if (Object.keys(state.days).length <= LEDGER_DAY_BUCKETS) {
-      break;
-    }
     delete state.days[key];
   }
 }
 
-export function ledgerExceedsBucketLimit(state: LedgerState): boolean {
-  return Object.keys(state.days).length > LEDGER_DAY_BUCKETS;
+/** Settled buckets outside today−30…today+1 (used to prove age-based retention). */
+export function countSettledBucketsOutsideEvictionWindow(state: LedgerState, now: Date): number {
+  let count = 0;
+  for (const key of Object.keys(state.days)) {
+    if (isProtectedBucketEvictionWindow(key, now)) {
+      continue;
+    }
+    if (dayIsFullySettled(state.days[key])) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function dayAttemptCount(day: DayRecord): number {
+  return Object.keys(day.attempts).length;
+}
+
+function attemptLimitReachedForDay(day: DayRecord): boolean {
+  return dayAttemptCount(day) >= MAX_ATTEMPTS_PER_DAY;
+}
+
+/** Conservatively settle open attempts on days older than today−30 (full upper bound). */
+function expireStaleOpenAttempts(state: LedgerState, now: Date): boolean {
+  let changed = false;
+  for (const key of Object.keys(state.days)) {
+    if (!isValidLedgerDayKey(key)) {
+      continue;
+    }
+    if (utcDayAgeDays(key, now) <= LEDGER_MAX_DAY_AGE) {
+      continue;
+    }
+    const day = state.days[key];
+    for (const entry of Object.values(day.attempts)) {
+      if (entry.state !== 'reserved' && entry.state !== 'unknown') {
+        continue;
+      }
+      const settleMicro = entry.upperBoundMicro;
+      day.reservedMicro = saturatingMicroSub(day.reservedMicro, settleMicro);
+      day.spentMicro = saturatingMicroAdd(day.spentMicro, settleMicro);
+      const taskPrev = Object.hasOwn(day.tasks, entry.task) ? day.tasks[entry.task]! : 0;
+      day.tasks[entry.task] = saturatingMicroAdd(taskPrev, settleMicro);
+      entry.state = 'reconciled';
+      entry.actualMicro = settleMicro;
+      entry.reconciledAt = new Date().toISOString();
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 function dayHasOpenAttempts(day: DayRecord): boolean {
@@ -334,11 +601,12 @@ function malformedOpenReservedMicro(state: LedgerState): number | null {
 }
 
 /**
- * Prune fully settled buckets older than the newest {@link LEDGER_DAY_BUCKETS} UTC days.
- * Buckets with open reservations (including on malformed keys) are never deleted.
+ * Prune fully settled buckets older than the protected UTC window. Open attempts on days
+ * older than today−30 are conservatively settled at their reserved upper bound first.
  */
 export function pruneOldDays(state: LedgerState, now: Date): boolean {
   const keysBefore = Object.keys(state.days).sort().join('\0');
+  expireStaleOpenAttempts(state, now);
   for (const key of Object.keys(state.days)) {
     const day = state.days[key];
     if (!isValidLedgerDayKey(key)) {
@@ -355,8 +623,9 @@ export function pruneOldDays(state: LedgerState, now: Date): boolean {
       }
       continue;
     }
-    if (age > LEDGER_MAX_DAY_AGE && dayIsFullySettled(day)) {
+    if (age > LEDGER_MAX_DAY_AGE) {
       delete state.days[key];
+      continue;
     }
   }
   enforceBucketLimit(state, now);
@@ -366,13 +635,18 @@ export function pruneOldDays(state: LedgerState, now: Date): boolean {
 
 function findAttempt(
   state: LedgerState,
+  dayKey: string,
   attemptId: string
 ): { day: DayRecord; entry: AttemptEntry } | null {
-  for (const day of Object.values(state.days)) {
-    const entry = day.attempts[attemptId];
-    if (entry) return { day, entry };
+  const day = state.days[dayKey];
+  if (!day) {
+    return null;
   }
-  return null;
+  if (!Object.hasOwn(day.attempts, attemptId)) {
+    return null;
+  }
+  const entry = day.attempts[attemptId]!;
+  return { day, entry };
 }
 
 export function reserveAttempt(
@@ -384,21 +658,36 @@ export function reserveAttempt(
   task = 'unknown',
   now: Date = new Date()
 ): ReserveResult {
-  const bounds = costUsdToMicro(upperBoundUSD);
-  if (!attemptId || !bounds.ok) {
+  if (isLegacyStorageBlocked(state)) {
+    return { ok: false, reason: 'storage_error' };
+  }
+  if (isDayStorageCorrupt(state, day)) {
+    return { ok: false, reason: 'storage_error' };
+  }
+  if (readDay(state, day).hardCapLocked) {
+    return { ok: false, reason: 'hard_cap' };
+  }
+  const bounds = boundedAttemptUsdToMicro(upperBoundUSD);
+  if (!isValidAttemptId(attemptId) || !bounds.ok) {
     return { ok: false, reason: 'invalid' };
   }
   const upperBoundMicro = bounds.micro;
 
-  const existingGlobal = findAttempt(state, attemptId);
-  if (existingGlobal) {
-    if (existingGlobal.entry.state === 'reconciled' || existingGlobal.entry.state === 'unknown') {
+  const existingOnDay = findAttempt(state, day, attemptId);
+  if (existingOnDay) {
+    if (existingOnDay.entry.state === 'reconciled' || existingOnDay.entry.state === 'unknown') {
       return { ok: false, reason: 'already_settled' };
     }
-    if (existingGlobal.entry.upperBoundMicro === upperBoundMicro) {
-      return { ok: true };
+    if (existingOnDay.entry.upperBoundMicro !== upperBoundMicro) {
+      return { ok: false, reason: 'invalid' };
     }
-    return { ok: false, reason: 'invalid' };
+    if (existingOnDay.entry.task !== task) {
+      return { ok: false, reason: 'invalid' };
+    }
+    if (utcDayString(now) !== day) {
+      return { ok: false, reason: 'stale_hold' };
+    }
+    return { ok: true };
   }
 
   if (!isLedgerDayKeyUsable(day, now)) {
@@ -408,12 +697,14 @@ export function reserveAttempt(
     return { ok: false, reason: 'invalid' };
   }
 
+  const dayRecordForTask = readDay(state, day);
+  if (!reserveTaskAllowedOnDay(dayRecordForTask, task)) {
+    return { ok: false, reason: 'task_limit' };
+  }
+
   const configMicro = configToMicro(config);
   if (!configMicro.ok) {
     return { ok: false, reason: 'config_error' };
-  }
-  if (ledgerExceedsBucketLimit(state)) {
-    return { ok: false, reason: 'hard_cap' };
   }
   const { capMicro } = configMicro;
 
@@ -441,6 +732,9 @@ export function reserveAttempt(
   }
 
   const writable = getOrCreateDay(state, day);
+  if (attemptLimitReachedForDay(writable)) {
+    return { ok: false, reason: 'attempt_limit' };
+  }
   const newReserved = safeMicroAdd(writable.reservedMicro, upperBoundMicro);
   if (newReserved === null) {
     return { ok: false, reason: 'invalid' };
@@ -458,58 +752,88 @@ export function reserveAttempt(
 
 export function reconcileAttempt(
   state: LedgerState,
+  day: string,
   attemptId: string,
   actualUSD: number,
   task?: string
 ): ReconcileResult {
+  if (isLegacyStorageBlocked(state)) {
+    return { ok: false, reason: 'storage_error' };
+  }
+  if (isDayStorageCorrupt(state, day)) {
+    return { ok: false, reason: 'storage_error' };
+  }
+  if (!isValidLedgerDayKey(day)) {
+    return { ok: false, reason: 'invalid' };
+  }
   if (task !== undefined && !isValidReserveTaskName(task)) {
     return { ok: false, reason: 'invalid' };
   }
-  const actual = actualUsdToMicro(actualUSD);
-  if (!attemptId || !actual.ok) {
+  const resolvedActual = resolveReconcileActualMicro(actualUSD);
+  if (!isValidAttemptId(attemptId) || !resolvedActual.ok) {
     return { ok: false, reason: 'invalid' };
   }
 
-  const located = findAttempt(state, attemptId);
+  const located = findAttempt(state, day, attemptId);
   if (!located) {
     return { ok: false, reason: 'not_found' };
   }
 
-  const { day, entry } = located;
-  const actualMicro = actual.micro;
+  const { day: dayRecord, entry } = located;
+  const { micro: actualMicro, overCeiling: actualOverCeiling } = resolvedActual;
 
-  if (entry.state === 'reconciled' && entry.actualMicro === actualMicro) {
-    return { ok: true };
+  if (entry.state === 'reconciled') {
+    if (actualOverCeiling && dayRecord.hardCapLocked && entry.actualMicro === MAX_ATTEMPT_MICRO) {
+      return { ok: false, reason: 'actual_over_ceiling' };
+    }
+    if (!actualOverCeiling && entry.actualMicro === actualMicro) {
+      return { ok: true };
+    }
+    return { ok: false, reason: 'invalid' };
   }
   if (entry.state !== 'reserved') {
     return { ok: false, reason: 'invalid' };
   }
 
-  const newReserved = safeMicroSub(day.reservedMicro, entry.upperBoundMicro);
-  const newSpent = safeMicroAdd(day.spentMicro, actualMicro);
+  const taskKey = task ?? entry.task;
+  if (!reconcileTaskAllowedOnDay(dayRecord, attemptId, taskKey)) {
+    return { ok: false, reason: 'task_limit' };
+  }
+
+  const newReserved = safeMicroSub(dayRecord.reservedMicro, entry.upperBoundMicro);
+  const newSpent = safeMicroAdd(dayRecord.spentMicro, actualMicro);
   if (newReserved === null || newSpent === null) {
     return { ok: false, reason: 'overflow' };
   }
 
-  const taskKey = task ?? entry.task;
-  const taskTotal = safeMicroAdd(Object.hasOwn(day.tasks, taskKey) ? day.tasks[taskKey] : 0, actualMicro);
+  const taskTotal = safeMicroAdd(
+    Object.hasOwn(dayRecord.tasks, taskKey) ? dayRecord.tasks[taskKey] : 0,
+    actualMicro
+  );
   if (taskTotal === null) {
     return { ok: false, reason: 'overflow' };
   }
 
-  day.reservedMicro = newReserved;
-  day.spentMicro = newSpent;
-  day.tasks[taskKey] = taskTotal;
+  dayRecord.reservedMicro = newReserved;
+  dayRecord.spentMicro = newSpent;
+  dayRecord.tasks[taskKey] = taskTotal;
 
-  const over = actualMicro > entry.upperBoundMicro;
+  const over = actualMicro > entry.upperBoundMicro || actualOverCeiling;
   if (over) {
-    day.overReservationCount += 1;
+    dayRecord.overReservationCount += 1;
     entry.overReservation = true;
+  }
+  if (actualOverCeiling) {
+    dayRecord.hardCapLocked = true;
   }
 
   entry.state = 'reconciled';
   entry.actualMicro = actualMicro;
+  entry.task = taskKey;
   entry.reconciledAt = new Date().toISOString();
+  if (actualOverCeiling) {
+    return { ok: false, reason: 'actual_over_ceiling' };
+  }
   return { ok: true };
 }
 
@@ -518,6 +842,12 @@ export function summarizeDay(
   day: string,
   config: SpendConfig
 ): DaySummary {
+  if (isLegacyStorageBlocked(state)) {
+    return { ...failClosedDaySummary(day), legacyStorageBlocked: true };
+  }
+  if (isDayStorageCorrupt(state, day)) {
+    return failClosedDaySummary(day);
+  }
   if (!isValidLedgerDayKey(day)) {
     return {
       date: day,
@@ -525,6 +855,7 @@ export function summarizeDay(
       reservedUSD: 0,
       softThresholdReached: false,
       hardCapReached: false,
+      attemptLimitReached: false,
       overReservationCount: 0,
       byTask: nullRecord(),
     };
@@ -552,6 +883,7 @@ export function summarizeDay(
       reservedUSD: microToUsd(record.reservedMicro),
       softThresholdReached: true,
       hardCapReached: true,
+      attemptLimitReached: attemptLimitReachedForDay(record),
       overReservationCount: record.overReservationCount,
       byTask,
     };
@@ -564,6 +896,7 @@ export function summarizeDay(
     reservedUSD: microToUsd(record.reservedMicro),
     softThresholdReached: totalCommitted === null ? true : totalCommitted >= softMicro,
     hardCapReached: dayHardCapReached(state, day, capMicro),
+    attemptLimitReached: attemptLimitReachedForDay(record),
     overReservationCount: record.overReservationCount,
     byTask,
   };
@@ -571,10 +904,10 @@ export function summarizeDay(
 
 /** True when {@link reserveAttempt} would refuse another hold with `hard_cap` (minimum 1 micro-USD). */
 export function dayHardCapReached(state: LedgerState, day: string, capMicro: number): boolean {
-  if (ledgerExceedsBucketLimit(state)) {
+  const record = readDay(state, day);
+  if (record.hardCapLocked) {
     return true;
   }
-  const record = readDay(state, day);
   if (record.spentMicro >= capMicro) {
     return true;
   }

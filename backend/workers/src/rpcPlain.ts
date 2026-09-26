@@ -22,15 +22,20 @@ export function toRpcPlainRecord(source: Record<string, number>): Record<string,
 }
 
 export function toRpcDaySummary(summary: DaySummary): DaySummary {
-  return {
+  const out: DaySummary = {
     date: summary.date,
     spentUSD: summary.spentUSD,
     reservedUSD: summary.reservedUSD,
     softThresholdReached: summary.softThresholdReached,
     hardCapReached: summary.hardCapReached,
+    attemptLimitReached: summary.attemptLimitReached,
     overReservationCount: summary.overReservationCount,
     byTask: toRpcPlainRecord(summary.byTask),
   };
+  if (summary.legacyStorageBlocked) {
+    out.legacyStorageBlocked = true;
+  }
+  return out;
 }
 
 export function toRpcReserveResult(result: ReserveResult): ReserveResult {

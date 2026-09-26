@@ -12,6 +12,7 @@ import {
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
+import { bucketStorageKey, encodeDayForStorage, loadLedgerFromStorage } from '../src/ledgerBucketStorage.js';
 import { DeviceSpendLedger } from '../src/spendLedger.js';
 
 export class MemoryKV {
@@ -60,13 +61,16 @@ export interface SpendLedgerMock {
   dumpState: (deviceId: string) => LedgerState;
 }
 
-export function createSpendLedgerMock(): SpendLedgerMock {
+export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolean }): SpendLedgerMock {
   const byDevice = new Map<string, LedgerState>();
 
   const stateFor = (deviceId: string): LedgerState => {
     let state = byDevice.get(deviceId);
     if (!state) {
       state = emptyLedgerState();
+      if (options?.legacyMonolithPresent) {
+        state.legacyMonolithPresent = true;
+      }
       byDevice.set(deviceId, state);
     }
     return state;
@@ -89,10 +93,10 @@ export function createSpendLedgerMock(): SpendLedgerMock {
         }
         return result;
       },
-      reconcile: async (attemptId: string, actualUSD: number, task?: string) => {
+      reconcile: async (day: string, attemptId: string, actualUSD: number, task?: string) => {
         const state = stateFor(deviceId);
         ageLedger(state, new Date());
-        return reconcileAttempt(state, attemptId, actualUSD, task);
+        return reconcileAttempt(state, day, attemptId, actualUSD, task);
       },
       summary: async (day: string, config: SpendConfig) => {
         const state = stateFor(deviceId);
@@ -114,23 +118,52 @@ export function spendLedger(): DurableObjectNamespace {
 }
 
 /** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */
-export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
+export function createDeviceSpendLedgerHarness(
+  initialState?: LedgerState,
+  options?: { maxValueBytes?: number; initialKv?: Record<string, unknown> }
+): {
   ledger: DeviceSpendLedger;
   putCount: () => number;
   resetPutCount: () => void;
   getStoredState: () => LedgerState | undefined;
+  kvHas: (key: string) => boolean;
 } {
   const kvStore = new Map<string, unknown>();
   const putLog: unknown[] = [];
   if (initialState) {
-    kvStore.set('ledger', structuredClone(initialState));
+    for (const [day, record] of Object.entries(initialState.days)) {
+      kvStore.set(bucketStorageKey(day), encodeDayForStorage(structuredClone(record)));
+    }
   }
+  if (options?.initialKv) {
+    for (const [key, value] of Object.entries(options.initialKv)) {
+      kvStore.set(key, value);
+    }
+  }
+  const maxValueBytes = options?.maxValueBytes;
   const storage = {
     kv: {
       get: <T>(key: string): T | undefined => kvStore.get(key) as T | undefined,
       put: (key: string, value: unknown) => {
+        const bytes = new TextEncoder().encode(JSON.stringify(value)).length;
+        if (maxValueBytes !== undefined && bytes > maxValueBytes) {
+          throw new Error('SQLITE_TOOBIG');
+        }
         putLog.push(value);
         kvStore.set(key, value);
+      },
+      delete: (key: string) => {
+        kvStore.delete(key);
+      },
+      list: (options?: { prefix?: string }) => {
+        const prefix = options?.prefix ?? '';
+        const entries: [string, unknown][] = [];
+        for (const [name, value] of kvStore) {
+          if (name.startsWith(prefix)) {
+            entries.push([name, value]);
+          }
+        }
+        return entries;
       },
     },
     transactionSync: <T>(fn: () => T): T => fn(),
@@ -142,6 +175,14 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
     resetPutCount: () => {
       putLog.length = 0;
     },
-    getStoredState: () => kvStore.get('ledger') as LedgerState | undefined,
+    getStoredState: () => {
+      const state = loadLedgerFromStorage(storage.kv);
+      const hasDays = Object.keys(state.days).length > 0;
+      const hasCorrupt =
+        state.corruptDays !== undefined && Object.keys(state.corruptDays).length > 0;
+      const legacyBlocked = state.legacyMonolithPresent === true;
+      return hasDays || hasCorrupt || legacyBlocked ? state : undefined;
+    },
+    kvHas: (key: string) => kvStore.has(key),
   };
 }

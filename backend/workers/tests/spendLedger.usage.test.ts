@@ -3,7 +3,7 @@
  * Exercises core logic via helpers.createSpendLedgerMock(); workerd / DO concurrency is #14.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getSpendRecord,
   reserveSpend,
@@ -101,6 +101,49 @@ describe('usage helpers with in-memory spend ledger', () => {
     expect(usage.ledgerConfigStatus).toBe('legacy');
   });
 
+  it('reports storage_error when the device ledger is blocked by a legacy monolith key', async () => {
+    const mock = createSpendLedgerMock({ legacyMonolithPresent: true });
+    const env: Env = {
+      OPENROUTER_API_KEY: 'k',
+      USAGE_LEDGER: emptyLedger(),
+      SPEND_LEDGER: mock.namespace as Env['SPEND_LEDGER'],
+    };
+    const token = generateDeviceToken();
+    const usage = await getUsageSummary(token, env);
+    expect(usage.ledgerConfigStatus).toBe('storage_error');
+    expect(usage.hardCapReached).toBe(true);
+    expect(usage.spentTodayUSD).toBe(0);
+  });
+
+  it('reconciles using the reservation UTC day after midnight, not implicit today', async () => {
+    vi.useFakeTimers({ now: new Date('2026-09-26T23:50:00.000Z') });
+    try {
+      const { env } = envWithSpend();
+      const token = generateDeviceToken();
+      const reservationDay = '2026-09-26';
+      const nextUtcDay = '2026-09-27';
+      expect(await reserveSpend(token, 'midnight-hold', 0.2, env, reservationDay, 'generate')).toEqual({
+        ok: true,
+      });
+      vi.setSystemTime(new Date('2026-09-27T00:00:01.000Z'));
+      expect(await reconcileSpend(token, nextUtcDay, 'midnight-hold', 0.08, env)).toEqual({
+        ok: false,
+        reason: 'not_found',
+      });
+      expect(
+        await reserveSpend(token, 'midnight-hold', 0.2, env, reservationDay, 'generate')
+      ).toEqual({ ok: false, reason: 'stale_hold' });
+      expect(await reconcileSpend(token, reservationDay, 'midnight-hold', 0.08, env, 'generate')).toEqual({
+        ok: true,
+      });
+      vi.setSystemTime(new Date(`${reservationDay}T12:00:00.000Z`));
+      const record = await getSpendRecord(token, env);
+      expect(record.spentUSD).toBeCloseTo(0.08);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fail-closed when summary RPC rejects after getByName', async () => {
     const token = generateDeviceToken();
     const env: Env = {
@@ -139,8 +182,9 @@ describe('usage helpers with in-memory spend ledger', () => {
   it('reserve + reconcile round-trip through usage helpers with task attribution', async () => {
     const { env } = envWithSpend();
     const token = generateDeviceToken();
-    expect(await reserveSpend(token, 'paid-1', 0.35, env, undefined, 'generate')).toEqual({ ok: true });
-    expect(await reconcileSpend(token, 'paid-1', 0.08, env, 'generate')).toEqual({ ok: true });
+    const reservationDay = new Date().toISOString().split('T')[0];
+    expect(await reserveSpend(token, 'paid-1', 0.35, env, reservationDay, 'generate')).toEqual({ ok: true });
+    expect(await reconcileSpend(token, reservationDay, 'paid-1', 0.08, env, 'generate')).toEqual({ ok: true });
     const record = await getSpendRecord(token, env);
     expect(record.spentUSD).toBeCloseTo(0.08);
     expect(record.reservedUSD).toBeCloseTo(0);
@@ -185,8 +229,9 @@ describe('usage helpers with in-memory spend ledger', () => {
     const locator = deviceLocatorFromToken(token)!;
     const digest = await hashFromTokens(token);
 
-    await reserveSpend(token, 'attempt-privacy', 0.05, env);
-    await reconcileSpend(token, 'attempt-privacy', 0.04, env, 'generate');
+    const reservationDay = new Date().toISOString().split('T')[0];
+    await reserveSpend(token, 'attempt-privacy', 0.05, env, reservationDay, 'generate');
+    await reconcileSpend(token, reservationDay, 'attempt-privacy', 0.04, env, 'generate');
 
     const persisted = JSON.stringify(dump(locator));
     expect(persisted).not.toContain(token);

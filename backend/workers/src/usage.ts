@@ -6,10 +6,16 @@ import type { Env, SpendRecord, SpendLedgerAccess } from './types.js';
 import { SPEND_CONFIG } from './types.js';
 import { resolveSpendConfig, spendConfigFromEnv } from './spendConfig.js';
 import { hashToken, deviceLocatorFromToken } from './tokens.js';
+import { isValidLedgerDayKey } from './ledgerCore.js';
 
 export { hashToken };
 
-export type LedgerConfigStatus = 'ok' | 'config_error' | 'ledger_unavailable' | 'legacy';
+export type LedgerConfigStatus =
+  | 'ok'
+  | 'config_error'
+  | 'ledger_unavailable'
+  | 'legacy'
+  | 'storage_error';
 
 export interface UsageSummaryResponse {
   last7DaysUSD: number;
@@ -137,6 +143,7 @@ export async function reserveSpend(
   attemptId: string,
   upperBoundUSD: number,
   env: Env,
+  /** UTC ledger day for the hold; defaults to today. Callers must persist this day and pass it again on idempotent retries and on reconcile — a retry after UTC midnight without the original day creates a second hold. */
   day: string = getTodayDateString(),
   task = 'unknown'
 ): Promise<{ ok: boolean; reason?: string }> {
@@ -161,11 +168,16 @@ export async function reserveSpend(
 
 export async function reconcileSpend(
   deviceToken: string,
+  /** UTC ledger day from the matching reserve (required). Callers must store the reservation day at reserve time; do not rely on implicit “today” after UTC midnight. */
+  day: string,
   attemptId: string,
   actualUSD: number,
   env: Env,
   task?: string
 ): Promise<{ ok: boolean; reason?: string }> {
+  if (!isValidLedgerDayKey(day)) {
+    return { ok: false, reason: 'invalid' };
+  }
   const access = await accessLedger(deviceToken, env);
   if (access.kind === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
@@ -173,7 +185,7 @@ export async function reconcileSpend(
   if (access.kind === 'legacy') {
     return { ok: false, reason: 'no_ledger' };
   }
-  const result = await callLedger(access, (stub) => stub.reconcile(attemptId, actualUSD, task));
+  const result = await callLedger(access, (stub) => stub.reconcile(day, attemptId, actualUSD, task));
   if (result === 'unavailable') {
     return { ok: false, reason: 'ledger_unavailable' };
   }
@@ -235,6 +247,21 @@ export async function getUsageSummary(
     );
     if (summary === 'unavailable') {
       return failClosedUsageSummary('ledger_unavailable');
+    }
+    if (summary.legacyStorageBlocked) {
+      return {
+        last7DaysUSD: summary.spentUSD,
+        last30DaysUSD: summary.spentUSD,
+        dailyCapUSD: config.dailyCapUSD,
+        softThresholdUSD: config.softThresholdUSD,
+        spentTodayUSD: summary.spentUSD,
+        reservedTodayUSD: summary.reservedUSD,
+        softThresholdReached: summary.softThresholdReached,
+        hardCapReached: summary.hardCapReached,
+        ledgerDayEndsAt: getEndOfDayISO(),
+        byTask: summary.byTask,
+        ledgerConfigStatus: 'storage_error',
+      };
     }
     return {
       last7DaysUSD: summary.spentUSD,

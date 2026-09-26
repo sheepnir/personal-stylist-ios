@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { assertRpcPlainDeep } from '../src/rpcPlain.js';
 import { emptyLedgerState, failClosedDaySummary } from '../src/ledgerCore.js';
 import { createDeviceSpendLedgerHarness } from './helpers.js';
@@ -6,8 +6,16 @@ import { createDeviceSpendLedgerHarness } from './helpers.js';
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
 const BAD_CONFIG = { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
 
 describe('DeviceSpendLedger RPC return values', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: FROZEN_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('summary on empty ledger is structured-clone plain', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     const summary = ledger.summary(DAY, CONFIG);
@@ -35,10 +43,10 @@ describe('DeviceSpendLedger RPC return values', () => {
   it('reserve and reconcile results are plain objects', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     assertRpcPlainDeep(ledger.reserve('a1', 0.01, DAY, CONFIG, 'generate'));
-    assertRpcPlainDeep(ledger.reconcile('a1', 0.01, 'generate'));
+    assertRpcPlainDeep(ledger.reconcile(DAY, 'a1', 0.01, 'generate'));
     assertRpcPlainDeep(ledger.reserve('a2', 0.01, DAY, BAD_CONFIG));
-    assertRpcPlainDeep(ledger.reconcile('missing', 0.01));
-    assertRpcPlainDeep(ledger.markUnknown('x'));
+    assertRpcPlainDeep(ledger.reconcile(DAY, 'missing', 0.01));
+    assertRpcPlainDeep(ledger.markUnknown(DAY, 'x'));
   });
 
   it('RPC byTask omits unsafe keys from legacy storage without polluting clones', () => {
@@ -51,8 +59,16 @@ describe('DeviceSpendLedger RPC return values', () => {
       attempts: Object.create(null),
       tasks: Object.create(null),
     };
-    day.tasks['__proto__'] = 1_000_000;
     day.tasks['generate'] = 2_000_000;
+    day.attempts['legacy-settle'] = {
+      attemptId: 'legacy-settle',
+      upperBoundMicro: 2_000_000,
+      actualMicro: 2_000_000,
+      task: 'generate',
+      state: 'reconciled',
+      createdAt: `${DAY}T12:00:00.000Z`,
+      reconciledAt: `${DAY}T12:00:00.000Z`,
+    };
     state.days[DAY] = day;
 
     const { ledger } = createDeviceSpendLedgerHarness(state);

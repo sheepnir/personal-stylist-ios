@@ -2,28 +2,39 @@
  * Unit tests for spend ledger core logic (#13-a).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   ageLedger,
   actualUsdToMicro,
   capUsdToMicro,
   costUsdToMicro,
   emptyLedgerState,
-  ledgerExceedsBucketLimit,
   pruneOldDays,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  boundedAttemptUsdToMicro,
+  MAX_ATTEMPT_USD,
   isValidLedgerDayKey,
   LEDGER_DAY_BUCKETS,
   LEDGER_MAX_DAY_AGE,
   MICRO_USD,
   usdToMicro,
 } from '../src/ledgerCore.js';
+import { createDeviceSpendLedgerHarness } from './helpers.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: FROZEN_NOW });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('ledgerCore USD ↔ micro-USD conversion', () => {
   it('converts 0.1, 0.2 and 0.3 exactly', () => {
@@ -40,7 +51,7 @@ describe('ledgerCore USD ↔ micro-USD conversion', () => {
   it('reconcile attempt 1000 at 0.0004 USD records at least 400 micro', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, '1000', 0.001, DAY, CONFIG);
-    reconcileAttempt(state, '1000', 0.0004);
+    reconcileAttempt(state, DAY, '1000', 0.0004);
     expect(state.days[DAY].spentMicro).toBeGreaterThanOrEqual(400);
   });
 
@@ -78,7 +89,7 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(summary.spentUSD).toBe(0);
     expect(summary.reservedUSD).toBeCloseTo(0.4);
 
-    expect(reconcileAttempt(state, 'a1', 0.12)).toEqual({ ok: true });
+    expect(reconcileAttempt(state, DAY, 'a1', 0.12)).toEqual({ ok: true });
     summary = summarizeDay(state, DAY, CONFIG);
     expect(summary.spentUSD).toBeCloseTo(0.12);
     expect(summary.reservedUSD).toBeCloseTo(0);
@@ -88,28 +99,43 @@ describe('ledgerCore reserve / reconcile', () => {
   it('sets per-attempt overReservation flag when actual exceeds bound', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'a1', 0.2, DAY, CONFIG);
-    reconcileAttempt(state, 'a1', 0.35);
+    reconcileAttempt(state, DAY, 'a1', 0.35);
     const entry = state.days[DAY].attempts.a1;
     expect(entry.overReservation).toBe(true);
     expect(summarizeDay(state, DAY, CONFIG).overReservationCount).toBe(1);
   });
 
-  it('accepts reconcile actual cost above 10000 USD when representable in micro-USD', () => {
+  it('accepts reconcile actual cost at MAX_ATTEMPT_USD when representable in micro-USD', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'big', 0.01, DAY, { dailyCapUSD: 20_000, softThresholdUSD: 10_000 });
-    const actualUsd = 15_000;
-    expect(actualUsdToMicro(actualUsd).ok).toBe(true);
-    expect(reconcileAttempt(state, 'big', actualUsd)).toEqual({ ok: true });
-    expect(state.days[DAY].spentMicro).toBe(15_000 * MICRO_USD);
+    const actualUsd = MAX_ATTEMPT_USD;
+    expect(boundedAttemptUsdToMicro(actualUsd).ok).toBe(true);
+    expect(reconcileAttempt(state, DAY, 'big', actualUsd)).toEqual({ ok: true });
+    expect(state.days[DAY].spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
+  });
+
+  it('rejects reserve above MAX_ATTEMPT_USD; reconcile caps actual over ceiling', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'too-big', MAX_ATTEMPT_USD + 1, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    reserveAttempt(state, 'hold', 0.1, DAY, CONFIG);
+    expect(reconcileAttempt(state, DAY, 'hold', MAX_ATTEMPT_USD + 1)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    expect(state.days[DAY].hardCapLocked).toBe(true);
+    expect(state.days[DAY].spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
   });
 
   it('rejects reconcile at zero or negative zero USD without releasing the hold', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'z', 0.1, DAY, CONFIG);
     const reservedBefore = state.days[DAY].reservedMicro;
-    expect(reconcileAttempt(state, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
-    expect(reconcileAttempt(state, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
     expect(state.days[DAY].reservedMicro).toBe(reservedBefore);
     expect(state.days[DAY].attempts.z.state).toBe('reserved');
   });
@@ -117,11 +143,11 @@ describe('ledgerCore reserve / reconcile', () => {
   it('rejects reconcile task override with unsafe task name', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'a1', 0.2, DAY, CONFIG, 'generate');
-    expect(reconcileAttempt(state, 'a1', 0.1, '__proto__')).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, DAY, 'a1', 0.1, '__proto__')).toEqual({ ok: false, reason: 'invalid' });
   });
 
   it('idempotent reserve retry succeeds after reservation day becomes past or bucket limit is hit', () => {
-    const reserveDay = utcDayKeyMinusDays(DAY, -1);
+    const reserveDay = DAY;
     const nowAtReserve = new Date(`${DAY}T12:00:00.000Z`);
     const state = emptyLedgerState();
     expect(
@@ -135,7 +161,6 @@ describe('ledgerCore reserve / reconcile', () => {
       }
       state.days[dayKey] = settledDay(dayKey, 1);
     }
-    expect(ledgerExceedsBucketLimit(state)).toBe(true);
     expect(
       reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowAtReserve)
     ).toEqual({ ok: true });
@@ -143,10 +168,20 @@ describe('ledgerCore reserve / reconcile', () => {
     const nowPastReservationDay = new Date(`2026-09-28T12:00:00.000Z`);
     expect(
       reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowPastReservationDay)
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: false, reason: 'stale_hold' });
+    expect(state.days[reserveDay].reservedMicro).toBe(200_000);
     expect(
       reserveAttempt(state, 'new-hold', 0.01, '2026-09-28', CONFIG, 'generate', nowPastReservationDay)
-    ).toEqual({ ok: false, reason: 'hard_cap' });
+    ).toEqual({ ok: true });
+  });
+
+  it('idempotent reserve retry rejects a different task for the same attemptId and amount', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'retry-task', 0.2, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'retry-task', 0.2, DAY, CONFIG, 'alternatives')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
   });
 
   it('rejects unsafe reserve task names', () => {
@@ -157,6 +192,22 @@ describe('ledgerCore reserve / reconcile', () => {
         reason: 'invalid',
       });
     }
+  });
+
+  it('rejects attemptId and task strings outside allowed length and charset', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a'.repeat(37), 0.1, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(reserveAttempt(state, 'a'.repeat(36), 0.1, DAY, CONFIG)).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'bad id', 0.1, DAY, CONFIG)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 't'.repeat(17))).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(reserveAttempt(state, 'ok-id2', 0.1, DAY, CONFIG, 't'.repeat(16))).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'ok-id3', 0.1, DAY, CONFIG, 'generate')).toEqual({ ok: true });
   });
 
   it('rejects reserve when spent + reserved + upper bound exceeds hard cap', () => {
@@ -197,7 +248,7 @@ describe('ledgerCore reserve / reconcile', () => {
   it('returns already_settled when re-reserving a reconciled attemptId', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'done', 0.2, DAY, CONFIG);
-    reconcileAttempt(state, 'done', 0.15);
+    reconcileAttempt(state, DAY, 'done', 0.15);
     expect(reserveAttempt(state, 'done', 0.2, DAY, CONFIG)).toEqual({
       ok: false,
       reason: 'already_settled',
@@ -218,13 +269,36 @@ describe('ledgerCore reserve / reconcile', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'big1', 0.01, DAY, CONFIG);
     reserveAttempt(state, 'big2', 0.01, DAY, CONFIG);
-    reconcileAttempt(state, 'big1', 0.01);
+    reconcileAttempt(state, DAY, 'big1', 0.01);
     const day = state.days[DAY];
     day.spentMicro = Number.MAX_SAFE_INTEGER - 500;
     day.reservedMicro = 0;
     day.attempts.big2.state = 'reserved';
-    expect(reconcileAttempt(state, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
+    expect(reconcileAttempt(state, DAY, 'big2', 0.01)).toEqual({ ok: false, reason: 'overflow' });
     expect(day.spentMicro).toBe(Number.MAX_SAFE_INTEGER - 500);
+  });
+});
+
+describe('reconcile actual over MAX_ATTEMPT_USD ceiling', () => {
+  it('records capped spend, locks hard cap, persists H, and is idempotent after reload', () => {
+    const { ledger, getStoredState } = createDeviceSpendLedgerHarness();
+    expect(ledger.reserve('ceil-1', 0.5, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(ledger.reconcile(DAY, 'ceil-1', MAX_ATTEMPT_USD + 500)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    const reloaded = getStoredState();
+    expect(reloaded?.days[DAY]?.hardCapLocked).toBe(true);
+    expect(reloaded?.days[DAY]?.spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
+    expect(ledger.reconcile(DAY, 'ceil-1', MAX_ATTEMPT_USD + 500)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    expect(ledger.reserve('blocked', 0.01, DAY, CONFIG, 'generate')).toEqual({
+      ok: false,
+      reason: 'hard_cap',
+    });
+    expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(true);
   });
 });
 
@@ -234,6 +308,15 @@ describe('ledgerCore future day keys', () => {
   it('rejects reserve on a day more than one UTC day ahead', () => {
     const state = emptyLedgerState();
     expect(reserveAttempt(state, 'a1', 0.1, '2026-09-28', CONFIG, 'unknown', NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('rejects reserve for tomorrow UTC day', () => {
+    const state = emptyLedgerState();
+    const tomorrow = utcDayKeyMinusDays(DAY, -1);
+    expect(reserveAttempt(state, 'a1', 0.1, tomorrow, CONFIG, 'generate', NOW)).toEqual({
       ok: false,
       reason: 'invalid',
     });
@@ -323,7 +406,7 @@ describe('ledgerCore retention', () => {
     };
     pruneOldDays(state, new Date(`${DAY}T00:00:00.000Z`));
     expect(state.days['bad-key']).toBeDefined();
-    expect(reserveAttempt(state, 'open', 0.2, DAY, CONFIG)).toEqual({ ok: false, reason: 'already_settled' });
+    expect(reserveAttempt(state, 'open', 0.2, DAY, CONFIG)).toEqual({ ok: true });
   });
 
   it('removes settled malformed buckets with no open attempts', () => {
@@ -354,7 +437,7 @@ describe('ledgerCore retention', () => {
     expect(state.days['1999-01-01']).toBeUndefined();
   });
 
-  it('does not delete today when 31 stale open buckets exceed the bucket limit', () => {
+  it('does not delete today when 31 stale open buckets pin spend at the money cap', () => {
     const now = new Date(`${DAY}T12:00:00.000Z`);
     const state = emptyLedgerState();
     const capMicro = 1_000_000;
@@ -388,7 +471,6 @@ describe('ledgerCore retention', () => {
 
     expect(state.days[DAY]).toBeDefined();
     expect(state.days[DAY].spentMicro).toBe(capMicro);
-    expect(ledgerExceedsBucketLimit(state)).toBe(true);
     expect(summarizeDay(state, DAY, CONFIG).hardCapReached).toBe(true);
     expect(reserveAttempt(state, 'blocked', 0.01, DAY, CONFIG, 'unknown', now)).toEqual({
       ok: false,
@@ -421,7 +503,7 @@ describe('ledgerCore retention', () => {
     expect(state.days[DAY]?.spentMicro).toBe(1_000_000);
     expect(state.days[tomorrow]).toBeDefined();
     expect(state.days[tomorrow]?.spentMicro).toBe(500);
-    expect(state.days[staleOpenKey]).toBeDefined();
+    expect(state.days[staleOpenKey]).toBeUndefined();
   });
 });
 

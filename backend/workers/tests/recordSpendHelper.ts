@@ -20,13 +20,14 @@ export async function recordSpend(
   costUSD: number,
   env: Env
 ): Promise<RecordSpendResult> {
-  const attemptId = `test-record:${task}:${costUSD}`;
+  const safeCost = String(costUSD).replace(/\./g, 'p').replace(/[^A-Za-z0-9_-]/g, 'p');
+  const attemptId = `test-record_${task}_${safeCost}`.slice(0, 36);
   const reservationDay = getTodayDateString();
   const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, reservationDay, task);
   if (!reserved.ok) {
     return { ok: false, stage: 'reserve', reason: reserved.reason ?? 'unknown' };
   }
-  const reconciled = await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
+  const reconciled = await reconcileSpend(deviceToken, reservationDay, attemptId, costUSD, env, task);
   if (!reconciled.ok) {
     return { ok: false, stage: 'reconcile', reason: reconciled.reason ?? 'unknown' };
   }
