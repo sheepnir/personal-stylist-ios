@@ -1,10 +1,10 @@
 import { hashStylistPromptModule } from "./promptContentHash.js";
-import { outfitT2V1 } from "./prompts/outfit-t2-v1.js";
+import { outfitT2D1 } from "./prompts/outfit-t2-d1.js";
 import type { StylistPromptModule } from "./promptVersionTypes.js";
 
 /** Every shipped prompt module (immutable; add new versions, do not edit in place). */
 export const STYLIST_PROMPT_MODULES: readonly StylistPromptModule[] = [
-  outfitT2V1,
+  outfitT2D1,
 ] as const;
 
 const byVersion = new Map<string, StylistPromptModule>(
@@ -12,16 +12,16 @@ const byVersion = new Map<string, StylistPromptModule>(
 );
 
 /** Primary stylist prompt for provider-backed generate (ADR-0001 §8). */
-export const CURRENT_STYLIST_PROMPT: StylistPromptModule = outfitT2V1;
+export const CURRENT_STYLIST_PROMPT: StylistPromptModule = outfitT2D1;
 
 export const CURRENT_STYLIST_PROMPT_VERSION = CURRENT_STYLIST_PROMPT.version;
 
 /**
- * Registered SHA-256 content hashes (instruction + input sections + answer types).
+ * Registered SHA-256 content hashes (instructionText + optionDescriptions + answerTypes).
  * Update only when adding a new prompt version module — never when editing text in place.
  */
 export const REGISTERED_PROMPT_CONTENT_HASHES: Readonly<Record<string, string>> = {
-  "outfit-t2-v1": "60daa6e20e291e3eb0555b8944c71dacc0afe7d235557d8d7351e576bf04ffd9",
+  "outfit-t2-d1": "55618fdacc8726610c20f0675e8c6d0c1e4d4b6868b3cc5a0017cf3e8f8feec9",
 };
 
 export class UnregisteredPromptVersionError extends Error {
@@ -52,10 +52,10 @@ export function resolveRegisteredStylistPrompt(version: string): StylistPromptMo
   if (module === undefined) {
     throw new UnregisteredPromptVersionError(version);
   }
-  const expected = REGISTERED_PROMPT_CONTENT_HASHES[version];
-  if (expected === undefined) {
+  if (!Object.hasOwn(REGISTERED_PROMPT_CONTENT_HASHES, version)) {
     throw new UnregisteredPromptVersionError(version);
   }
+  const expected = REGISTERED_PROMPT_CONTENT_HASHES[version];
   const actual = hashStylistPromptModule(module);
   if (expected !== actual) {
     throw new PromptRegistryHashMismatchError(version, expected, actual);
@@ -70,8 +70,10 @@ export function assertPromptRegistryIntegrity(): void {
   }
 }
 
-for (const version of STYLIST_PROMPT_MODULES.map((m) => m.version)) {
-  if (!(version in REGISTERED_PROMPT_CONTENT_HASHES)) {
-    throw new Error(`Prompt module ${version} has no REGISTERED_PROMPT_CONTENT_HASHES entry.`);
+for (const module of STYLIST_PROMPT_MODULES) {
+  if (!Object.hasOwn(REGISTERED_PROMPT_CONTENT_HASHES, module.version)) {
+    throw new Error(
+      `Prompt module ${module.version} has no REGISTERED_PROMPT_CONTENT_HASHES entry.`,
+    );
   }
 }

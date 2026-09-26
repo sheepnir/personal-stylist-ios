@@ -16,15 +16,15 @@ export function stableStringify(value: unknown): string {
     .join(",")}}`;
 }
 
-/** SHA-256 of instruction text, input sections, and answer types (ADR-0001 §8). */
+/** SHA-256 of instructionText, optionDescriptions, and answerTypes (ADR-0001 §8; excludes version). */
 export function hashStylistPromptVersionContent(
   instructionText: string,
-  inputSections: StylistPromptModule["inputSections"],
+  optionDescriptions: StylistPromptModule["optionDescriptions"],
   answerTypes: unknown,
 ): string {
   const material = stableStringify({
     instructionText,
-    inputSections,
+    optionDescriptions,
     answerTypes,
   });
   return createHash("sha256").update(material, "utf8").digest("hex");
@@ -33,7 +33,7 @@ export function hashStylistPromptVersionContent(
 export function hashStylistPromptModule(module: StylistPromptModule): string {
   return hashStylistPromptVersionContent(
     module.instructionText,
-    module.inputSections,
+    module.optionDescriptions,
     module.answerTypes,
   );
 }

@@ -3,22 +3,19 @@
  * Pure definitions — no network, no chat roles or message arrays.
  */
 
-/**
- * Describes a logical input section for documentation and hashing only.
- * `sectionKey` is NOT a Decisions question id (those are owned by A-2: slot_<SLOT>, etc.).
- */
-export interface StylistPromptInputSection {
-  readonly sectionKey: string;
+/** Describes typed choice options for one slot question (`slot_<SLOT>`). */
+export interface StylistPromptOptionDescription {
+  readonly questionId: string;
   readonly description: string;
 }
 
 /**
- * Immutable prompt version: instruction text, input-section descriptors, and answer types.
- * Hashed together for the registry guard (ADR-0001 §8).
+ * Immutable prompt version: instruction text, option descriptions, and answer types.
+ * Content hash covers these three fields only (not `version`) — ADR-0001 §8.
  */
 export interface StylistPromptModule {
   readonly version: string;
   readonly instructionText: string;
-  readonly inputSections: readonly StylistPromptInputSection[];
+  readonly optionDescriptions: readonly StylistPromptOptionDescription[];
   readonly answerTypes: unknown;
 }

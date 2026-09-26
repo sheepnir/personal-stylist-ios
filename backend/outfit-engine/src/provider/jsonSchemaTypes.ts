@@ -6,7 +6,7 @@ export interface JSONSchema7 {
   properties?: Record<string, JSONSchema7>;
   items?: JSONSchema7;
   required?: readonly string[];
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | JSONSchema7;
   maxLength?: number;
   maxItems?: number;
   minimum?: number;

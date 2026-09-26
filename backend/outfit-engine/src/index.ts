@@ -71,11 +71,11 @@ export {
   assertPromptRegistryIntegrity,
   hashStylistPromptModule,
   buildProviderSuccessGeneration,
-  outfitT2V1,
+  outfitT2D1,
 } from "./provider/index.js";
 export type {
   StylistPromptModule,
-  StylistPromptInputSection,
+  StylistPromptOptionDescription,
   ProviderSuccessGenerationMeta,
   BuildProviderSuccessGenerationOptions,
 } from "./provider/index.js";

@@ -1,6 +1,6 @@
 export type {
   StylistPromptModule,
-  StylistPromptInputSection,
+  StylistPromptOptionDescription,
 } from "./promptVersionTypes.js";
 export {
   hashStylistPromptModule,
@@ -19,10 +19,14 @@ export {
   PromptRegistryHashMismatchError,
 } from "./registry.js";
 export {
-  outfitT2V1,
-  OUTFIT_T2_V1_ANSWER_TYPES,
-  OUTFIT_T2_V1_INPUT_SECTIONS,
-} from "./prompts/outfit-t2-v1.js";
+  outfitT2D1,
+  OUTFIT_T2_D1_ANSWER_TYPES,
+  OUTFIT_T2_D1_OPTION_DESCRIPTIONS,
+} from "./prompts/outfit-t2-d1.js";
+export {
+  slotChoiceQuestionId,
+  SLOT_CHOICE_QUESTION_SLOTS,
+} from "./stylistPromptSlotQuestionIds.js";
 export {
   buildProviderSuccessGeneration,
   type ProviderSuccessGenerationMeta,

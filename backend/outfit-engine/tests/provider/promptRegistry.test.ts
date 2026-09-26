@@ -3,16 +3,17 @@ import * as promptContentHash from "../../src/provider/promptContentHash.js";
 import {
   assertPromptRegistryIntegrity,
   buildProviderSuccessGeneration,
-  CURRENT_STYLIST_PROMPT,
   CURRENT_STYLIST_PROMPT_VERSION,
   getStylistPromptByVersion,
   hashStylistPromptModule,
   hashStylistPromptVersionContent,
-  outfitT2V1,
-  OUTFIT_T2_V1_ANSWER_TYPES,
-  OUTFIT_T2_V1_INPUT_SECTIONS,
+  outfitT2D1,
+  OUTFIT_T2_D1_ANSWER_TYPES,
+  OUTFIT_T2_D1_OPTION_DESCRIPTIONS,
   REGISTERED_PROMPT_CONTENT_HASHES,
   resolveRegisteredStylistPrompt,
+  slotChoiceQuestionId,
+  SLOT_CHOICE_QUESTION_SLOTS,
   UnregisteredPromptVersionError,
   PromptRegistryHashMismatchError,
 } from "../../src/provider/index.js";
@@ -57,65 +58,95 @@ function assertNoChatCompletionFields(value: unknown, seen = new WeakSet<object>
 }
 
 describe("prompt registry (ADR-0001 §8)", () => {
-  it("registered hash matches instruction, input sections, and answer types", () => {
+  it("registered hash matches instructionText, optionDescriptions, and answerTypes", () => {
     expect(() => assertPromptRegistryIntegrity()).not.toThrow();
   });
 
+  it("content hash excludes version string", () => {
+    const base = hashStylistPromptModule(outfitT2D1);
+    const withVersionInContent = hashStylistPromptVersionContent(
+      outfitT2D1.instructionText,
+      outfitT2D1.optionDescriptions,
+      { ...(outfitT2D1.answerTypes as object), version: outfitT2D1.version },
+    );
+    expect(withVersionInContent).not.toBe(base);
+    expect(
+      hashStylistPromptVersionContent(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toBe(base);
+  });
+
   it("fails when template content changes without a version bump", () => {
-    const actual = hashStylistPromptModule(outfitT2V1);
-    const registered = REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-v1"];
+    const actual = hashStylistPromptModule(outfitT2D1);
+    const registered = REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"];
     expect(registered).toBeTruthy();
     expect(actual).toBe(registered);
 
     const tampered = hashStylistPromptVersionContent(
-      `${outfitT2V1.instructionText}\n`,
-      outfitT2V1.inputSections,
-      outfitT2V1.answerTypes,
+      `${outfitT2D1.instructionText}\n`,
+      outfitT2D1.optionDescriptions,
+      outfitT2D1.answerTypes,
     );
     expect(tampered).not.toBe(registered);
   });
 
-  it("CURRENT_STYLIST_PROMPT resolves to the repo module", () => {
-    expect(CURRENT_STYLIST_PROMPT_VERSION).toBe("outfit-t2-v1");
-    expect(getStylistPromptByVersion("outfit-t2-v1")).toBe(outfitT2V1);
+  it("CURRENT_STYLIST_PROMPT resolves outfit-t2-d1 only (outfit-t2-v1 removed)", () => {
+    expect(CURRENT_STYLIST_PROMPT_VERSION).toBe("outfit-t2-d1");
+    expect(getStylistPromptByVersion("outfit-t2-d1")).toBe(outfitT2D1);
+    expect(getStylistPromptByVersion("outfit-t2-v1")).toBeUndefined();
     expect(getStylistPromptByVersion("missing")).toBeUndefined();
   });
 
-  it("uses Decisions API prompt fields, not chat completion messages", () => {
-    expect(outfitT2V1.instructionText.length).toBeGreaterThan(0);
-    expect(outfitT2V1.inputSections.length).toBeGreaterThan(0);
-    expect(outfitT2V1.answerTypes).toBeTruthy();
-    assertNoChatCompletionFields(outfitT2V1);
+  it("registry lookups use Object.hasOwn (prototype pollution safe)", () => {
+    expect(() => resolveRegisteredStylistPrompt("toString")).toThrow(
+      UnregisteredPromptVersionError,
+    );
+    expect(Object.hasOwn(REGISTERED_PROMPT_CONTENT_HASHES, "outfit-t2-d1")).toBe(
+      true,
+    );
   });
 
-  it("inputSections use sectionKey labels, not Decisions question ids", () => {
-    for (const section of outfitT2V1.inputSections) {
-      expect(section.sectionKey).not.toMatch(/^slot_/);
-      expect(section.sectionKey).not.toBe("candidates");
-      expect(section.sectionKey).not.toBe("context");
-      expect(section.sectionKey).not.toBe("profile");
-      expect(section.sectionKey).not.toBe("options");
+  it("uses Decisions typed answers, not chat completion messages", () => {
+    assertNoChatCompletionFields(outfitT2D1);
+    expect(outfitT2D1.instructionText).not.toMatch(/\{g_/);
+    expect(outfitT2D1.instructionText.toLowerCase()).not.toContain("gapreason");
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("rationale");
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("gapReason");
+  });
+
+  it("answerTypes keys mirror A-2 slot_<SLOT> contract (no accessory ids)", () => {
+    const keys = Object.keys(OUTFIT_T2_D1_ANSWER_TYPES).sort();
+    const expected = SLOT_CHOICE_QUESTION_SLOTS.map((slot) =>
+      slotChoiceQuestionId(slot),
+    ).sort();
+    expect(keys).toEqual(expected);
+    expect(keys.some((k) => k.startsWith("slot_ACCESSORY"))).toBe(false);
+    for (const slot of SLOT_CHOICE_QUESTION_SLOTS) {
+      expect(OUTFIT_T2_D1_ANSWER_TYPES[slotChoiceQuestionId(slot)]).toBeDefined();
+      const desc = OUTFIT_T2_D1_OPTION_DESCRIPTIONS.find(
+        (d) => d.questionId === slotChoiceQuestionId(slot),
+      );
+      expect(desc).toBeDefined();
     }
   });
 
   it("prompt exports are deep-frozen", () => {
-    expect(Object.isFrozen(outfitT2V1)).toBe(true);
-    expect(Object.isFrozen(outfitT2V1.inputSections)).toBe(true);
-    expect(Object.isFrozen(outfitT2V1.answerTypes)).toBe(true);
-    expect(Object.isFrozen(OUTFIT_T2_V1_INPUT_SECTIONS)).toBe(true);
-    expect(Object.isFrozen(OUTFIT_T2_V1_ANSWER_TYPES)).toBe(true);
+    expect(Object.isFrozen(outfitT2D1)).toBe(true);
+    expect(Object.isFrozen(outfitT2D1.optionDescriptions)).toBe(true);
+    expect(Object.isFrozen(outfitT2D1.answerTypes)).toBe(true);
+    expect(Object.isFrozen(OUTFIT_T2_D1_OPTION_DESCRIPTIONS)).toBe(true);
+    expect(Object.isFrozen(OUTFIT_T2_D1_ANSWER_TYPES)).toBe(true);
 
-    const hashBefore = hashStylistPromptModule(outfitT2V1);
-
-    expect(() => {
-      (outfitT2V1 as { instructionText: string }).instructionText = "tampered";
-    }).toThrow();
+    const hashBefore = hashStylistPromptModule(outfitT2D1);
 
     expect(() => {
-      (OUTFIT_T2_V1_ANSWER_TYPES as { type?: string }).type = "string";
+      (outfitT2D1 as { instructionText: string }).instructionText = "tampered";
     }).toThrow();
 
-    expect(hashStylistPromptModule(outfitT2V1)).toBe(hashBefore);
+    expect(hashStylistPromptModule(outfitT2D1)).toBe(hashBefore);
   });
 });
 
@@ -142,8 +173,8 @@ describe("generation.promptVersion on every path", () => {
       candidateSetHash: "abc123",
       latencyMs: 42,
     });
-    expect(meta.promptVersion).toBe("outfit-t2-v1");
-    expect(getStylistPromptByVersion(meta.promptVersion)).toBe(outfitT2V1);
+    expect(meta.promptVersion).toBe("outfit-t2-d1");
+    expect(getStylistPromptByVersion(meta.promptVersion)).toBe(outfitT2D1);
     expect(meta.modelId).toBe("mock/stylist-v0");
     expect(meta.candidateSetHash).toBe("abc123");
     expect(meta.fallbackLevel).toBe("NONE");
@@ -167,14 +198,14 @@ describe("generation.promptVersion on every path", () => {
     const spy = vi
       .spyOn(promptContentHash, "hashStylistPromptModule")
       .mockReturnValue("deadbeef");
-    expect(() => resolveRegisteredStylistPrompt("outfit-t2-v1")).toThrow(
+    expect(() => resolveRegisteredStylistPrompt("outfit-t2-d1")).toThrow(
       PromptRegistryHashMismatchError,
     );
     expect(() =>
       buildProviderSuccessGeneration({
         candidateSetHash: "x",
         latencyMs: 1,
-        promptVersion: "outfit-t2-v1",
+        promptVersion: "outfit-t2-d1",
       }),
     ).toThrow(PromptRegistryHashMismatchError);
     spy.mockRestore();

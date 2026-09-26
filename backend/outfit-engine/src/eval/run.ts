@@ -29,6 +29,7 @@ import {
   resolveScenarioIds,
   type ScenarioFile,
 } from "./scenarios.js";
+import { promptVersionForEvalArm } from "./promptVersion.js";
 import type {
   EvalReport,
   RunEvalOptions,
@@ -105,6 +106,7 @@ function evaluateAlternativesSwapRerank(
         exactOutfitMatch: null,
         failures: ["alternatives_swap_rerank fixture missing steps[1] and steps[2]"],
         actualSummary: {},
+        promptVersion: promptVersionForEvalArm("deterministic"),
       },
       fingerprint: "missing-steps",
     };
@@ -135,6 +137,7 @@ function evaluateAlternativesSwapRerank(
         exactOutfitMatch: null,
         failures,
         actualSummary: { problemCode: step1Raw.code },
+        promptVersion: promptVersionForEvalArm("deterministic"),
       },
       fingerprint: JSON.stringify({ problem: step1Raw.code }),
     };
@@ -205,6 +208,7 @@ function evaluateAlternativesSwapRerank(
           step1RankedIds: step1.alternatives.map((a) => a.garmentId),
           step1EmptyReason: step1.emptyReason ?? null,
         },
+        promptVersion: promptVersionForEvalArm("deterministic"),
       },
       fingerprint: alternativesFingerprint(step1, {
         slot: step2Slot,
@@ -279,6 +283,7 @@ function evaluateAlternativesSwapRerank(
         step2EmptyReason: step2.emptyReason ?? null,
         aStaleOrderDiffers: aStale,
       },
+      promptVersion: promptVersionForEvalArm("deterministic"),
     },
     fingerprint,
   };
@@ -302,6 +307,7 @@ function evaluateGenerateOnce(
         exactOutfitMatch: null,
         failures: ["scenario missing expected (not a generate fixture)"],
         actualSummary: {},
+        promptVersion: promptVersionForEvalArm("deterministic"),
       },
       fingerprint: "missing-expected",
     };
