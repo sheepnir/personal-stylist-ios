@@ -35,3 +35,12 @@ ADR-0001 and the acceptance criteria on the open Sprint 6 issues. Closing an iss
 | Date | Change |
 |---|---|
 | 2026-09-26 | Initial record. |
+| 2026-09-26 | Founder exception for one stale review. See the amendment below. |
+
+## Amendment 2026-09-26 — one stale review
+
+The decision text above still says this decision does not dismiss a blocking review. That remains the rule.
+
+The founder later instructed a one-time dismissal of GitHub review 5327380966 on pull request #64. That review was changes-requested on commit `23de1e4`. It was dismissed only after commit `1f486de` had an independent Cursor Composer review approval and a separate Cursor Grok QA pass. The public record is the comment on that pull request.
+
+That dismissal is not an approval from `shpdev-reviewer`. Review in this window is still only Cursor Grok and Cursor Composer, alternating by role. That is not a cross-family review. This exception does not authorize dismissing any later blocking review, an admin merge, or treating a future changes-requested review as cleared.
