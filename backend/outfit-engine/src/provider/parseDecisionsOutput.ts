@@ -62,10 +62,14 @@ export type ParseDecisionsBodyResult =
   | { ok: true; value: ParsedDecisionsResponse }
   | { ok: false; cause: "OUTPUT_PARSE" | "OUTPUT_SCHEMA" };
 
+function utf8ByteLength(body: string): number {
+  return new TextEncoder().encode(body).length;
+}
+
 export function parseDecisionsResponseBody(
   body: string,
 ): ParseDecisionsBodyResult {
-  if (body.length > MAX_PROVIDER_RESPONSE_BYTES) {
+  if (utf8ByteLength(body) > MAX_PROVIDER_RESPONSE_BYTES) {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }
   if (answersObjectHasDuplicateKeys(body)) {
