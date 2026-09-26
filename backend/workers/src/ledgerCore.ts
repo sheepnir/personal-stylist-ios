@@ -1,8 +1,9 @@
 /**
- * Pure spend-ledger logic (reserve / reconcile / summary / prune).
+ * Pure spend-ledger logic (reserve / reconcile / summary / prune / unknown aging).
  * Used inside DeviceSpendLedger transactions and unit-tested without workerd.
  */
 
+import type { CostSource } from './costSource.js';
 import type { SpendConfig } from './types.js';
 
 export type AttemptState = 'reserved' | 'reconciled' | 'unknown';
@@ -15,6 +16,9 @@ export interface AttemptEntry {
   createdAt: string;
   reconciledAt?: string;
   generationId?: string;
+  /** Lazy CostSource lookups for unknown outcomes (#13-b). */
+  costLookupCount?: number;
+  lastCostLookupAt?: string;
 }
 
 export interface DayRecord {
@@ -31,6 +35,21 @@ export interface LedgerState {
 }
 
 export const LEDGER_RETENTION_DAYS = 31;
+
+/** ADR-0001 §12 / D-34: unknown reservations count as spent after 24 h. */
+export const UNKNOWN_OUTCOME_AGING_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Increasing intervals between lazy CostSource lookups (first lookup on first ledger access).
+ */
+export const COST_LOOKUP_BACKOFF_MS = [
+  0,
+  60_000,
+  5 * 60_000,
+  15 * 60_000,
+  60 * 60_000,
+  4 * 60 * 60_000,
+];
 
 export interface ReserveResult {
   ok: boolean;
@@ -132,7 +151,7 @@ export function reconcileAttempt(
     if (entry.state === 'reconciled' && entry.actualUSD === actualUSD) {
       return { ok: true };
     }
-    if (entry.state !== 'reserved') {
+    if (entry.state !== 'reserved' && entry.state !== 'unknown') {
       return { ok: false, reason: 'invalid' };
     }
 
@@ -145,6 +164,95 @@ export function reconcileAttempt(
   }
 
   return { ok: false, reason: 'not_found' };
+}
+
+export interface MarkUnknownResult {
+  ok: boolean;
+  reason?: 'not_found' | 'invalid';
+}
+
+/** Move a reserved attempt to unknown; funds stay reserved until reconcile or aging. */
+export function markAttemptUnknown(
+  state: LedgerState,
+  attemptId: string,
+  generationId?: string
+): MarkUnknownResult {
+  if (!attemptId) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  for (const day of Object.values(state.days)) {
+    const entry = day.attempts[attemptId];
+    if (!entry) continue;
+
+    if (entry.state === 'unknown') {
+      if (generationId !== undefined && entry.generationId !== undefined && entry.generationId !== generationId) {
+        return { ok: false, reason: 'invalid' };
+      }
+      if (generationId !== undefined) entry.generationId = generationId;
+      return { ok: true };
+    }
+    if (entry.state !== 'reserved') {
+      return { ok: false, reason: 'invalid' };
+    }
+
+    entry.state = 'unknown';
+    if (generationId !== undefined) entry.generationId = generationId;
+    return { ok: true };
+  }
+
+  return { ok: false, reason: 'not_found' };
+}
+
+function finalizeAgedUnknown(day: DayRecord, entry: AttemptEntry, now: Date): void {
+  day.reservedUSD -= entry.upperBoundUSD;
+  day.spentUSD += entry.upperBoundUSD;
+  entry.state = 'reconciled';
+  entry.actualUSD = entry.upperBoundUSD;
+  entry.reconciledAt = now.toISOString();
+}
+
+function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {
+  if (!entry.generationId) return false;
+
+  const createdMs = Date.parse(entry.createdAt);
+  const ageMs = now.getTime() - createdMs;
+  if (ageMs >= UNKNOWN_OUTCOME_AGING_MS) return false;
+
+  const count = entry.costLookupCount ?? 0;
+  const backoff =
+    COST_LOOKUP_BACKOFF_MS[Math.min(count, COST_LOOKUP_BACKOFF_MS.length - 1)];
+  const anchorMs =
+    count === 0 ? createdMs : Date.parse(entry.lastCostLookupAt ?? entry.createdAt);
+  return now.getTime() >= anchorMs + backoff;
+}
+
+function processUnknownAttempts(state: LedgerState, now: Date, costSource: CostSource): void {
+  for (const day of Object.values(state.days)) {
+    for (const entry of Object.values(day.attempts)) {
+      if (entry.state !== 'unknown') continue;
+
+      const ageMs = now.getTime() - Date.parse(entry.createdAt);
+      if (ageMs >= UNKNOWN_OUTCOME_AGING_MS) {
+        finalizeAgedUnknown(day, entry, now);
+        continue;
+      }
+
+      if (!shouldAttemptCostLookup(entry, now)) continue;
+
+      entry.lastCostLookupAt = now.toISOString();
+      entry.costLookupCount = (entry.costLookupCount ?? 0) + 1;
+
+      const generationId = entry.generationId;
+      if (!generationId) continue;
+
+      const lookup = costSource.lookup(generationId, entry.attemptId);
+      if (lookup.outcome === 'known' && lookup.costUSD !== undefined) {
+        reconcileAttempt(state, entry.attemptId, lookup.costUSD);
+      }
+      // `unknown` and `error` leave the reservation in place (failed reconciliation never releases).
+    }
+  }
 }
 
 export function summarizeDay(
@@ -164,8 +272,11 @@ export function summarizeDay(
   };
 }
 
-/** Placeholder for #13-b; prunes only today via {@link pruneOldDays}. */
-export function ageLedger(state: LedgerState, now: Date): void {
+/**
+ * Prune stale days, age unknown outcomes at 24 h, and lazily reconcile via {@link CostSource}.
+ */
+export function ageLedger(state: LedgerState, now: Date, costSource: CostSource): void {
+  processUnknownAttempts(state, now, costSource);
   pruneOldDays(state, now);
 }
 

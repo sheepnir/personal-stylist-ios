@@ -2,9 +2,11 @@
  * Shared in-memory KV for Workers unit tests.
  */
 
+import { NO_COST_SOURCE } from '../src/costSource.js';
 import {
   ageLedger,
   emptyLedgerState,
+  markAttemptUnknown,
   reconcileAttempt,
   reserveAttempt,
   summarizeDay,
@@ -74,21 +76,26 @@ export function spendLedger(): DurableObjectNamespace {
         config: SpendConfig
       ) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config);
         return result;
       },
       reconcile: async (attemptId: string, actualUSD: number) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         return reconcileAttempt(state, attemptId, actualUSD);
       },
       summary: async (day: string, config: SpendConfig) => {
         const state = stateFor(deviceId);
-        ageLedger(state, new Date());
+        ageLedger(state, new Date(), NO_COST_SOURCE);
         return summarizeDay(state, day, config);
       },
-      markUnknown: async () => ({ ok: false }),
+      markUnknown: async (attemptId: string, generationId?: string) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        const result = markAttemptUnknown(state, attemptId, generationId);
+        return result;
+      },
     }),
   } as unknown as DurableObjectNamespace;
 }

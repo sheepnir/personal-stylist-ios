@@ -73,7 +73,7 @@ SOFT_THRESHOLD_USD = "0.50"
 ```
 
 Invalid or non-positive values fall back to the defaults; the soft threshold is clamped to the cap.
-Spend is tracked in a **per-device Durable Object** (`DeviceSpendLedger`, binding `SPEND_LEDGER`): one atomic upper-bound reservation per paid attempt, reconciled to actual cost afterward. The legacy shared `DEVICE_TOKEN` has no ledger (deterministic path only). The old `USAGE_LEDGER` KV namespace remains bound but is not read for spend.
+Spend is tracked in a **per-device Durable Object** (`DeviceSpendLedger`, binding `SPEND_LEDGER`): one atomic upper-bound reservation per paid attempt, reconciled to actual cost afterward. Unknown outcomes stay reserved, are reconciled lazily via a `CostSource` when a generation id exists, and age to spent at the reserved upper bound **24 hours** after the reservation (ADR-0001 §12). The legacy shared `DEVICE_TOKEN` has no ledger (deterministic path only). The old `USAGE_LEDGER` KV namespace remains bound but is not read for spend.
 
 Optional `ATTRIBUTION_URL` sets the `HTTP-Referer` sent to the model provider (default
 `https://example.invalid`).

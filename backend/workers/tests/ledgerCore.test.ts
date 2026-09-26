@@ -3,14 +3,17 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import type { CostSource } from '../src/costSource.js';
 import {
   ageLedger,
   emptyLedgerState,
+  markAttemptUnknown,
   pruneOldDays,
   reconcileAttempt,
   reserveAttempt,
   summarizeDay,
   LEDGER_RETENTION_DAYS,
+  UNKNOWN_OUTCOME_AGING_MS,
 } from '../src/ledgerCore.js';
 
 const DAY = '2026-09-26';
@@ -98,7 +101,114 @@ describe('ledgerCore retention', () => {
       attempts: {},
       tasks: {},
     };
-    ageLedger(state, new Date(`${DAY}T00:00:00.000Z`));
+    ageLedger(state, new Date(`${DAY}T00:00:00.000Z`), { lookup: () => ({ outcome: 'unknown' }) });
     expect(state.days['1999-12-31']).toBeUndefined();
+  });
+});
+
+describe('ledgerCore unknown outcomes (#13-b)', () => {
+  const noopCost: CostSource = { lookup: () => ({ outcome: 'unknown' }) };
+
+  it('keeps funds reserved when an outcome is marked unknown', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.4, DAY, CONFIG);
+    expect(markAttemptUnknown(state, 'a1', 'gen-1')).toEqual({ ok: true });
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.reservedUSD).toBeCloseTo(0.4);
+    expect(summary.spentUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.state).toBe('unknown');
+  });
+
+  it('reconciles from mock CostSource when cost becomes known', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.4, DAY, CONFIG);
+    markAttemptUnknown(state, 'a1', 'gen-lookup');
+
+    const base = new Date(`${DAY}T12:00:00.000Z`);
+    state.days[DAY]!.attempts.a1.createdAt = new Date(`${DAY}T11:00:00.000Z`).toISOString();
+    const costSource: CostSource = {
+      lookup: (generationId, attemptId) => {
+        expect(generationId).toBe('gen-lookup');
+        expect(attemptId).toBe('a1');
+        return { outcome: 'known', costUSD: 0.09 };
+      },
+    };
+    ageLedger(state, base, costSource);
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.09);
+    expect(summary.reservedUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.state).toBe('reconciled');
+  });
+
+  it('does not release funds when CostSource returns error', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.35, DAY, CONFIG);
+    markAttemptUnknown(state, 'a1', 'gen-fail');
+
+    const base = new Date(`${DAY}T12:00:00.000Z`);
+    ageLedger(state, base, { lookup: () => ({ outcome: 'error' }) });
+
+    let summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.reservedUSD).toBeCloseTo(0.35);
+    expect(summary.spentUSD).toBeCloseTo(0);
+
+    ageLedger(state, new Date(base.getTime() + 60_000), { lookup: () => ({ outcome: 'error' }) });
+    summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.reservedUSD).toBeCloseTo(0.35);
+  });
+
+  it('ages unknown to spent at upper bound 24 h after reservation', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.5, DAY, CONFIG);
+    markAttemptUnknown(state, 'a1');
+
+    const reservedAt = new Date(`${DAY}T10:00:00.000Z`);
+    state.days[DAY]!.attempts.a1.createdAt = reservedAt.toISOString();
+
+    const afterAging = new Date(reservedAt.getTime() + UNKNOWN_OUTCOME_AGING_MS + 1_000);
+    ageLedger(state, afterAging, noopCost);
+
+    const summary = summarizeDay(state, DAY, CONFIG);
+    expect(summary.spentUSD).toBeCloseTo(0.5);
+    expect(summary.reservedUSD).toBeCloseTo(0);
+    expect(state.days[DAY]?.attempts.a1.actualUSD).toBeCloseTo(0.5);
+  });
+
+  it('counts aged spend against the ledger day of the reservation', () => {
+    const reserveDay = '2026-09-25';
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.3, reserveDay, CONFIG);
+    markAttemptUnknown(state, 'a1');
+
+    const reservedAt = new Date(`${reserveDay}T23:00:00.000Z`);
+    state.days[reserveDay]!.attempts.a1.createdAt = reservedAt.toISOString();
+
+    const afterAging = new Date(reservedAt.getTime() + UNKNOWN_OUTCOME_AGING_MS + 5_000);
+    ageLedger(state, afterAging, noopCost);
+
+    expect(summarizeDay(state, reserveDay, CONFIG).spentUSD).toBeCloseTo(0.3);
+    expect(summarizeDay(state, '2026-09-26', CONFIG).spentUSD).toBeCloseTo(0);
+  });
+
+  it('ages to spent at 24 h when there is no generation id to look up', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'timeout-1', 0.22, DAY, CONFIG);
+    markAttemptUnknown(state, 'timeout-1');
+
+    const reservedAt = new Date(`${DAY}T08:00:00.000Z`);
+    state.days[DAY]!.attempts['timeout-1'].createdAt = reservedAt.toISOString();
+
+    const spy: CostSource = {
+      lookup: () => {
+        throw new Error('must not call CostSource without generation id');
+      },
+    };
+    const afterAging = new Date(reservedAt.getTime() + UNKNOWN_OUTCOME_AGING_MS);
+    ageLedger(state, afterAging, spy);
+
+    expect(summarizeDay(state, DAY, CONFIG).spentUSD).toBeCloseTo(0.22);
+    expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBeCloseTo(0);
   });
 });

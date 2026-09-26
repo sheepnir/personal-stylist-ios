@@ -1,12 +1,15 @@
 import { DurableObject } from 'cloudflare:workers';
+import { NO_COST_SOURCE } from './costSource.js';
 import type { Env, SpendConfig } from './types.js';
 import {
   ageLedger,
   emptyLedgerState,
+  markAttemptUnknown,
   reconcileAttempt,
   reserveAttempt,
   summarizeDay,
   type LedgerState,
+  type MarkUnknownResult,
   type ReconcileResult,
   type ReserveResult,
   type DaySummary,
@@ -27,7 +30,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   /** Lazy aging hook (#13-b extends this); always prunes stale day buckets. */
   private touch(now = new Date()): LedgerState {
     const state = this.loadState();
-    ageLedger(state, now);
+    ageLedger(state, now, NO_COST_SOURCE);
     return state;
   }
 
@@ -54,9 +57,13 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     });
   }
 
-  /** Reserved for #13-b — not implemented in #13-a. */
-  markUnknown(_attemptId: string, _generationId?: string): { ok: boolean } {
-    return { ok: false };
+  markUnknown(attemptId: string, generationId?: string): MarkUnknownResult {
+    return this.ctx.storage.transactionSync(() => {
+      const state = this.touch();
+      const result = markAttemptUnknown(state, attemptId, generationId);
+      if (result.ok) this.saveState(state);
+      return result;
+    });
   }
 
   summary(day: string, config: SpendConfig): DaySummary {
