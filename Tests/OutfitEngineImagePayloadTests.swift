@@ -43,9 +43,19 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         String(String.UnicodeScalarView(s.unicodeScalars.drop { ecmaScriptWhitespace.contains($0.value) }))
     }
 
+    private static func isWorkerDefaultIgnorable(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        if v == 0x00ad || v == 0x034f || v == 0x180e || v == 0xfeff { return true }
+        if (0x200b...0x200f).contains(v) { return true }
+        if (0x2060...0x206f).contains(v) { return true }
+        if (0xfe00...0xfe0f).contains(v) { return true }
+        return scalar.properties.generalCategory == .format
+    }
+
     private static func normalizeWorkerKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
+            if isWorkerDefaultIgnorable(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
             } else if scalar.value != 0x5F && scalar.value != 0x2D {
@@ -258,7 +268,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
             ["privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1"]],
         ]))
         XCTAssertNotNil(Self.workerImageFinding(in: [
-            "wardrobe": [["privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1"]]]],
+            "wardrobe": [["privacyConsent": ["wardrobeImagesAcceptedAt": "2026-09-20T12:00:00Z", "policyVersion": "1"]]],
         ]))
     }
 
@@ -383,16 +393,30 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     func testCaseFoldingIsASCIIOnly() {
-        // `ſ` (U+017F) does not fold to `s` under the JS `i` flag, so the Worker keeps this key.
-        XCTAssertFalse(OutfitEngineClient.isImageBearingKey("maſterimage"))
-        XCTAssertEqual(OutfitEngineClient.strippingImagePayload(["maſterimage": 1])["maſterimage"] as? Int, 1)
-        XCTAssertNil(Self.workerImageFinding(in: ["maſterimage": 1]))
+        // `ſ` (U+017F) does not fold to `s` under the JS `i` flag; segment has no forbidden token.
+        XCTAssertFalse(OutfitEngineClient.isImageBearingKey("maſterlabel"))
+        XCTAssertEqual(OutfitEngineClient.strippingImagePayload(["maſterlabel": 1])["maſterlabel"] as? Int, 1)
+        XCTAssertNil(Self.workerImageFinding(in: ["maſterlabel": 1]))
+        // ASCII `image` substring is still matched after normalization.
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey("maſterimage"))
+        XCTAssertNil(OutfitEngineClient.strippingImagePayload(["maſterimage": 1])["maſterimage"])
+        XCTAssertNotNil(Self.workerImageFinding(in: ["maſterimage": 1]))
         // ASCII case still folds on both sides.
         XCTAssertTrue(OutfitEngineClient.isImageBearingKey("MASTERIMAGE"))
         XCTAssertTrue(OutfitEngineClient.looksLikeImageData("DATA:IMAGE/PNG;base64,AAAA"))
         XCTAssertTrue(OutfitEngineClient.looksLikeImageData("IVBORW0KGGO"))
         // Kelvin sign (U+212A) is not ASCII `k`.
         XCTAssertFalse(OutfitEngineClient.looksLikeImageData("iVBORw0\u{212A}Ggo"))
+    }
+
+    func testDefaultIgnorableCharactersStrippedBeforeTokenMatch() {
+        let zwspKey = "im\u{200B}age"
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(zwspKey))
+        XCTAssertNil(OutfitEngineClient.strippingImagePayload([zwspKey: 1])[zwspKey])
+        XCTAssertNotNil(Self.workerImageFinding(in: [zwspKey: 1]))
+        let bomKey = "photo\u{FEFF}Url"
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(bomKey))
+        XCTAssertNotNil(Self.workerImageFinding(in: [bomKey: 1]))
     }
 
     // MARK: (d) the bodies the client actually encodes carry nothing image-bearing

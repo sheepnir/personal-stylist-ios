@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / "fixtures/image-guard/corpus.json"
+WORKER_KEY = ROOT / "backend/workers/src/imageGuardKey.ts"
 WORKER = ROOT / "backend/workers/src/validation.ts"
 WORKER_CONSENT = ROOT / "backend/workers/src/imageGuardConsent.ts"
 CLIENT = ROOT / "App/OutfitEngineClient.swift"
@@ -88,7 +89,7 @@ def run_worker_vitest_corpus() -> None:
 
 
 def main() -> int:
-    worker_tokens = extract_tokens(WORKER, WORKER_TOKENS)
+    worker_tokens = extract_tokens(WORKER_KEY, WORKER_TOKENS)
     client_tokens = extract_tokens(CLIENT, CLIENT_TOKENS)
     worker_segments = extract_segments(WORKER, WORKER_CONSENT_SEGMENTS)
     client_segments = extract_segments(CLIENT, CLIENT_CONSENT_SEGMENTS)

@@ -15,6 +15,17 @@ import { hashToken } from './usage.js';
 import {
   isAllowedWardrobeImagesAcceptedAtValue,
 } from './imageGuardConsent.js';
+import {
+  FORBIDDEN_IMAGE_KEY_TOKENS,
+  normalizeImageGuardKey,
+  normalizedKeyContainsForbiddenImageToken,
+} from './imageGuardKey.js';
+
+export {
+  FORBIDDEN_IMAGE_KEY_TOKENS,
+  normalizeImageGuardKey,
+  normalizedKeyContainsForbiddenImageToken,
+} from './imageGuardKey.js';
 
 /** Maximum accepted request body size for content endpoints. */
 export const MAX_BODY_BYTES = 512 * 1024; // 512 KiB
@@ -33,41 +44,8 @@ export const RATE_LIMIT_WINDOW_SECONDS = 60;
  */
 export const IMAGE_GUARD_CONSENT_FIELD_SEGMENTS = ['privacyConsent', 'wardrobeImagesAcceptedAt'] as const;
 
-/** Substrings matched against {@link normalizeImageGuardKey} on each object key segment. */
-export const FORBIDDEN_IMAGE_KEY_TOKENS = [
-  'image',
-  'imagedata',
-  'imagebase64',
-  'thumbnail',
-  'thumb',
-  'photo',
-  'masterimage',
-  'processedimage',
-  'pixeldata',
-  'bitmap',
-  'imagery',
-  'photography',
-  'thumbsup',
-] as const;
-
 /** Detects data: URLs and common raw image encodings inside string values. */
 const IMAGE_VALUE_PATTERN = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
-
-/** Lowercase ASCII A–Z; strip `_` and `-` so every casing/spelling variant matches. */
-export function normalizeImageGuardKey(key: string): string {
-  let normalized = '';
-  for (let i = 0; i < key.length; i++) {
-    const code = key.charCodeAt(i);
-    if (code >= 65 && code <= 90) normalized += String.fromCharCode(code + 32);
-    else if (key[i] !== '_' && key[i] !== '-') normalized += key[i];
-  }
-  return normalized;
-}
-
-export function normalizedKeyContainsForbiddenImageToken(key: string): boolean {
-  const normalized = normalizeImageGuardKey(key);
-  return FORBIDDEN_IMAGE_KEY_TOKENS.some((token) => normalized.includes(token));
-}
 
 export { isAllowedWardrobeImagesAcceptedAtValue } from './imageGuardConsent.js';
 

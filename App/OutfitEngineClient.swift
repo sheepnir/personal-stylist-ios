@@ -278,9 +278,19 @@ enum OutfitEngineClient {
         pattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
 
+    private static func isDefaultIgnorableCodePoint(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        if v == 0x00ad || v == 0x034f || v == 0x180e || v == 0xfeff { return true }
+        if (0x200b...0x200f).contains(v) { return true }
+        if (0x2060...0x206f).contains(v) { return true }
+        if (0xfe00...0xfe0f).contains(v) { return true }
+        return scalar.properties.generalCategory == .format
+    }
+
     private static func normalizeImageGuardKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
+            if isDefaultIgnorableCodePoint(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
             } else if scalar.value != 0x5F && scalar.value != 0x2D {

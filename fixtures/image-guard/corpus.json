@@ -31,7 +31,11 @@
     { "key": "memberGarmentIds", "imageBearing": false },
     { "key": "anchorGarmentId", "imageBearing": false },
     { "key": "policyVersion", "imageBearing": false },
-    { "key": "wardrobeImagesAcceptedAt", "imageBearing": true }
+    { "key": "wardrobeImagesAcceptedAt", "imageBearing": true },
+    { "key": "im\u200bage", "imageBearing": true },
+    { "key": "IM\u200bAGE", "imageBearing": true },
+    { "key": "photo\uFEFFUrl", "imageBearing": true },
+    { "key": "maſterlabel", "imageBearing": false }
   ],
   "allowGuardedEndpointKeys": [
     "id",
@@ -109,7 +113,9 @@
     { "label": "consent invalid calendar date", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-02-31T12:00:00Z", "policyVersion": "1" } } },
     { "label": "consent lowercase t separator", "body": { "privacyConsent": { "wardrobeImagesAcceptedAt": "2026-09-20t12:00:00Z", "policyVersion": "1" } } },
     { "label": "nested imagery", "body": { "context": { "tags": { "imagery": "x" } } } },
-    { "label": "clean generate plus nested photo key", "body": { "wardrobe": [{ "garmentId": "1", "slot": "TOP" }], "context": { "photography": true } } }
+    { "label": "clean generate plus nested photo key", "body": { "wardrobe": [{ "garmentId": "1", "slot": "TOP" }], "context": { "photography": true } } },
+    { "label": "zero-width space splits image token in key", "body": { "meta": { "im\u200bage": "x" } } },
+    { "label": "BOM splits photo token in key", "body": { "notes": { "photo\uFEFFgraphy": true } } }
   ],
   "allowBodies": [
     {
