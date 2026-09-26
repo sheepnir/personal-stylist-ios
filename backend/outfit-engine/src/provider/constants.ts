@@ -1,3 +1,4 @@
+// TODO(designer copy, ADR §7.1.6)
 /** Fixed summary for provider-backed generation (ADR §7.1.4). */
 export const PROVIDER_PATH_RATIONALE_SUMMARY =
   "Outfit slots were chosen by the stylist model; the notes below are assembled from your wardrobe, not written by the model.";

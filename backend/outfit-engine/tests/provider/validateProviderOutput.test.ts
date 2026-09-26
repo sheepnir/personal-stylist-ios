@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rationaleWithinLimits } from "../../src/provider/composeProviderRationale.js";
+import { assignmentsGapReasonValid } from "../../src/provider/composeProviderRationale.js";
+import { slotChoiceQuestionId } from "../../src/provider/decisionsQuestionIds.js";
 import { validateProviderOutput } from "../../src/provider/validateProviderOutput.js";
 import type {
   ProviderQuestion,
@@ -79,7 +81,7 @@ function baseFromScenario(
       options.none = {};
     }
     questions.push({
-      id: `slot_${slot}`,
+      id: slotChoiceQuestionId(slot),
       type: "choice",
       options,
       slot,
@@ -181,7 +183,7 @@ describe("validateProviderOutput — Decisions shape (ADR §7.1.3)", () => {
   it("rejects missing answer with OUTPUT_SCHEMA", () => {
     const input = baseFromScenario("T2-01-sportcoat-mild-work");
     const parsed = JSON.parse(input.responseBody);
-    delete parsed.answers.slot_TOP;
+    delete parsed.answers[slotChoiceQuestionId("TOP")];
     input.responseBody = JSON.stringify(parsed);
     const result = validateProviderOutput(input);
     expect(result.ok).toBe(false);
@@ -251,6 +253,30 @@ describe("validateProviderOutput — Decisions shape (ADR §7.1.3)", () => {
     expect(result.assignments.some((a) => a.slot === "OUTERWEAR")).toBe(false);
   });
 
+
+  it("gapReason on a filled row is OUTPUT_SCHEMA (assignmentsGapReasonValid)", () => {
+    const input = baseFromScenario("T2-01-sportcoat-mild-work");
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const invalid = result.assignments.map((a) =>
+      a.garmentId ? { ...a, gapReason: "must not appear on filled rows" } : a,
+    );
+    expect(assignmentsGapReasonValid(invalid)).toBe(false);
+  });
+
+  it("rejects choice question id that breaks slot_<SLOT> contract as OUTPUT_SCHEMA", () => {
+    const input = baseFromScenario("T2-01-sportcoat-mild-work");
+    const topQ = input.questions.find(
+      (q) => q.type === "choice" && q.slot === "TOP",
+    );
+    if (!topQ) return;
+    topQ.id = "wrong_TOP";
+    const result = validateProviderOutput(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.cause).toBe("OUTPUT_SCHEMA");
+  });
 
   it("rejects unknown garment token with OUTPUT_TOKEN_MAP", () => {
     const input = baseFromScenario("T2-01-sportcoat-mild-work");

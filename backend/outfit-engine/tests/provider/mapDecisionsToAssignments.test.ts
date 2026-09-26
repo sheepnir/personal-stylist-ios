@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { slotChoiceQuestionId } from "../../src/provider/decisionsQuestionIds.js";
 import { mapDecisionsToAssignments } from "../../src/provider/mapDecisionsToAssignments.js";
 import type { ProviderQuestion } from "../../src/provider/types.js";
 import { mildWorkContext } from "../stage3/helpers.js";
@@ -11,13 +12,13 @@ describe("mapDecisionsToAssignments", () => {
     const setToken = "s_suit1";
     const questions: ProviderQuestion[] = [
       {
-        id: "slot_JACKET",
+        id: slotChoiceQuestionId("JACKET"),
         type: "choice",
         slot: "JACKET",
         options: { [setToken]: {} },
       },
       {
-        id: "slot_BOTTOM",
+        id: slotChoiceQuestionId("BOTTOM"),
         type: "choice",
         slot: "BOTTOM",
         options: { none: {} },
@@ -26,8 +27,8 @@ describe("mapDecisionsToAssignments", () => {
     const { assignments } = mapDecisionsToAssignments({
       questions,
       answers: {
-        slot_JACKET: { type: "choice", choice: setToken },
-        slot_BOTTOM: { type: "choice", choice: "none" },
+        [slotChoiceQuestionId("JACKET")]: { type: "choice", choice: setToken },
+        [slotChoiceQuestionId("BOTTOM")]: { type: "choice", choice: "none" },
       },
       tokenToGarmentId: {},
       setTokens: [

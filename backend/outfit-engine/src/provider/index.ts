@@ -1,3 +1,8 @@
+export {
+  slotChoiceQuestionId,
+  parseSlotChoiceQuestionId,
+  providerQuestionsMatchSlotIdContract,
+} from "./decisionsQuestionIds.js";
 export { validateProviderOutput } from "./validateProviderOutput.js";
 export { PROVIDER_PATH_RATIONALE_SUMMARY } from "./constants.js";
 export type {
