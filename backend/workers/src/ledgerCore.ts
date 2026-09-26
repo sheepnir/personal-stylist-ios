@@ -107,27 +107,12 @@ export function costUsdToMicro(usd: number): CostMicroResult {
   return { ok: true, micro };
 }
 
-/** Reconcile actual cost: non-negative finite USD → safe integer micro-USD (0 allowed). */
+/** Reconcile actual cost: positive finite USD → safe integer micro-USD (minimum 1 micro). */
 export function actualUsdToMicro(usd: number): CostMicroResult {
-  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0 || Object.is(usd, -0)) {
     return { ok: false };
   }
-  if (usd === 0) {
-    return { ok: true, micro: 0 };
-  }
-  const product = usd * MICRO_USD;
-  if (!Number.isFinite(product)) {
-    return { ok: false };
-  }
-  const snapped = Math.round(product * 1000) / 1000;
-  if (!Number.isFinite(snapped)) {
-    return { ok: false };
-  }
-  const micro = snapped <= 0 ? 1 : Math.max(1, Math.ceil(snapped));
-  if (!Number.isSafeInteger(micro)) {
-    return { ok: false };
-  }
-  return { ok: true, micro };
+  return costUsdToMicro(usd);
 }
 
 /** Caps and thresholds: snap, floor to micro-USD. */
@@ -278,12 +263,12 @@ export function isValidReserveTaskName(task: string): boolean {
   return typeof task === 'string' && task.length > 0 && !UNSAFE_TASK_NAMES.has(task);
 }
 
-function isProtectedSettledWindowBucket(key: string, now: Date): boolean {
+function isProtectedBucketEvictionWindow(key: string, now: Date): boolean {
   if (!isValidLedgerDayKey(key)) {
     return false;
   }
   const age = utcDayAgeDays(key, now);
-  return age >= 0 && age <= LEDGER_MAX_DAY_AGE;
+  return age >= -1 && age <= LEDGER_MAX_DAY_AGE;
 }
 
 function enforceBucketLimit(state: LedgerState, now: Date): void {
@@ -291,18 +276,13 @@ function enforceBucketLimit(state: LedgerState, now: Date): void {
     return;
   }
 
-  const today = utcDayString(now);
-
   const deletable = Object.keys(state.days)
     .filter((key) => {
-      if (key === today) {
-        return false;
-      }
       const day = state.days[key];
       if (dayHasOpenAttempts(day) || !dayIsFullySettled(day)) {
         return false;
       }
-      if (isProtectedSettledWindowBucket(key, now)) {
+      if (isProtectedBucketEvictionWindow(key, now)) {
         return false;
       }
       return true;
@@ -408,6 +388,19 @@ export function reserveAttempt(
   if (!attemptId || !bounds.ok) {
     return { ok: false, reason: 'invalid' };
   }
+  const upperBoundMicro = bounds.micro;
+
+  const existingGlobal = findAttempt(state, attemptId);
+  if (existingGlobal) {
+    if (existingGlobal.entry.state === 'reconciled' || existingGlobal.entry.state === 'unknown') {
+      return { ok: false, reason: 'already_settled' };
+    }
+    if (existingGlobal.entry.upperBoundMicro === upperBoundMicro) {
+      return { ok: true };
+    }
+    return { ok: false, reason: 'invalid' };
+  }
+
   if (!isLedgerDayKeyUsable(day, now)) {
     return { ok: false, reason: 'invalid' };
   }
@@ -423,18 +416,6 @@ export function reserveAttempt(
     return { ok: false, reason: 'hard_cap' };
   }
   const { capMicro } = configMicro;
-  const upperBoundMicro = bounds.micro;
-
-  const existingGlobal = findAttempt(state, attemptId);
-  if (existingGlobal) {
-    if (existingGlobal.entry.state === 'reconciled' || existingGlobal.entry.state === 'unknown') {
-      return { ok: false, reason: 'already_settled' };
-    }
-    if (existingGlobal.entry.upperBoundMicro === upperBoundMicro) {
-      return { ok: true };
-    }
-    return { ok: false, reason: 'invalid' };
-  }
 
   const dayRecord = readDay(state, day);
   const conservativeReserved = malformedOpenReservedMicro(state);
@@ -481,6 +462,9 @@ export function reconcileAttempt(
   actualUSD: number,
   task?: string
 ): ReconcileResult {
+  if (task !== undefined && !isValidReserveTaskName(task)) {
+    return { ok: false, reason: 'invalid' };
+  }
   const actual = actualUsdToMicro(actualUSD);
   if (!attemptId || !actual.ok) {
     return { ok: false, reason: 'invalid' };

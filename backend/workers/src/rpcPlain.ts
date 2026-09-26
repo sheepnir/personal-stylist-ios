@@ -55,12 +55,21 @@ export function assertRpcPlainDeep(value: unknown, path = 'root'): void {
   if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
     return;
   }
+  if (typeof value === 'bigint') {
+    throw new Error(`${path}: unexpected bigint`);
+  }
+  if (typeof value === 'symbol') {
+    throw new Error(`${path}: unexpected symbol`);
+  }
+  if (typeof value === 'function') {
+    throw new Error(`${path}: unexpected function`);
+  }
   if (Array.isArray(value)) {
     value.forEach((item, index) => assertRpcPlainDeep(item, `${path}[${index}]`));
     return;
   }
   if (typeof value !== 'object') {
-    return;
+    throw new Error(`${path}: unexpected typeof ${typeof value}`);
   }
   if (Object.getPrototypeOf(value) !== Object.prototype) {
     throw new Error(`${path}: expected Object.prototype, got ${String(Object.getPrototypeOf(value))}`);

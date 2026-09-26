@@ -104,6 +104,51 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
   });
 
+  it('rejects reconcile at zero or negative zero USD without releasing the hold', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'z', 0.1, DAY, CONFIG);
+    const reservedBefore = state.days[DAY].reservedMicro;
+    expect(reconcileAttempt(state, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(reconcileAttempt(state, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
+    expect(state.days[DAY].reservedMicro).toBe(reservedBefore);
+    expect(state.days[DAY].attempts.z.state).toBe('reserved');
+  });
+
+  it('rejects reconcile task override with unsafe task name', () => {
+    const state = emptyLedgerState();
+    reserveAttempt(state, 'a1', 0.2, DAY, CONFIG, 'generate');
+    expect(reconcileAttempt(state, 'a1', 0.1, '__proto__')).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('idempotent reserve retry succeeds after reservation day becomes past or bucket limit is hit', () => {
+    const reserveDay = utcDayKeyMinusDays(DAY, -1);
+    const nowAtReserve = new Date(`${DAY}T12:00:00.000Z`);
+    const state = emptyLedgerState();
+    expect(
+      reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowAtReserve)
+    ).toEqual({ ok: true });
+
+    for (let age = 0; age <= 30; age += 1) {
+      const dayKey = utcDayKeyMinusDays(DAY, age);
+      if (state.days[dayKey]) {
+        continue;
+      }
+      state.days[dayKey] = settledDay(dayKey, 1);
+    }
+    expect(ledgerExceedsBucketLimit(state)).toBe(true);
+    expect(
+      reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowAtReserve)
+    ).toEqual({ ok: true });
+
+    const nowPastReservationDay = new Date(`2026-09-28T12:00:00.000Z`);
+    expect(
+      reserveAttempt(state, 'retry-1', 0.2, reserveDay, CONFIG, 'generate', nowPastReservationDay)
+    ).toEqual({ ok: true });
+    expect(
+      reserveAttempt(state, 'new-hold', 0.01, '2026-09-28', CONFIG, 'generate', nowPastReservationDay)
+    ).toEqual({ ok: false, reason: 'hard_cap' });
+  });
+
   it('rejects unsafe reserve task names', () => {
     const state = emptyLedgerState();
     for (const task of ['__proto__', 'constructor', 'prototype']) {
@@ -361,6 +406,8 @@ describe('ledgerCore retention', () => {
     expect(state.days[age29Key]).toBeDefined();
     expect(state.days[age30Key]).toBeDefined();
     expect(state.days[DAY]?.spentMicro).toBe(1_000_000);
+    expect(state.days[tomorrow]).toBeDefined();
+    expect(state.days[tomorrow]?.spentMicro).toBe(500);
     expect(state.days[staleOpenKey]).toBeDefined();
   });
 });
