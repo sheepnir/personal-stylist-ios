@@ -481,12 +481,8 @@ final class DeviceTokenStoreTests: XCTestCase {
         }
         DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
 
-        let ok = await DeviceTokenEnrollment.enrollAndSave(
-            baseURL: URL(string: "https://example.test")!,
-            enrollmentSecret: "enroll-secret"
-        )
+        let ok = await model.enrollDeviceAccessFromProfile(enrollmentSecret: "enroll-secret")
         XCTAssertTrue(ok)
-        model.clearDeviceAccessRejected()
         XCTAssertFalse(model.deviceAccessRejected)
     }
 
@@ -514,6 +510,18 @@ final class DeviceTokenStoreTests: XCTestCase {
         }
         OutfitEngineClient.resetTestHooks()
         RecordingURLProtocol.reset()
+    }
+
+    func testWrongShapeMessageClearsOnlyWhenUserEditsPasteField() {
+        XCTAssertFalse(
+            DeviceAccessPasteValidationUI.shouldClearWrongShapeMessage(whenPasteBufferChangesTo: "")
+        )
+        XCTAssertFalse(
+            DeviceAccessPasteValidationUI.shouldClearWrongShapeMessage(whenPasteBufferChangesTo: "   ")
+        )
+        XCTAssertTrue(
+            DeviceAccessPasteValidationUI.shouldClearWrongShapeMessage(whenPasteBufferChangesTo: "x")
+        )
     }
 
     func testIssuedTokenShapeValidation() {

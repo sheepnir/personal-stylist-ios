@@ -41,6 +41,7 @@ struct DeviceAccessSection: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel(statusText)
+                .id(ProfileDraftView.deviceAccessSectionID)
 
             if model.deviceAccessRejected {
                 Text(DressingCopy.deviceAccessNotAcceptedHelp)
@@ -85,7 +86,13 @@ struct DeviceAccessSection: View {
                 .accessibilityLabel(
                     mode == .enrollmentSecret ? "Enrollment secret" : "Device token"
                 )
-                .onChange(of: pasteBuffer) { _, _ in wrongShapeMessage = nil }
+                .onChange(of: pasteBuffer) { _, newValue in
+                    if DeviceAccessPasteValidationUI.shouldClearWrongShapeMessage(
+                        whenPasteBufferChangesTo: newValue
+                    ) {
+                        wrongShapeMessage = nil
+                    }
+                }
 
                 if let wrongShapeMessage {
                     Text(wrongShapeMessage)
@@ -128,7 +135,6 @@ struct DeviceAccessSection: View {
             Text("Needed for outfit builds on this phone. Tokens stay in Keychain only — never in the app package.")
                 .font(.caption2)
         }
-        .id(ProfileDraftView.deviceAccessSectionID)
         .onAppear { connected = DeviceTokenStore.hasToken }
         .onDisappear { pasteBuffer = "" }
         .confirmationDialog(
@@ -167,7 +173,7 @@ struct DeviceAccessSection: View {
             pasteBuffer = ""
             if DeviceTokenStore.save(raw) {
                 connected = true
-                model.clearDeviceAccessRejected()
+                model.noteDeviceAccessCredentialStored()
                 model.showToast(DressingCopy.deviceAccessPasteSuccess)
             } else {
                 model.showToast(DressingCopy.deviceAccessEnrollFailure)
@@ -181,13 +187,9 @@ struct DeviceAccessSection: View {
             pasteBuffer = ""
             isBusy = true
             defer { isBusy = false }
-            let ok = await DeviceTokenEnrollment.enrollAndSave(
-                baseURL: EngineConfig.baseURL,
-                enrollmentSecret: raw
-            )
+            let ok = await model.enrollDeviceAccessFromProfile(enrollmentSecret: raw)
             connected = DeviceTokenStore.hasToken
             if ok {
-                model.clearDeviceAccessRejected()
                 model.showToast(DressingCopy.deviceAccessEnrollSuccess, announce: false)
                 AccessibilityNotification.Announcement(DressingCopy.deviceAccessEnrollSuccessAnnouncement)
                     .post()
