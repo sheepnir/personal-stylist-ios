@@ -1,12 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDeviceSpendLedgerHarness } from './helpers.js';
 import { emptyLedgerState } from '../src/ledgerCore.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
 const BAD_CONFIG = { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
 
 describe('DeviceSpendLedger persistence (fake DO storage)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: FROZEN_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('does not write storage when reserve fails without pruning', () => {
     const { ledger, putCount, resetPutCount } = createDeviceSpendLedgerHarness();
     resetPutCount();

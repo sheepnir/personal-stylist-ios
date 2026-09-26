@@ -3,7 +3,7 @@
  * Exercises core logic via helpers.createSpendLedgerMock(); workerd / DO concurrency is #14.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getSpendRecord,
   reserveSpend,
@@ -116,22 +116,32 @@ describe('usage helpers with in-memory spend ledger', () => {
   });
 
   it('reconciles using the reservation UTC day after midnight, not implicit today', async () => {
-    const { env } = envWithSpend();
-    const token = generateDeviceToken();
-    const reservationDay = '2026-09-26';
-    const nextUtcDay = '2026-09-27';
-    expect(await reserveSpend(token, 'midnight-hold', 0.2, env, reservationDay, 'generate')).toEqual({
-      ok: true,
-    });
-    expect(await reconcileSpend(token, nextUtcDay, 'midnight-hold', 0.08, env)).toEqual({
-      ok: false,
-      reason: 'not_found',
-    });
-    expect(await reconcileSpend(token, reservationDay, 'midnight-hold', 0.08, env, 'generate')).toEqual({
-      ok: true,
-    });
-    const record = await getSpendRecord(token, env);
-    expect(record.spentUSD).toBeCloseTo(0.08);
+    vi.useFakeTimers({ now: new Date('2026-09-26T23:50:00.000Z') });
+    try {
+      const { env } = envWithSpend();
+      const token = generateDeviceToken();
+      const reservationDay = '2026-09-26';
+      const nextUtcDay = '2026-09-27';
+      expect(await reserveSpend(token, 'midnight-hold', 0.2, env, reservationDay, 'generate')).toEqual({
+        ok: true,
+      });
+      vi.setSystemTime(new Date('2026-09-27T00:00:01.000Z'));
+      expect(await reconcileSpend(token, nextUtcDay, 'midnight-hold', 0.08, env)).toEqual({
+        ok: false,
+        reason: 'not_found',
+      });
+      expect(
+        await reserveSpend(token, 'midnight-hold', 0.2, env, reservationDay, 'generate')
+      ).toEqual({ ok: false, reason: 'stale_hold' });
+      expect(await reconcileSpend(token, reservationDay, 'midnight-hold', 0.08, env, 'generate')).toEqual({
+        ok: true,
+      });
+      vi.setSystemTime(new Date(`${reservationDay}T12:00:00.000Z`));
+      const record = await getSpendRecord(token, env);
+      expect(record.spentUSD).toBeCloseTo(0.08);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fail-closed when summary RPC rejects after getByName', async () => {

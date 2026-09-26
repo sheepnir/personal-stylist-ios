@@ -2,7 +2,7 @@
  * Unit tests for spend ledger core logic (#13-a).
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   ageLedger,
   actualUsdToMicro,
@@ -26,6 +26,15 @@ import { createDeviceSpendLedgerHarness } from './helpers.js';
 
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: FROZEN_NOW });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('ledgerCore USD ↔ micro-USD conversion', () => {
   it('converts 0.1, 0.2 and 0.3 exactly', () => {
@@ -272,7 +281,6 @@ describe('ledgerCore reserve / reconcile', () => {
 
 describe('reconcile actual over MAX_ATTEMPT_USD ceiling', () => {
   it('records capped spend, locks hard cap, persists H, and is idempotent after reload', () => {
-    vi.useFakeTimers({ now: new Date(`${DAY}T12:00:00.000Z`) });
     const { ledger, getStoredState } = createDeviceSpendLedgerHarness();
     expect(ledger.reserve('ceil-1', 0.5, DAY, CONFIG, 'generate')).toEqual({ ok: true });
     expect(ledger.reconcile(DAY, 'ceil-1', MAX_ATTEMPT_USD + 500)).toEqual({
@@ -291,7 +299,6 @@ describe('reconcile actual over MAX_ATTEMPT_USD ceiling', () => {
       reason: 'hard_cap',
     });
     expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(true);
-    vi.useRealTimers();
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { assertRpcPlainDeep } from '../src/rpcPlain.js';
 import { emptyLedgerState, failClosedDaySummary } from '../src/ledgerCore.js';
 import { createDeviceSpendLedgerHarness } from './helpers.js';
@@ -6,8 +6,16 @@ import { createDeviceSpendLedgerHarness } from './helpers.js';
 const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
 const BAD_CONFIG = { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 };
+const FROZEN_NOW = new Date(`${DAY}T12:00:00.000Z`);
 
 describe('DeviceSpendLedger RPC return values', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: FROZEN_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('summary on empty ledger is structured-clone plain', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     const summary = ledger.summary(DAY, CONFIG);
