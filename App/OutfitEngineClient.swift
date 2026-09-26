@@ -232,8 +232,9 @@ enum OutfitEngineClient {
 
     // MARK: - Image-payload guard (VF-03)
 
-    // Mirrors `backend/workers/src/validation.ts`. Keys are lowercased (ASCII A–Z only),
-    // `_` and `-` are stripped, then forbidden tokens are matched anywhere in the segment.
+    // Mirrors `backend/workers/src/imageGuardKey.ts`. Keys are lowercased (ASCII A–Z only),
+    // `_`, `-`, `.`, ECMAScript whitespace, and default-ignorable scalars are stripped,
+    // then forbidden tokens are matched anywhere in the segment.
     // `scripts/check-image-guard-parity.py` runs `fixtures/image-guard/corpus.json`
     // through both implementations.
     //
@@ -287,13 +288,20 @@ enum OutfitEngineClient {
         return scalar.properties.generalCategory == .format
     }
 
+    private static func isImageGuardKeySeparator(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        if v == 0x5F || v == 0x2D || v == 0x2E { return true }
+        return javaScriptWhitespace.contains(v)
+    }
+
     private static func normalizeImageGuardKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
             if isDefaultIgnorableCodePoint(scalar) { continue }
+            if isImageGuardKeySeparator(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
-            } else if scalar.value != 0x5F && scalar.value != 0x2D {
+            } else {
                 normalized.unicodeScalars.append(scalar)
             }
         }

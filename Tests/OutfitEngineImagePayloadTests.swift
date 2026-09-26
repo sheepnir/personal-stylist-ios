@@ -52,13 +52,20 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         return scalar.properties.generalCategory == .format
     }
 
+    private static func isWorkerKeySeparator(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        if v == 0x5F || v == 0x2D || v == 0x2E { return true }
+        return ecmaScriptWhitespace.contains(v)
+    }
+
     private static func normalizeWorkerKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
             if isWorkerDefaultIgnorable(scalar) { continue }
+            if isWorkerKeySeparator(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
-            } else if scalar.value != 0x5F && scalar.value != 0x2D {
+            } else {
                 normalized.unicodeScalars.append(scalar)
             }
         }
@@ -417,6 +424,16 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         let bomKey = "photo\u{FEFF}Url"
         XCTAssertTrue(OutfitEngineClient.isImageBearingKey(bomKey))
         XCTAssertNotNil(Self.workerImageFinding(in: [bomKey: 1]))
+        let zwjPixel = "pixel\u{200D}data"
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(zwjPixel))
+        XCTAssertNotNil(Self.workerImageFinding(in: [zwjPixel: 1]))
+    }
+
+    func testWordSeparatorsFoldBeforeTokenMatch() {
+        for key in ["pixel data", "pixel.data", "pixel_data", "bit map", "pho.to", "thu.mb"] {
+            XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
+            XCTAssertNotNil(Self.workerImageFinding(in: [key: 1]), key)
+        }
     }
 
     // MARK: (d) the bodies the client actually encodes carry nothing image-bearing

@@ -11,6 +11,7 @@
     { "key": "ImageData", "imageBearing": true },
     { "key": "IMAGEBASE64", "imageBearing": true },
     { "key": "thumbnail", "imageBearing": true },
+    { "key": "thumbnails", "imageBearing": true },
     { "key": "thumb", "imageBearing": true },
     { "key": "photoUrl", "imageBearing": true },
     { "key": "masterImage", "imageBearing": true },
@@ -35,7 +36,14 @@
     { "key": "im\u200bage", "imageBearing": true },
     { "key": "IM\u200bAGE", "imageBearing": true },
     { "key": "photo\uFEFFUrl", "imageBearing": true },
-    { "key": "maſterlabel", "imageBearing": false }
+    { "key": "maſterlabel", "imageBearing": false },
+    { "key": "pixel_data", "imageBearing": true },
+    { "key": "pixel.data", "imageBearing": true },
+    { "key": "pixel data", "imageBearing": true },
+    { "key": "pixel\u200bdata", "imageBearing": true },
+    { "key": "bit map", "imageBearing": true },
+    { "key": "pho.to", "imageBearing": true },
+    { "key": "thu.mb", "imageBearing": true }
   ],
   "allowGuardedEndpointKeys": [
     "id",

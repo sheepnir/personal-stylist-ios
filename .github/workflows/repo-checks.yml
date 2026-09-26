@@ -29,17 +29,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: No sample wardrobe literals (CC-01)
-        run: ./scripts/check-no-founder-literals.sh
-
-      - name: Wear-logging rules
-        run: python3 scripts/check-wear-logging.py
-
-      - name: Cost-per-wear copy cases
-        run: python3 scripts/verify-cost-per-wear-copy.py
-
-      - name: Generate-failure copy (no raw HTTP/URL errors)
-        run: python3 scripts/verify-generate-failure-copy.py
+      - name: Install pinned Python dependencies (hash-verified)
+        # Installed before image-guard parity (OpenAPI key sweep needs PyYAML).
+        run: |
+          set -euo pipefail
+          pip3 install --require-hashes --target "$RUNNER_TEMP/pydeps" \
+            -r scripts/ci-requirements.txt
+          echo "PYTHONPATH=$RUNNER_TEMP/pydeps" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -53,16 +49,17 @@ jobs:
       - name: Image-guard parity (client strip list == Worker reject list)
         run: python3 scripts/check-image-guard-parity.py
 
-      - name: Install pinned Python dependencies (hash-verified)
-        # Installed unconditionally into a private target directory so the pinned,
-        # hash-verified versions are the ones that actually run (a runner image that
-        # already ships these modules must not silently substitute its own copies).
-        # `--target` also sidesteps PEP 668 "externally managed" refusals on system pythons.
-        run: |
-          set -euo pipefail
-          pip3 install --require-hashes --target "$RUNNER_TEMP/pydeps" \
-            -r scripts/ci-requirements.txt
-          echo "PYTHONPATH=$RUNNER_TEMP/pydeps" >> "$GITHUB_ENV"
+      - name: No sample wardrobe literals (CC-01)
+        run: ./scripts/check-no-founder-literals.sh
+
+      - name: Wear-logging rules
+        run: python3 scripts/check-wear-logging.py
+
+      - name: Cost-per-wear copy cases
+        run: python3 scripts/verify-cost-per-wear-copy.py
+
+      - name: Generate-failure copy (no raw HTTP/URL errors)
+        run: python3 scripts/verify-generate-failure-copy.py
 
       - name: OpenAPI contract examples (#220)
         run: |
