@@ -1,6 +1,6 @@
-import { hashPromptContent } from "./hash.js";
+import { hashStylistPromptModule } from "./promptContentHash.js";
 import { outfitT2V1 } from "./prompts/outfit-t2-v1.js";
-import type { StylistPromptModule } from "./types.js";
+import type { StylistPromptModule } from "./promptVersionTypes.js";
 
 /** Every shipped prompt module (immutable; add new versions, do not edit in place). */
 export const STYLIST_PROMPT_MODULES: readonly StylistPromptModule[] = [
@@ -17,11 +17,11 @@ export const CURRENT_STYLIST_PROMPT: StylistPromptModule = outfitT2V1;
 export const CURRENT_STYLIST_PROMPT_VERSION = CURRENT_STYLIST_PROMPT.version;
 
 /**
- * Registered SHA-256 content hashes (system + output schema).
+ * Registered SHA-256 content hashes (instruction + option descriptions + answer types).
  * Update only when adding a new prompt version module — never when editing text in place.
  */
 export const REGISTERED_PROMPT_CONTENT_HASHES: Readonly<Record<string, string>> = {
-  "outfit-t2-v1": "52d4bd75c264184c0eff9d0c7e3712103d727a9821e4a80167585a22aebb6ef8",
+  "outfit-t2-v1": "58cec0e7bc7553c2b652125623bb6b4ef511f5129c8eb90ebaa23cf2846fdf17",
 };
 
 export function getStylistPromptByVersion(
@@ -39,7 +39,7 @@ export function assertPromptRegistryIntegrity(): void {
         `Missing registered content hash for prompt version ${module.version}.`,
       );
     }
-    const actual = hashPromptContent(module.system, module.outputSchema);
+    const actual = hashStylistPromptModule(module);
     if (expected !== actual) {
       throw new Error(
         `Prompt registry hash mismatch for ${module.version}: expected ${expected}, got ${actual}. ` +

@@ -5,7 +5,8 @@ import {
   CURRENT_STYLIST_PROMPT,
   CURRENT_STYLIST_PROMPT_VERSION,
   getStylistPromptByVersion,
-  hashPromptContent,
+  hashStylistPromptModule,
+  hashStylistPromptVersionContent,
   outfitT2V1,
   REGISTERED_PROMPT_CONTENT_HASHES,
 } from "../../src/provider/index.js";
@@ -16,21 +17,21 @@ import {
 } from "../stage1/helpers.js";
 
 describe("prompt registry (ADR-0001 §8)", () => {
-  it("registered hash matches live system + outputSchema for each version", () => {
+  it("registered hash matches instruction, option descriptions, and answer types", () => {
     expect(() => assertPromptRegistryIntegrity()).not.toThrow();
   });
 
   it("fails when template content changes without a version bump", () => {
-    const actual = hashPromptContent(
-      outfitT2V1.system,
-      outfitT2V1.outputSchema,
-    );
+    const actual = hashStylistPromptModule(outfitT2V1);
     const registered = REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-v1"];
     expect(registered).toBeTruthy();
     expect(actual).toBe(registered);
 
-    const tamperedSystem = `${outfitT2V1.system}\n`;
-    const tampered = hashPromptContent(tamperedSystem, outfitT2V1.outputSchema);
+    const tampered = hashStylistPromptVersionContent(
+      `${outfitT2V1.instructionText}\n`,
+      outfitT2V1.optionDescriptions,
+      outfitT2V1.answerTypes,
+    );
     expect(tampered).not.toBe(registered);
   });
 
@@ -38,6 +39,16 @@ describe("prompt registry (ADR-0001 §8)", () => {
     expect(CURRENT_STYLIST_PROMPT_VERSION).toBe("outfit-t2-v1");
     expect(getStylistPromptByVersion("outfit-t2-v1")).toBe(outfitT2V1);
     expect(getStylistPromptByVersion("missing")).toBeUndefined();
+  });
+
+  it("uses Decisions API prompt fields, not chat completion messages", () => {
+    expect(outfitT2V1.instructionText.length).toBeGreaterThan(0);
+    expect(outfitT2V1.optionDescriptions.length).toBeGreaterThan(0);
+    expect(outfitT2V1.answerTypes).toBeTruthy();
+    expect("system" in outfitT2V1).toBe(false);
+    expect("render" in outfitT2V1).toBe(false);
+    expect("outputSchema" in outfitT2V1).toBe(false);
+    expect("messages" in outfitT2V1).toBe(false);
   });
 });
 
@@ -69,15 +80,5 @@ describe("generation.promptVersion on every path", () => {
     expect(meta.modelId).toBe("mock/stylist-v0");
     expect(meta.candidateSetHash).toBe("abc123");
     expect(meta.fallbackLevel).toBe("NONE");
-  });
-
-  it("outfit-t2-v1 render uses structured payload only", () => {
-    const user = CURRENT_STYLIST_PROMPT.render({
-      candidates: [{ token: "g_ab12", slot: "TOP" }],
-      context: { occasion: "WORK_STANDARD" },
-      profile: {},
-      options: { requireSlots: ["TOP"] },
-    });
-    expect(() => JSON.parse(user)).not.toThrow();
   });
 });

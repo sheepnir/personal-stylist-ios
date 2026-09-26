@@ -1,5 +1,5 @@
 import { CURRENT_STYLIST_PROMPT } from "./registry.js";
-import type { StylistPromptModule } from "./types.js";
+import type { StylistPromptModule } from "./promptVersionTypes.js";
 
 export type ProviderFallbackLevel = "NONE" | "DETERMINISTIC";
 

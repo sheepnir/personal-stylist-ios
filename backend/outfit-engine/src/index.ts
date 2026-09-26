@@ -68,13 +68,13 @@ export {
   STYLIST_PROMPT_MODULES,
   getStylistPromptByVersion,
   assertPromptRegistryIntegrity,
-  hashPromptContent,
+  hashStylistPromptModule,
   buildProviderSuccessGeneration,
   outfitT2V1,
 } from "./provider/index.js";
 export type {
   StylistPromptModule,
-  StylistProviderPayload,
+  StylistPromptOptionDescription,
   ProviderSuccessGenerationMeta,
   BuildProviderSuccessGenerationOptions,
 } from "./provider/index.js";
