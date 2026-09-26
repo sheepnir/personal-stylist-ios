@@ -101,4 +101,42 @@ describe("parseDecisionsResponseBody", () => {
       cause: "OUTPUT_PARSE",
     });
   });
+
+  it("ignores inherited properties on root, usage, and answers", () => {
+    const proto = Object.prototype as Record<string, unknown>;
+    const saved: Record<string, unknown> = {};
+    for (const key of ["model", "input_tokens", "output_tokens", "type"]) {
+      if (Object.hasOwn(proto, key)) saved[key] = proto[key];
+      proto[key] =
+        key === "model"
+          ? MODEL
+          : key === "type"
+            ? "choice"
+            : 1;
+    }
+    try {
+      expect(
+        parseDecisionsResponseBody(
+          '{"usage":{"input_tokens":1,"output_tokens":1},"answers":{}}',
+        ),
+      ).toEqual({ ok: false, cause: "OUTPUT_PARSE" });
+
+      expect(
+        parseDecisionsResponseBody(
+          `{"model":"${MODEL}","usage":{},"answers":{"slot_TOP":{"choice":"g_1"}}}`,
+        ),
+      ).toEqual({ ok: false, cause: "OUTPUT_PARSE" });
+
+      expect(
+        parseDecisionsResponseBody(
+          `{"model":"${MODEL}","usage":{"input_tokens":1,"output_tokens":1},"answers":{"slot_TOP":{}}}`,
+        ),
+      ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+    } finally {
+      for (const key of ["model", "input_tokens", "output_tokens", "type"]) {
+        if (Object.hasOwn(saved, key)) proto[key] = saved[key];
+        else delete proto[key];
+      }
+    }
+  });
 });

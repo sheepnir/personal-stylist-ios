@@ -1,21 +1,23 @@
 import { answersObjectHasDuplicateKeys } from "./parseDecisionsDuplicateKeys.js";
 import { MAX_PROVIDER_RESPONSE_BYTES } from "./constants.js";
-import { createOwnRecord, ownHas, ownKeys } from "./safeOwn.js";
+import { createOwnRecord, ownHas } from "./safeOwn.js";
 import type {
   DecisionsAnswer,
   DecisionsUsage,
   ParsedDecisionsResponse,
-  ProviderQuestion,
-  ProviderSetToken,
 } from "./types.js";
-import type { Slot } from "../types.js";
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+function isPlainJsonRecord(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === null || proto === Object.prototype;
 }
 
 function parseUsage(raw: unknown): DecisionsUsage | null {
-  if (!isRecord(raw)) return null;
+  if (!isPlainJsonRecord(raw)) return null;
+  if (!ownHas(raw, "input_tokens") || !ownHas(raw, "output_tokens")) {
+    return null;
+  }
   const input = raw.input_tokens;
   const output = raw.output_tokens;
   if (
@@ -32,15 +34,21 @@ function parseUsage(raw: unknown): DecisionsUsage | null {
 }
 
 function parseAnswerShape(raw: unknown): DecisionsAnswer | null {
-  if (!isRecord(raw)) return null;
-  if (typeof raw.type !== "string") return null;
-  if (raw.type === "choice") {
-    if (typeof raw.choice !== "string") return null;
-    return { type: "choice", choice: raw.choice };
+  if (!isPlainJsonRecord(raw)) return null;
+  if (!ownHas(raw, "type")) return null;
+  const typeVal = raw.type;
+  if (typeof typeVal !== "string") return null;
+  if (typeVal === "choice") {
+    if (!ownHas(raw, "choice")) return null;
+    const choice = raw.choice;
+    if (typeof choice !== "string") return null;
+    return { type: "choice", choice };
   }
-  if (raw.type === "noul") {
-    if (typeof raw.noul !== "number" || Number.isNaN(raw.noul)) return null;
-    return { type: "noul", noul: raw.noul };
+  if (typeVal === "noul") {
+    if (!ownHas(raw, "noul")) return null;
+    const noul = raw.noul;
+    if (typeof noul !== "number" || !Number.isFinite(noul)) return null;
+    return { type: "noul", noul };
   }
   return null;
 }
@@ -48,6 +56,7 @@ function parseAnswerShape(raw: unknown): DecisionsAnswer | null {
 function buildAnswersMap(
   rawAnswers: Record<string, unknown>,
 ): Record<string, DecisionsAnswer> | null {
+  if (!isPlainJsonRecord(rawAnswers)) return null;
   const answers = createOwnRecord<DecisionsAnswer>();
   for (const key of Object.keys(rawAnswers)) {
     if (!ownHas(rawAnswers, key)) continue;
@@ -81,17 +90,24 @@ export function parseDecisionsResponseBody(
   } catch {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }
-  if (!isRecord(json)) return { ok: false, cause: "OUTPUT_PARSE" };
-  if (typeof json.model !== "string") {
+  if (!isPlainJsonRecord(json)) return { ok: false, cause: "OUTPUT_PARSE" };
+  if (!ownHas(json, "model")) return { ok: false, cause: "OUTPUT_PARSE" };
+  const model = json.model;
+  if (typeof model !== "string") return { ok: false, cause: "OUTPUT_PARSE" };
+  if (!ownHas(json, "usage")) {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }
   const usage = parseUsage(json.usage);
   if (!usage) return { ok: false, cause: "OUTPUT_PARSE" };
-  if (!isRecord(json.answers)) {
+  if (!ownHas(json, "answers")) {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
+  const rawAnswers = json.answers;
+  if (!isPlainJsonRecord(rawAnswers)) {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }
 
-  const answers = buildAnswersMap(json.answers);
+  const answers = buildAnswersMap(rawAnswers);
   if (!answers) {
     return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
@@ -99,7 +115,7 @@ export function parseDecisionsResponseBody(
   return {
     ok: true,
     value: {
-      model: json.model,
+      model,
       usage,
       answers,
     },
