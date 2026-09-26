@@ -13,24 +13,40 @@ function isPlainJsonRecord(v: unknown): v is Record<string, unknown> {
   return proto === null || proto === Object.prototype;
 }
 
-function parseUsage(raw: unknown): DecisionsUsage | null {
-  if (!isPlainJsonRecord(raw)) return null;
-  if (!ownHas(raw, "input_tokens") || !ownHas(raw, "output_tokens")) {
-    return null;
-  }
-  const input = raw.input_tokens;
-  const output = raw.output_tokens;
+const MAX_USAGE_TOKEN_COUNT = 10_000_000;
+
+type ParseUsageResult =
+  | { ok: true; value: DecisionsUsage }
+  | { ok: false; cause: "OUTPUT_PARSE" | "OUTPUT_SCHEMA" };
+
+function asSafeUsageTokenCount(n: unknown): number | null {
   if (
-    typeof input !== "number" ||
-    typeof output !== "number" ||
-    !Number.isInteger(input) ||
-    !Number.isInteger(output) ||
-    input < 0 ||
-    output < 0
+    typeof n === "number" &&
+    Number.isSafeInteger(n) &&
+    n >= 0 &&
+    n <= MAX_USAGE_TOKEN_COUNT
   ) {
-    return null;
+    return n;
   }
-  return { input_tokens: input, output_tokens: output };
+  return null;
+}
+
+function parseUsage(raw: unknown): ParseUsageResult {
+  if (!isPlainJsonRecord(raw)) {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
+  if (!ownHas(raw, "input_tokens") || !ownHas(raw, "output_tokens")) {
+    return { ok: false, cause: "OUTPUT_PARSE" };
+  }
+  const input = asSafeUsageTokenCount(raw.input_tokens);
+  const output = asSafeUsageTokenCount(raw.output_tokens);
+  if (input === null || output === null) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
+  }
+  return {
+    ok: true,
+    value: { input_tokens: input, output_tokens: output },
+  };
 }
 
 function parseAnswerShape(raw: unknown): DecisionsAnswer | null {
@@ -99,8 +115,11 @@ export function parseDecisionsResponseBody(
   if (!ownHas(json, "usage")) {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }
-  const usage = parseUsage(json.usage);
-  if (!usage) return { ok: false, cause: "OUTPUT_PARSE" };
+  const usageResult = parseUsage(json.usage);
+  if (!usageResult.ok) {
+    return { ok: false, cause: usageResult.cause };
+  }
+  const usage = usageResult.value;
   if (!ownHas(json, "answers")) {
     return { ok: false, cause: "OUTPUT_PARSE" };
   }

@@ -108,6 +108,20 @@ describe("parseDecisionsResponseBody", () => {
     });
   });
 
+  it("rejects unsafe usage token counts with OUTPUT_SCHEMA", () => {
+    const base = `{"model":"${MODEL}","answers":{"slot_TOP":{"type":"choice","choice":"g_1"}}`;
+    expect(
+      parseDecisionsResponseBody(
+        `${base},"usage":{"input_tokens":1e300,"output_tokens":1}}`,
+      ),
+    ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+    expect(
+      parseDecisionsResponseBody(
+        `${base},"usage":{"input_tokens":1,"output_tokens":10000001}}`,
+      ),
+    ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+  });
+
   it("rejects noul outside 0..1 with OUTPUT_SCHEMA", () => {
     expect(
       parseDecisionsResponseBody(
