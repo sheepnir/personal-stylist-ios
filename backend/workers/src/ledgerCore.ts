@@ -197,7 +197,7 @@ export function failClosedDaySummary(day: string): DaySummary {
     reservedUSD: 0,
     softThresholdReached: true,
     hardCapReached: true,
-    attemptLimitReached: false,
+    attemptLimitReached: true,
     overReservationCount: 0,
     byTask: nullRecord(),
   };
@@ -734,7 +734,7 @@ export function reconcileAttempt(
   task?: string
 ): ReconcileResult {
   if (isDayStorageCorrupt(state, day)) {
-    return { ok: false, reason: 'invalid' };
+    return { ok: false, reason: 'storage_error' };
   }
   if (!isValidLedgerDayKey(day)) {
     return { ok: false, reason: 'invalid' };

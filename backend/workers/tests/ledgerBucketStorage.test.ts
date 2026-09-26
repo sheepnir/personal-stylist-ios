@@ -10,6 +10,8 @@ import {
   MICRO_USD,
   emptyLedgerState,
   isDayStorageCorrupt,
+  markDayStorageCorrupt,
+  reconcileAttempt,
   reserveAttempt,
 } from '../src/ledgerCore.js';
 import {
@@ -18,6 +20,7 @@ import {
   parseBucketStorageKey,
   persistLedgerToStorage,
   storedDayBucketJsonByteLength,
+  storedDayBucketViolatesLedgerLimits,
   validateStoredDayBucket,
 } from '../src/ledgerBucketStorage.js';
 import { createDeviceSpendLedgerHarness } from './helpers.js';
@@ -228,6 +231,53 @@ describe('loadLedgerFromStorage fail-closed', () => {
     expect(isDayStorageCorrupt(state, '2026-09-25')).toBe(true);
     expect(state.days[DAY]?.reservedMicro).toBe(1_000_000);
     expect(reserveAttempt(state, 'next', 0.01, DAY, CONFIG, 'generate', NOW)).toEqual({ ok: true });
+  });
+});
+
+const PAST_DAY = '2026-08-01';
+
+function buildTamperedPastDayBucketWith2000Attempts(dayKey: string) {
+  const createdMs = Date.parse(`${dayKey}T00:00:00.000Z`);
+  const a: Record<string, { u: number; t: string; S: 1; a: number; c: number }> = Object.create(null);
+  for (let i = 0; i < 2000; i += 1) {
+    const id = `a${String(i).padStart(4, '0')}`;
+    a[id] = { u: 1, t: 'generate', S: 1, a: 1, c: createdMs };
+  }
+  return { s: 2000, r: 0, o: 0, a, k: { generate: 2000 } };
+}
+
+describe('ledger limit fence on decode (Q1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fences a past day with 2000 attempts: that day fail-closed, today still works', () => {
+    const pastBucket = buildTamperedPastDayBucketWith2000Attempts(PAST_DAY);
+    expect(
+      storedDayBucketViolatesLedgerLimits(
+        validateStoredDayBucket(pastBucket)!,
+        new TextEncoder().encode(JSON.stringify(pastBucket)).length
+      )
+    ).toBe(true);
+    const { ledger } = createDeviceSpendLedgerHarness(undefined, {
+      initialKv: { [bucketStorageKey(PAST_DAY)]: pastBucket },
+    });
+    const pastSummary = ledger.summary(PAST_DAY, CONFIG);
+    expect(pastSummary.hardCapReached).toBe(true);
+    expect(pastSummary.attemptLimitReached).toBe(true);
+    expect(ledger.reserve('today-1', 0.01, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(ledger.summary(DAY, CONFIG).hardCapReached).toBe(false);
+  });
+});
+
+describe('corrupt day reconcile (Q2)', () => {
+  it('returns storage_error like reserve', () => {
+    const state = emptyLedgerState();
+    markDayStorageCorrupt(state, DAY);
+    expect(reconcileAttempt(state, DAY, 'x', 0.01)).toEqual({ ok: false, reason: 'storage_error' });
   });
 });
 

@@ -117,7 +117,7 @@ export function spendLedger(): DurableObjectNamespace {
 /** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */
 export function createDeviceSpendLedgerHarness(
   initialState?: LedgerState,
-  options?: { maxValueBytes?: number }
+  options?: { maxValueBytes?: number; initialKv?: Record<string, unknown> }
 ): {
   ledger: DeviceSpendLedger;
   putCount: () => number;
@@ -129,6 +129,11 @@ export function createDeviceSpendLedgerHarness(
   if (initialState) {
     for (const [day, record] of Object.entries(initialState.days)) {
       kvStore.set(bucketStorageKey(day), encodeDayForStorage(structuredClone(record)));
+    }
+  }
+  if (options?.initialKv) {
+    for (const [key, value] of Object.entries(options.initialKv)) {
+      kvStore.set(key, value);
     }
   }
   const maxValueBytes = options?.maxValueBytes;

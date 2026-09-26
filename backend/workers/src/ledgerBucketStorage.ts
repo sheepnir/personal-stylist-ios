@@ -11,6 +11,10 @@ import {
   markDayStorageCorrupt,
   isDayStorageCorrupt,
   MAX_BUCKET_BYTES,
+  MAX_ATTEMPTS_PER_DAY,
+  MAX_ATTEMPT_USD,
+  MAX_DISTINCT_TASKS_PER_DAY,
+  MICRO_USD,
   recomputeDayTotalsFromAttempts,
   type AttemptEntry,
   type AttemptState,
@@ -21,7 +25,40 @@ import {
 export const BUCKET_KEY_PREFIX = 'bucket:';
 const LEGACY_LEDGER_KEY = 'ledger';
 
-const STATE_CODES = new Set([0, 1, 2]);
+const MAX_ATTEMPT_MICRO = MAX_ATTEMPT_USD * MICRO_USD;
+
+/** True when a structurally valid bucket exceeds ledger sizing limits (decode fail-closed). */
+export function storedDayBucketViolatesLedgerLimits(
+  stored: StoredDayBucket,
+  encodedJsonByteLength: number
+): boolean {
+  if (encodedJsonByteLength > MAX_BUCKET_BYTES) {
+    return true;
+  }
+  const attemptIds = Object.keys(stored.a);
+  if (attemptIds.length > MAX_ATTEMPTS_PER_DAY) {
+    return true;
+  }
+  const tasks = new Set<string>();
+  for (const id of attemptIds) {
+    if (!Object.hasOwn(stored.a, id)) {
+      continue;
+    }
+    const att = stored.a[id]!;
+    tasks.add(att.t);
+    if (att.u > MAX_ATTEMPT_MICRO) {
+      return true;
+    }
+    if (att.a !== undefined && att.a > MAX_ATTEMPT_MICRO) {
+      return true;
+    }
+  }
+  return tasks.size > MAX_DISTINCT_TASKS_PER_DAY;
+}
+
+function persistedBucketJsonByteLength(raw: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(raw)).length;
+}
 
 /** JavaScript Date-safe epoch milliseconds (inclusive upper bound). */
 const MAX_LEDGER_EPOCH_MS = 8_640_000_000_000_000;
@@ -59,6 +96,8 @@ const CODE_TO_STATE: Record<0 | 1 | 2, AttemptState> = {
   1: 'reconciled',
   2: 'unknown',
 };
+
+const STATE_CODES = new Set([0, 1, 2]);
 
 function isNonNegativeSafeInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -323,8 +362,9 @@ function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): v
   if (raw === undefined) {
     return;
   }
+  const encodedBytes = persistedBucketJsonByteLength(raw);
   const stored = validateStoredDayBucket(raw);
-  if (!stored) {
+  if (!stored || storedDayBucketViolatesLedgerLimits(stored, encodedBytes)) {
     markDayStorageCorrupt(state, day);
     return;
   }
@@ -353,6 +393,11 @@ export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
           }
           const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record as DayRecord)));
           if (!encoded) {
+            markDayStorageCorrupt(state, day);
+            continue;
+          }
+          const encodedBytes = persistedBucketJsonByteLength(encoded);
+          if (storedDayBucketViolatesLedgerLimits(encoded, encodedBytes)) {
             markDayStorageCorrupt(state, day);
             continue;
           }
