@@ -1499,7 +1499,8 @@ components:
       description: |
         Read from the backend usage ledger (PRD §9.6, D-20) — the backend's only persistent
         state. `reservedTodayUSD` is cost reserved for in-flight requests and not yet
-        reconciled; `spentTodayUSD + reservedTodayUSD` is what the cap is checked against.
+        reconciled; `spentTodayUSD + reservedTodayUSD` is the committed total used for
+        soft-threshold and hard-cap flags (same headroom as reserve).
       required:
         [last7DaysUSD, last30DaysUSD, dailyCapUSD, softThresholdUSD, spentTodayUSD,
          reservedTodayUSD, softThresholdReached, hardCapReached, ledgerConfigStatus]
@@ -1523,8 +1524,17 @@ components:
           type: integer
           minimum: 0
           description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13). Each ages to "spent" after 24 h.
-        softThresholdReached: { type: boolean }
-        hardCapReached: { type: boolean }
+        softThresholdReached:
+          type: boolean
+          description: |
+            True when settled spend plus open reservations for the ledger day is at or above
+            `softThresholdUSD` (same committed total as cap checks).
+        hardCapReached:
+          type: boolean
+          description: |
+            True when a new hold at the minimum representable cost would be refused with
+            `hard_cap` — settled spend plus open reservations leaves no room under
+            `dailyCapUSD`.
         ledgerConfigStatus:
           type: string
           enum: [ok, config_error, ledger_unavailable, legacy]

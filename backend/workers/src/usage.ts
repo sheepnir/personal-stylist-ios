@@ -180,16 +180,26 @@ export async function reconcileSpend(
   return result;
 }
 
+export type RecordSpendResult =
+  | { ok: true }
+  | { ok: false; stage: 'reserve' | 'reconcile'; reason: string };
+
 export async function recordSpend(
   deviceToken: string,
   task: string,
   costUSD: number,
   env: Env
-): Promise<void> {
+): Promise<RecordSpendResult> {
   const attemptId = `test-record:${task}:${costUSD}`;
   const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, getTodayDateString(), task);
-  if (!reserved.ok) return;
-  await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
+  if (!reserved.ok) {
+    return { ok: false, stage: 'reserve', reason: reserved.reason ?? 'unknown' };
+  }
+  const reconciled = await reconcileSpend(deviceToken, attemptId, costUSD, env, task);
+  if (!reconciled.ok) {
+    return { ok: false, stage: 'reconcile', reason: reconciled.reason ?? 'unknown' };
+  }
+  return { ok: true };
 }
 
 export async function isHardCapReached(deviceToken: string, env: Env): Promise<boolean> {
