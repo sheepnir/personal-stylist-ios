@@ -51,6 +51,16 @@ export const LEDGER_MAX_DAY_AGE = LEDGER_DAY_BUCKETS - 1;
  */
 export const MAX_ATTEMPTS_PER_DAY = 500;
 
+/** UUID-length attempt ids (charset unchanged). */
+export const MAX_ATTEMPT_ID_LENGTH = 36;
+export const MAX_TASK_NAME_LENGTH = 16;
+
+/**
+ * Worst-case JSON for one UTC day bucket must stay under this (DO per-value limit headroom).
+ * Sized for 500 attempts at max id/task length and large micro-USD fields.
+ */
+export const MAX_BUCKET_BYTES = 100 * 1024;
+
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
@@ -250,6 +260,30 @@ function emptyDay(date: string): DayRecord {
   };
 }
 
+/** Rebuild maps with null prototypes after JSON storage reload (avoids prototype-key collisions). */
+export function hydrateDayRecord(raw: DayRecord): DayRecord {
+  const attempts = nullRecord() as Record<string, AttemptEntry>;
+  for (const key of Object.keys(raw.attempts ?? {})) {
+    if (Object.hasOwn(raw.attempts, key)) {
+      attempts[key] = raw.attempts[key]!;
+    }
+  }
+  const tasks = nullRecord() as Record<string, number>;
+  for (const key of Object.keys(raw.tasks ?? {})) {
+    if (Object.hasOwn(raw.tasks, key)) {
+      tasks[key] = raw.tasks[key]!;
+    }
+  }
+  return {
+    date: raw.date,
+    spentMicro: raw.spentMicro,
+    reservedMicro: raw.reservedMicro,
+    overReservationCount: raw.overReservationCount,
+    attempts,
+    tasks,
+  };
+}
+
 function getOrCreateDay(state: LedgerState, date: string): DayRecord {
   const existing = state.days[date];
   if (existing) return existing;
@@ -295,8 +329,8 @@ export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
 }
 
 const UNSAFE_TASK_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
-const ATTEMPT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const TASK_NAME_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const ATTEMPT_ID_RE = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_ATTEMPT_ID_LENGTH}}$`);
+const TASK_NAME_RE = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TASK_NAME_LENGTH}}$`);
 
 export function isValidAttemptId(attemptId: string): boolean {
   return typeof attemptId === 'string' && ATTEMPT_ID_RE.test(attemptId);
@@ -462,10 +496,10 @@ function findAttempt(
   if (!day) {
     return null;
   }
-  const entry = day.attempts[attemptId];
-  if (!entry) {
+  if (!Object.hasOwn(day.attempts, attemptId)) {
     return null;
   }
+  const entry = day.attempts[attemptId]!;
   return { day, entry };
 }
 

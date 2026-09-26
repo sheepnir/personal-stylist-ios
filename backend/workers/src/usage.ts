@@ -138,6 +138,7 @@ export async function reserveSpend(
   attemptId: string,
   upperBoundUSD: number,
   env: Env,
+  /** UTC ledger day for the hold; defaults to today. Callers must persist this day and pass it again on idempotent retries and on reconcile — a retry after UTC midnight without the original day creates a second hold. */
   day: string = getTodayDateString(),
   task = 'unknown'
 ): Promise<{ ok: boolean; reason?: string }> {
@@ -162,6 +163,7 @@ export async function reserveSpend(
 
 export async function reconcileSpend(
   deviceToken: string,
+  /** UTC ledger day from the matching reserve (required). Callers must store the reservation day at reserve time; do not rely on implicit “today” after UTC midnight. */
   day: string,
   attemptId: string,
   actualUSD: number,
@@ -192,7 +194,7 @@ export async function recordSpend(
   env: Env
 ): Promise<void> {
   const safeCost = String(costUSD).replace(/\./g, 'p').replace(/[^A-Za-z0-9_-]/g, 'p');
-  const attemptId = `test-record_${task}_${safeCost}`.slice(0, 64);
+  const attemptId = `test-record_${task}_${safeCost}`.slice(0, 36);
   const reservationDay = getTodayDateString();
   const reserved = await reserveSpend(deviceToken, attemptId, costUSD, env, reservationDay, task);
   if (!reserved.ok) return;

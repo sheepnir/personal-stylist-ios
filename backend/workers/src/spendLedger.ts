@@ -3,39 +3,44 @@ import type { Env, SpendConfig } from './types.js';
 import {
   ageLedger,
   configToMicro,
-  emptyLedgerState,
   failClosedDaySummary,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
-  type LedgerState,
   type ReconcileResult,
   type ReserveResult,
   type DaySummary,
 } from './ledgerCore.js';
+import {
+  dayKeysInStorage,
+  loadLedgerFromStorage,
+  persistLedgerToStorage,
+} from './ledgerBucketStorage.js';
 import {
   toRpcDaySummary,
   toRpcReconcileResult,
   toRpcReserveResult,
 } from './rpcPlain.js';
 
-const STATE_KEY = 'ledger';
-
 /** Per-device spend ledger (keyed by device locator id, not token hash). */
 export class DeviceSpendLedger extends DurableObject<Env> {
-  private loadState(): LedgerState {
-    return this.ctx.storage.kv.get<LedgerState>(STATE_KEY) ?? emptyLedgerState();
-  }
-
-  private saveState(state: LedgerState): void {
-    this.ctx.storage.kv.put(STATE_KEY, state);
-  }
-
-  private touch(now = new Date()): { state: LedgerState; pruned: boolean } {
-    const state = this.loadState();
+  private touch(now = new Date()): {
+    dayKeysBefore: Set<string>;
+    state: ReturnType<typeof loadLedgerFromStorage>;
+    pruned: boolean;
+  } {
+    const dayKeysBefore = dayKeysInStorage(this.ctx.storage.kv);
+    const state = loadLedgerFromStorage(this.ctx.storage.kv);
     const pruned = ageLedger(state, now);
-    return { state, pruned };
+    return { dayKeysBefore, state, pruned };
+  }
+
+  private persist(
+    state: ReturnType<typeof loadLedgerFromStorage>,
+    dayKeysBefore: Set<string>
+  ): void {
+    persistLedgerToStorage(this.ctx.storage.kv, state, dayKeysBefore);
   }
 
   reserve(
@@ -46,10 +51,10 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     task = 'unknown'
   ): ReserveResult {
     return this.ctx.storage.transactionSync(() => {
-      const { state, pruned } = this.touch();
+      const { dayKeysBefore, state, pruned } = this.touch();
       if (!configToMicro(config).ok) {
         if (pruned) {
-          this.saveState(state);
+          this.persist(state, dayKeysBefore);
         }
         return toRpcReserveResult({ ok: false, reason: 'config_error' });
       }
@@ -58,7 +63,7 @@ export class DeviceSpendLedger extends DurableObject<Env> {
         removeEmptyDayBucket(state, day);
       }
       if (result.ok || pruned) {
-        this.saveState(state);
+        this.persist(state, dayKeysBefore);
       }
       return toRpcReserveResult(result);
     });
@@ -66,10 +71,10 @@ export class DeviceSpendLedger extends DurableObject<Env> {
 
   reconcile(day: string, attemptId: string, actualUSD: number, task?: string): ReconcileResult {
     return this.ctx.storage.transactionSync(() => {
-      const { state, pruned } = this.touch();
+      const { dayKeysBefore, state, pruned } = this.touch();
       const result = reconcileAttempt(state, day, attemptId, actualUSD, task);
       if (result.ok || pruned) {
-        this.saveState(state);
+        this.persist(state, dayKeysBefore);
       }
       return toRpcReconcileResult(result);
     });
@@ -82,16 +87,16 @@ export class DeviceSpendLedger extends DurableObject<Env> {
 
   summary(day: string, config: SpendConfig): DaySummary {
     return this.ctx.storage.transactionSync(() => {
-      const { state, pruned } = this.touch();
+      const { dayKeysBefore, state, pruned } = this.touch();
       if (!configToMicro(config).ok) {
         if (pruned) {
-          this.saveState(state);
+          this.persist(state, dayKeysBefore);
         }
         return toRpcDaySummary(failClosedDaySummary(day));
       }
       const summary = summarizeDay(state, day, config);
       if (pruned) {
-        this.saveState(state);
+        this.persist(state, dayKeysBefore);
       }
       return toRpcDaySummary(summary);
     });

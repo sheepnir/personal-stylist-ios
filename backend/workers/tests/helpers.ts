@@ -12,6 +12,7 @@ import {
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
+import { bucketStorageKey, loadLedgerFromStorage } from '../src/ledgerBucketStorage.js';
 import { DeviceSpendLedger } from '../src/spendLedger.js';
 
 export class MemoryKV {
@@ -123,7 +124,9 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
   const kvStore = new Map<string, unknown>();
   const putLog: unknown[] = [];
   if (initialState) {
-    kvStore.set('ledger', structuredClone(initialState));
+    for (const [day, record] of Object.entries(initialState.days)) {
+      kvStore.set(bucketStorageKey(day), structuredClone(record));
+    }
   }
   const storage = {
     kv: {
@@ -131,6 +134,19 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
       put: (key: string, value: unknown) => {
         putLog.push(value);
         kvStore.set(key, value);
+      },
+      delete: (key: string) => {
+        kvStore.delete(key);
+      },
+      list: (options?: { prefix?: string }) => {
+        const prefix = options?.prefix ?? '';
+        const entries: [string, unknown][] = [];
+        for (const [name, value] of kvStore) {
+          if (name.startsWith(prefix)) {
+            entries.push([name, value]);
+          }
+        }
+        return entries;
       },
     },
     transactionSync: <T>(fn: () => T): T => fn(),
@@ -142,6 +158,9 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
     resetPutCount: () => {
       putLog.length = 0;
     },
-    getStoredState: () => kvStore.get('ledger') as LedgerState | undefined,
+    getStoredState: () => {
+      const state = loadLedgerFromStorage(storage.kv);
+      return Object.keys(state.days).length > 0 ? state : undefined;
+    },
   };
 }

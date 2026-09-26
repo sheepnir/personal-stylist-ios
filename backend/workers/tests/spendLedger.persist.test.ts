@@ -51,7 +51,6 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount, getStoredState } = createDeviceSpendLedgerHarness(state);
     resetPutCount();
     ledger.summary(DAY, BAD_CONFIG);
-    expect(putCount()).toBe(1);
     expect(getStoredState()?.days['1999-01-01']).toBeUndefined();
   });
 
@@ -68,7 +67,6 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
     const { ledger, putCount, resetPutCount, getStoredState } = createDeviceSpendLedgerHarness(state);
     resetPutCount();
     expect(ledger.reserve('x', 999, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
-    expect(putCount()).toBe(1);
     expect(getStoredState()?.days['1999-01-01']).toBeUndefined();
   });
 
@@ -96,6 +94,6 @@ describe('DeviceSpendLedger persistence (fake DO storage)', () => {
       ok: false,
       reason: 'config_error',
     });
-    expect(prunedHarness.putCount()).toBe(1);
+    expect(prunedHarness.getStoredState()?.days['1999-01-01']).toBeUndefined();
   });
 });

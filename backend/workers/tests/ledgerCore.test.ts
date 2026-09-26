@@ -159,16 +159,18 @@ describe('ledgerCore reserve / reconcile', () => {
 
   it('rejects attemptId and task strings outside allowed length and charset', () => {
     const state = emptyLedgerState();
-    expect(reserveAttempt(state, 'a'.repeat(65), 0.1, DAY, CONFIG)).toEqual({
+    expect(reserveAttempt(state, 'a'.repeat(37), 0.1, DAY, CONFIG)).toEqual({
       ok: false,
       reason: 'invalid',
     });
+    expect(reserveAttempt(state, 'a'.repeat(36), 0.1, DAY, CONFIG)).toEqual({ ok: true });
     expect(reserveAttempt(state, 'bad id', 0.1, DAY, CONFIG)).toEqual({ ok: false, reason: 'invalid' });
-    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 't'.repeat(33))).toEqual({
+    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 't'.repeat(17))).toEqual({
       ok: false,
       reason: 'invalid',
     });
-    expect(reserveAttempt(state, 'ok-id', 0.1, DAY, CONFIG, 'generate')).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'ok-id2', 0.1, DAY, CONFIG, 't'.repeat(16))).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'ok-id3', 0.1, DAY, CONFIG, 'generate')).toEqual({ ok: true });
   });
 
   it('rejects reserve when spent + reserved + upper bound exceeds hard cap', () => {
