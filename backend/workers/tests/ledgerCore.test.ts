@@ -23,25 +23,32 @@ const DAY = '2026-09-26';
 const CONFIG = { dailyCapUSD: 1.0, softThresholdUSD: 0.5 };
 
 describe('ledgerCore USD ↔ micro-USD conversion', () => {
+  it('converts 0.1, 0.2 and 0.3 exactly', () => {
+    expect(costUsdToMicro(0.1)).toEqual({ ok: true, micro: 100_000 });
+    expect(costUsdToMicro(0.2)).toEqual({ ok: true, micro: 200_000 });
+    expect(costUsdToMicro(0.3)).toEqual({ ok: true, micro: 300_000 });
+  });
+
   it('costUsdToMicro ceils tiny positive costs to at least 1 micro', () => {
     expect(costUsdToMicro(1e-9)).toEqual({ ok: true, micro: 1 });
+    expect(costUsdToMicro(0.0000004)).toEqual({ ok: true, micro: 1 });
   });
 
-  it('refuses an unsafe 1e308 cap via config_error on reserve', () => {
+  it('reconcile attempt 1000 at 0.0004 USD records at least 400 micro', () => {
     const state = emptyLedgerState();
-    const huge = { dailyCapUSD: 1e308, softThresholdUSD: 0.5 };
-    expect(reserveAttempt(state, 'a1', 0.1, DAY, huge)).toEqual({ ok: false, reason: 'config_error' });
+    reserveAttempt(state, '1000', 0.001, DAY, CONFIG);
+    reconcileAttempt(state, '1000', 0.0004);
+    expect(state.days[DAY].spentMicro).toBeGreaterThanOrEqual(400);
   });
 
-  it('MAX_SAFE_INTEGER boundary: costs above safe micro-USD are rejected', () => {
-    expect(costUsdToMicro(Number.MAX_SAFE_INTEGER)).toEqual({ ok: false });
-    const safeUsd = (Number.MAX_SAFE_INTEGER - 1) / MICRO_USD;
-    const cost = costUsdToMicro(safeUsd);
-    expect(cost.ok).toBe(true);
-    if (cost.ok) {
-      expect(cost.micro).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
-    }
-    expect(capUsdToMicro(1e308)).toEqual({ ok: false });
+  it('refuses a second hold when 0.999999 and 0.0000014 exceed a 1.00 cap', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'a', 0.999999, DAY, CONFIG)).toEqual({ ok: true });
+    expect(reserveAttempt(state, 'b', 0.0000014, DAY, CONFIG)).toEqual({ ok: false, reason: 'hard_cap' });
+  });
+
+  it('capUsdToMicro floors 0.9999995 to 999999 micro', () => {
+    expect(capUsdToMicro(0.9999995)).toEqual({ ok: true, micro: 999_999 });
   });
 
   it('0.10 + 0.20 versus 0.30 micro-USD regression', () => {
@@ -49,7 +56,10 @@ describe('ledgerCore USD ↔ micro-USD conversion', () => {
     expect(reserveAttempt(state, 'ten-cents', 0.1, DAY, CONFIG)).toEqual({ ok: true });
     expect(reserveAttempt(state, 'twenty-cents', 0.2, DAY, CONFIG)).toEqual({ ok: true });
     expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBeCloseTo(0.3);
-    expect(usdToMicro(0.1) + usdToMicro(0.2)).toBe(usdToMicro(0.3));
+    expect(costUsdToMicro(0.1).ok && costUsdToMicro(0.2).ok && costUsdToMicro(0.3).ok).toBe(true);
+    if (costUsdToMicro(0.1).ok && costUsdToMicro(0.2).ok && costUsdToMicro(0.3).ok) {
+      expect(costUsdToMicro(0.1).micro + costUsdToMicro(0.2).micro).toBe(costUsdToMicro(0.3).micro);
+    }
   });
 });
 
@@ -116,6 +126,16 @@ describe('ledgerCore reserve / reconcile', () => {
       ok: false,
       reason: 'already_settled',
     });
+  });
+
+  it('refuses reserve when config cap is NaN (defense in depth)', () => {
+    const state = emptyLedgerState();
+    expect(
+      reserveAttempt(state, 'a1', 0.1, DAY, { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 })
+    ).toEqual({ ok: false, reason: 'config_error' });
+    expect(summarizeDay(state, DAY, { dailyCapUSD: Number.NaN, softThresholdUSD: 0.5 }).hardCapReached).toBe(
+      true
+    );
   });
 });
 

@@ -2,7 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env, SpendConfig } from './types.js';
 import {
   ageLedger,
+  configToMicro,
   emptyLedgerState,
+  failClosedDaySummary,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
@@ -42,6 +44,9 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     config: SpendConfig,
     task = 'unknown'
   ): ReserveResult {
+    if (!configToMicro(config).ok) {
+      return { ok: false, reason: 'config_error' };
+    }
     return this.ctx.storage.transactionSync(() => {
       const { state, pruned } = this.touch();
       const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
@@ -72,6 +77,9 @@ export class DeviceSpendLedger extends DurableObject<Env> {
   }
 
   summary(day: string, config: SpendConfig): DaySummary {
+    if (!configToMicro(config).ok) {
+      return failClosedDaySummary(day);
+    }
     return this.ctx.storage.transactionSync(() => {
       const { state, pruned } = this.touch();
       const summary = summarizeDay(state, day, config);

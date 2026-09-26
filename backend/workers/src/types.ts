@@ -98,18 +98,75 @@ export interface SpendConfig {
   softThresholdUSD: number;
 }
 
+export type ResolvedSpendConfig =
+  | { configError: false; dailyCapUSD: number; softThresholdUSD: number }
+  | { configError: true };
+
+const PLAIN_DECIMAL_USD = /^\d+(\.\d+)?$/;
+
+function parsePlainDecimalUsd(raw: string | undefined): number | null | 'unset' {
+  if (raw === undefined || raw.trim() === '') {
+    return 'unset';
+  }
+  const trimmed = raw.trim();
+  if (!PLAIN_DECIMAL_USD.test(trimmed)) {
+    return null;
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return n;
+}
+
+let loggedConfigError = false;
+
+export function resetSpendConfigLogStateForTests(): void {
+  loggedConfigError = false;
+}
+
+function logSpendConfigError(): void {
+  if (loggedConfigError) return;
+  loggedConfigError = true;
+  console.warn('Spend configuration invalid; ledger reservations disabled.');
+}
+
 /**
- * Resolve the spend config for this deployment: valid positive env vars win over the sample
- * defaults; the soft threshold is clamped to the hard cap.
+ * Resolve spend caps from env. Unset vars use sample defaults; an explicitly invalid
+ * `DAILY_CAP_USD` or `SOFT_THRESHOLD_USD` is a config error (fail closed, no silent fallback).
  */
 export function resolveSpendConfig(
   env: Pick<Env, 'DAILY_CAP_USD' | 'SOFT_THRESHOLD_USD'>
+): ResolvedSpendConfig {
+  const capParsed = parsePlainDecimalUsd(env.DAILY_CAP_USD);
+  if (capParsed === null) {
+    logSpendConfigError();
+    return { configError: true };
+  }
+  const dailyCapUSD = capParsed === 'unset' ? SPEND_CONFIG.dailyCapUSD : capParsed;
+
+  const softParsed = parsePlainDecimalUsd(env.SOFT_THRESHOLD_USD);
+  if (softParsed === null) {
+    logSpendConfigError();
+    return { configError: true };
+  }
+  const softThresholdUSD = Math.min(
+    softParsed === 'unset' ? SPEND_CONFIG.softThresholdUSD : softParsed,
+    dailyCapUSD
+  );
+  return { configError: false, dailyCapUSD, softThresholdUSD };
+}
+
+/** SpendConfig for ledger calls; invalid deployment config yields NaN caps (fail closed in core). */
+export function spendConfigFromEnv(
+  env: Pick<Env, 'DAILY_CAP_USD' | 'SOFT_THRESHOLD_USD'>
 ): SpendConfig {
-  const parse = (raw: string | undefined, fallback: number): number => {
-    const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
+  const resolved = resolveSpendConfig(env);
+  if (resolved.configError) {
+    return { dailyCapUSD: Number.NaN, softThresholdUSD: Number.NaN };
+  }
+  return {
+    dailyCapUSD: resolved.dailyCapUSD,
+    softThresholdUSD: resolved.softThresholdUSD,
   };
-  const dailyCapUSD = parse(env.DAILY_CAP_USD, SPEND_CONFIG.dailyCapUSD);
-  const soft = parse(env.SOFT_THRESHOLD_USD, SPEND_CONFIG.softThresholdUSD);
-  return { dailyCapUSD, softThresholdUSD: Math.min(soft, dailyCapUSD) };
 }

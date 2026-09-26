@@ -68,32 +68,42 @@ export type ConfigMicroResult =
   | { ok: true; capMicro: number; softMicro: number }
   | { ok: false; configError: true };
 
-/** Positive finite costs: ceil to micro-USD, minimum 1 micro. */
-export function costUsdToMicro(usd: number): CostMicroResult {
+/** Snap float noise before micro-USD rounding (about 1e-3 micro precision). */
+export function snapMicroProduct(usd: number): number | null {
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
-    return { ok: false };
+    return null;
   }
   const product = usd * MICRO_USD;
   if (!Number.isFinite(product)) {
+    return null;
+  }
+  const snapped = Math.round(product * 1000) / 1000;
+  if (!Number.isFinite(snapped) || snapped <= 0) {
+    return null;
+  }
+  return snapped;
+}
+
+/** Positive finite costs: snap, ceil to micro-USD, minimum 1 micro. */
+export function costUsdToMicro(usd: number): CostMicroResult {
+  const snapped = snapMicroProduct(usd);
+  if (snapped === null) {
     return { ok: false };
   }
-  const micro = Math.max(1, Math.ceil(product));
+  const micro = Math.max(1, Math.ceil(snapped));
   if (micro > Number.MAX_SAFE_INTEGER) {
     return { ok: false };
   }
   return { ok: true, micro };
 }
 
-/** Caps and thresholds: floor to micro-USD. */
+/** Caps and thresholds: snap, floor to micro-USD. */
 export function capUsdToMicro(usd: number): CostMicroResult {
-  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
+  const snapped = snapMicroProduct(usd);
+  if (snapped === null) {
     return { ok: false };
   }
-  const product = usd * MICRO_USD;
-  if (!Number.isFinite(product)) {
-    return { ok: false };
-  }
-  const micro = Math.floor(product);
+  const micro = Math.floor(snapped);
   if (micro < 1 || micro > Number.MAX_SAFE_INTEGER) {
     return { ok: false };
   }
@@ -105,12 +115,32 @@ export function microToUsd(micro: number): number {
 }
 
 export function configToMicro(config: SpendConfig): ConfigMicroResult {
+  if (
+    config === undefined ||
+    config === null ||
+    typeof config.dailyCapUSD !== 'number' ||
+    typeof config.softThresholdUSD !== 'number'
+  ) {
+    return { ok: false, configError: true };
+  }
   const cap = capUsdToMicro(config.dailyCapUSD);
   const soft = capUsdToMicro(config.softThresholdUSD);
   if (!cap.ok || !soft.ok) {
     return { ok: false, configError: true };
   }
   return { ok: true, capMicro: cap.micro, softMicro: Math.min(soft.micro, cap.micro) };
+}
+
+export function failClosedDaySummary(day: string): DaySummary {
+  return {
+    date: day,
+    spentUSD: 0,
+    reservedUSD: 0,
+    softThresholdReached: true,
+    hardCapReached: true,
+    overReservationCount: 0,
+    byTask: nullRecord(),
+  };
 }
 
 /** Strict UTC calendar day key (YYYY-MM-DD) that matches a real calendar date. */
