@@ -67,7 +67,7 @@ struct DeviceAccessSection: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityLabel("Paste kind")
-                .accessibilityValue(modeHelperText)
+                .accessibilityValue(mode.rawValue)
 
                 Text(modeHelperText)
                     .font(.footnote)
@@ -146,6 +146,7 @@ struct DeviceAccessSection: View {
                 _ = DeviceTokenStore.clear()
                 connected = DeviceTokenStore.hasToken
                 pasteBuffer = ""
+                model.noteDeviceAccessCleared()
                 model.showToast(DressingCopy.deviceAccessCleared)
             }
             Button("Cancel", role: .cancel) {}

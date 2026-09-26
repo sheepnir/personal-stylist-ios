@@ -557,6 +557,11 @@ final class DeviceTokenStoreTests: XCTestCase {
         )
         XCTAssertFalse(
             DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-8000-000000000001.\(DeviceAccessTestFixtures.secret44)"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
                 "00000000-0000-4000-8000-000000000001\(DeviceAccessTestFixtures.secret43)"
             )
         )

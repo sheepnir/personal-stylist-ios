@@ -342,6 +342,65 @@ final class OutfitEngineClientStubTests: XCTestCase {
     }
 
     @MainActor
+    func testStaleAlternatives401AfterCredentialRenewalDoesNotReReject() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let garments = try DeviceAccessTestFixtures.readyGarments()
+        let successBody = try generateSuccessBody(
+            anchorId: model.selectedGarment!.id,
+            secondGarmentId: garments[1].id
+        )
+        installRemoteEngineStub { request in
+            if request.url?.path.hasSuffix("/v1/outfit/generate") == true {
+                return .http(status: 200, body: successBody)
+            }
+            return .http(status: 500, body: Data())
+        }
+        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        model.markDeviceAccessRejected()
+        RecordingURLProtocol.latencyNanoseconds = 300_000_000
+        installRemoteEngineStub { request in
+            if request.url?.path.hasSuffix("/v1/outfit/alternatives") == true {
+                return .http(status: 401, body: Data())
+            }
+            return .http(status: 500, body: Data())
+        }
+        async let swapWait: Void = model.alternatives(for: .bottom)
+        model.noteDeviceAccessCredentialStored()
+        await swapWait
+        RecordingURLProtocol.latencyNanoseconds = 0
+        XCTAssertFalse(model.deviceAccessRejected)
+    }
+
+    @MainActor
+    func testStaleGenerate401AfterCredentialRenewalDoesNotReReject() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        RecordingURLProtocol.latencyNanoseconds = 300_000_000
+        installRemoteEngineStub { request in
+            if request.url?.path.hasSuffix("/v1/outfit/generate") == true {
+                return .http(status: 401, body: Data())
+            }
+            return .http(status: 500, body: Data())
+        }
+        async let buildWait: Bool = model.buildDemoOutfit(intent: .firstBuild)
+        model.noteDeviceAccessCredentialStored()
+        _ = await buildWait
+        RecordingURLProtocol.latencyNanoseconds = 0
+        XCTAssertFalse(model.deviceAccessRejected)
+    }
+
+    @MainActor
+    func testBuildDemoOutfitDoesNotHitEngineWhileDeviceAccessRejected() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        model.markDeviceAccessRejected()
+        installRemoteEngineStub { request in
+            XCTFail("unexpected request: \(request.url?.path ?? "")")
+            return .http(status: 500, body: Data())
+        }
+        XCTAssertFalse(await model.buildDemoOutfit(intent: .firstBuild))
+        XCTAssertTrue(RecordingURLProtocol.recorded.isEmpty)
+    }
+
+    @MainActor
     func test401OnChangeAnchorRestoresPriorOutfit() async throws {
         let model = try await makeModelForDeviceAccessTests()
         let garments = try DeviceAccessTestFixtures.readyGarments()
@@ -414,8 +473,9 @@ final class OutfitEngineClientStubTests: XCTestCase {
 enum DeviceAccessTestFixtures {
     static let secret43 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"
     static let validIssuedToken = "00000000-0000-4000-8000-000000000001.\(secret43)"
+    static let secret44 = secret43 + "x"
     static let validIssuedTokenWithURLChars =
-        "00000000-0000-4000-8000-000000000002.ABCDEFGHIJKLMNOPQRSTUVWXYZabc-_defghijklmnop"
+        "00000000-0000-4000-8000-000000000002.ABCDEFGHIJKLMNOPQRSTUVWXYZabc-_defghijklmno"
 
     static func readyGarments() throws -> [StubGarment] {
         let ready = FixtureWardrobeLoader.loadGarments().filter(\.isReady)

@@ -792,7 +792,7 @@ private struct GapTileVoiceOver: ViewModifier {
             content
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(combinedLabel)
-                .accessibilityAction(named: findActionName, onFind)
+                .accessibilityAction(named: Text(findActionName), onFind)
         } else {
             content
                 .accessibilityElement(children: .combine)

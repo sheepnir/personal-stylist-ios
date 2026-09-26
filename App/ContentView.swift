@@ -54,6 +54,10 @@ struct ContentView: View {
                 },
                 onOpenLoggedToday: {
                     openLoggedToday()
+                },
+                onSetUpDeviceAccess: {
+                    model.requestScrollToDeviceAccess()
+                    path.append(Route.profile)
                 }
             )
             .navigationDestination(for: Route.self) { route in
@@ -75,6 +79,10 @@ struct ContentView: View {
                             path = NavigationPath()
                         },
                         onOpenProfile: {
+                            path.append(Route.profile)
+                        },
+                        onSetUpDeviceAccess: {
+                            model.requestScrollToDeviceAccess()
                             path.append(Route.profile)
                         }
                     )
@@ -268,6 +276,7 @@ struct ContentView: View {
 
     @MainActor
     private func buildFromWardrobe(_ g: StubGarment) async {
+        if model.deviceAccessRejected { return }
         if changingAnchor {
             let ok = await model.changeAnchor(to: g, priorOutfit: outfitBeforeAnchorPick)
             if ok {
