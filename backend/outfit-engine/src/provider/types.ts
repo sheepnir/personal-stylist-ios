@@ -15,8 +15,7 @@ export type ProviderOutputFailureCause =
   | "OUTPUT_TOKEN_MAP"
   | "OUTPUT_STAGE4"
   | "OUTPUT_EXCLUDED_SET"
-  | "OUTPUT_LENGTH"
-  | "OUTPUT_GAP_REASON";
+  | "OUTPUT_LENGTH";
 
 export interface ProviderChoiceQuestion {
   id: string;
@@ -35,11 +34,15 @@ export interface ProviderNoulQuestion {
 
 export type ProviderQuestion = ProviderChoiceQuestion | ProviderNoulQuestion;
 
+/**
+ * `keepTogether` set offered as one `s_xx` option (ADR §7.1.2).
+ * A-1 `outfit-t2-v1-optionDescriptions.ts` does not define this shape yet (fa3e825).
+ */
 export interface ProviderSetToken {
+  /** Set token (`s_` + suffix) appearing in the first slot question's options. */
   token: string;
-  /** Slot where the set option appears in the choice question. */
+  /** Slot whose choice question lists `token` as an option key. */
   firstSlot: Slot;
-  /** Member garment UUIDs in wardrobe order. */
   memberGarmentIds: string[];
   memberSlots: Slot[];
 }

@@ -9,6 +9,7 @@ import {
 import { matchesExcludedGarmentSet } from "./excludeGarmentSets.js";
 import { mapDecisionsToAssignments } from "./mapDecisionsToAssignments.js";
 import { modelSlugMatches } from "./modelSlug.js";
+import { providerQuestionsMatchSlotIdContract } from "./decisionsQuestionIds.js";
 import {
   parseDecisionsResponseBody,
   validateDecisionsAnswersAgainstQuestions,
@@ -44,6 +45,10 @@ export function validateProviderOutput(
     return { ok: false, cause: "OUTPUT_MODEL_MISMATCH" };
   }
 
+  if (!providerQuestionsMatchSlotIdContract(input.questions)) {
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
+  }
+
   if (
     !validateDecisionsAnswersAgainstQuestions(
       parsed.answers,
@@ -76,7 +81,7 @@ export function validateProviderOutput(
   }
 
   if (!assignmentsGapReasonValid(mapped.assignments)) {
-    return { ok: false, cause: "OUTPUT_GAP_REASON" };
+    return { ok: false, cause: "OUTPUT_SCHEMA" };
   }
 
   const stage4 = runStage4({
