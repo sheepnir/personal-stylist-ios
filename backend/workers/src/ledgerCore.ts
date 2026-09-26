@@ -1,8 +1,9 @@
 /**
- * Pure spend-ledger logic (reserve / reconcile / summary / prune).
+ * Pure spend-ledger logic (reserve / reconcile / summary / prune / unknown aging).
  * All monetary amounts inside the ledger are integer micro-USD (1 USD = 1_000_000 micro).
  */
 
+import { NO_COST_SOURCE, type CostSource } from './costSource.js';
 import type { SpendConfig } from './types.js';
 
 export const MICRO_USD = 1_000_000;
@@ -23,6 +24,11 @@ export interface AttemptEntry {
   generationId?: string;
   /** True when reconciled actual cost exceeded the reserved upper bound. */
   overReservation?: boolean;
+  /** Lazy CostSource lookups for unknown outcomes (#13-b). */
+  costLookupCount?: number;
+  lastCostLookupAt?: string;
+  /** Set when open/unknown outcome aged to spent at upper bound; enables idempotent markUnknown replay. */
+  agedAtUpperBound?: boolean;
 }
 
 export interface DayRecord {
@@ -87,6 +93,21 @@ function resolveReconcileActualMicro(
 export const MAX_DISTINCT_TASKS_PER_DAY = 32;
 
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** ADR-0001 §12 / D-34: unknown reservations count as spent after 24 h. */
+export const UNKNOWN_OUTCOME_AGING_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Increasing intervals between lazy CostSource lookups (first lookup on first ledger access).
+ */
+export const COST_LOOKUP_BACKOFF_MS = [
+  0,
+  60_000,
+  5 * 60_000,
+  15 * 60_000,
+  60 * 60_000,
+  4 * 60 * 60_000,
+];
 
 export interface ReserveResult {
   ok: boolean;
@@ -791,7 +812,7 @@ export function reconcileAttempt(
     }
     return { ok: false, reason: 'invalid' };
   }
-  if (entry.state !== 'reserved') {
+  if (entry.state !== 'reserved' && entry.state !== 'unknown') {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -835,6 +856,129 @@ export function reconcileAttempt(
     return { ok: false, reason: 'actual_over_ceiling' };
   }
   return { ok: true };
+}
+
+export interface MarkUnknownResult {
+  ok: boolean;
+  reason?: 'not_found' | 'invalid';
+}
+
+/** Move a reserved attempt to unknown; funds stay reserved until reconcile or aging. */
+export function markAttemptUnknown(
+  state: LedgerState,
+  attemptId: string,
+  generationId?: string
+): MarkUnknownResult {
+  if (!isValidAttemptId(attemptId)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  for (const day of Object.values(state.days)) {
+    const entry = day.attempts[attemptId];
+    if (!entry) continue;
+
+    if (entry.state === 'unknown') {
+      if (generationId !== undefined && entry.generationId !== undefined && entry.generationId !== generationId) {
+        return { ok: false, reason: 'invalid' };
+      }
+      if (generationId !== undefined) entry.generationId = generationId;
+      return { ok: true };
+    }
+    if (entry.state === 'reconciled') {
+      if (entry.agedAtUpperBound) {
+        if (generationId !== undefined && entry.generationId !== undefined && entry.generationId !== generationId) {
+          return { ok: false, reason: 'invalid' };
+        }
+        if (generationId !== undefined) entry.generationId = generationId;
+        return { ok: true };
+      }
+      return { ok: false, reason: 'invalid' };
+    }
+    if (entry.state !== 'reserved') {
+      return { ok: false, reason: 'invalid' };
+    }
+
+    entry.state = 'unknown';
+    if (generationId !== undefined) entry.generationId = generationId;
+    return { ok: true };
+  }
+
+  return { ok: false, reason: 'not_found' };
+}
+
+/** `null` when missing or unparseable — treated as immediately eligible to age. */
+function parseCreatedAtMs(createdAt: string | undefined): number | null {
+  if (!createdAt) return null;
+  const ms = Date.parse(createdAt);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function shouldAgeToUpperBound(entry: AttemptEntry, now: Date): boolean {
+  const createdMs = parseCreatedAtMs(entry.createdAt);
+  if (createdMs === null) return true;
+  return now.getTime() - createdMs >= UNKNOWN_OUTCOME_AGING_MS;
+}
+
+function finalizeAgedAtUpperBound(day: DayRecord, entry: AttemptEntry, now: Date): void {
+  const settleMicro = entry.upperBoundMicro;
+  day.reservedMicro = saturatingMicroSub(day.reservedMicro, settleMicro);
+  day.spentMicro = saturatingMicroAdd(day.spentMicro, settleMicro);
+  const taskPrev = Object.hasOwn(day.tasks, entry.task) ? day.tasks[entry.task]! : 0;
+  day.tasks[entry.task] = saturatingMicroAdd(taskPrev, settleMicro);
+  entry.state = 'reconciled';
+  entry.actualMicro = settleMicro;
+  entry.reconciledAt = now.toISOString();
+  entry.agedAtUpperBound = true;
+}
+
+function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {
+  if (!entry.generationId) return false;
+
+  const createdMs = parseCreatedAtMs(entry.createdAt);
+  if (createdMs === null) return false;
+
+  const ageMs = now.getTime() - createdMs;
+  if (ageMs >= UNKNOWN_OUTCOME_AGING_MS) return false;
+
+  const count = entry.costLookupCount ?? 0;
+  const backoff =
+    COST_LOOKUP_BACKOFF_MS[Math.min(count, COST_LOOKUP_BACKOFF_MS.length - 1)];
+  const anchorMs =
+    count === 0 ? createdMs : Date.parse(entry.lastCostLookupAt ?? entry.createdAt);
+  if (!Number.isFinite(anchorMs)) return false;
+  return now.getTime() >= anchorMs + backoff;
+}
+
+function processOpenAttempts(state: LedgerState, now: Date, costSource: CostSource): void {
+  for (const [dayKey, day] of Object.entries(state.days)) {
+    for (const entry of Object.values(day.attempts)) {
+      if (entry.state !== 'reserved' && entry.state !== 'unknown') continue;
+
+      if (shouldAgeToUpperBound(entry, now)) {
+        finalizeAgedAtUpperBound(day, entry, now);
+        continue;
+      }
+
+      if (entry.state !== 'unknown') continue;
+
+      if (!shouldAttemptCostLookup(entry, now)) continue;
+
+      entry.lastCostLookupAt = now.toISOString();
+      entry.costLookupCount = (entry.costLookupCount ?? 0) + 1;
+
+      const generationId = entry.generationId;
+      if (!generationId) continue;
+
+      try {
+        const lookup = costSource.lookup(generationId, entry.attemptId);
+        if (lookup.outcome === 'known' && lookup.costUSD !== undefined) {
+          reconcileAttempt(state, dayKey, entry.attemptId, lookup.costUSD);
+        }
+      } catch {
+        // Treat throws like unknown/error: reservation stays, backoff already advanced.
+      }
+    }
+  }
 }
 
 export function summarizeDay(
@@ -927,8 +1071,16 @@ export function dayHardCapReached(state: LedgerState, day: string, capMicro: num
   return withMinHold === null || totalCommitted >= capMicro || withMinHold > capMicro;
 }
 
-/** Prunes eligible settled buckets; returns whether storage changed. #13-b adds unknown aging. */
-export function ageLedger(state: LedgerState, now: Date): boolean {
+/**
+ * Prune stale days, age open reservations at 24 h, and lazily reconcile unknowns via {@link CostSource}.
+ * Returns whether pruning changed persisted bucket keys.
+ */
+export function ageLedger(
+  state: LedgerState,
+  now: Date,
+  costSource: CostSource = NO_COST_SOURCE
+): boolean {
+  processOpenAttempts(state, now, costSource);
   return pruneOldDays(state, now);
 }
 

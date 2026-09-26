@@ -5,10 +5,12 @@ import {
   configToMicro,
   failClosedDaySummary,
   isLegacyStorageBlocked,
+  markAttemptUnknown,
   reconcileAttempt,
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  type MarkUnknownResult,
   type ReconcileResult,
   type ReserveResult,
   type DaySummary,
@@ -97,9 +99,21 @@ export class DeviceSpendLedger extends DurableObject<Env> {
     });
   }
 
-  /** Reserved for #13-b — not implemented in #13-a. */
-  markUnknown(_day: string, _attemptId: string, _generationId?: string): { ok: boolean } {
-    return { ok: false };
+  /** Day is accepted for RPC symmetry; lookup is by attemptId across buckets (#13-b). */
+  markUnknown(_day: string, attemptId: string, generationId?: string): MarkUnknownResult {
+    return this.ctx.storage.transactionSync(() => {
+      const { dayKeysBefore, state, pruned } = this.touch();
+      if (isLegacyStorageBlocked(state)) {
+        return { ok: false, reason: 'invalid' };
+      }
+      const result = markAttemptUnknown(state, attemptId, generationId);
+      if (result.ok || pruned) {
+        if (!this.persist(state, dayKeysBefore)) {
+          return { ok: false, reason: 'invalid' };
+        }
+      }
+      return result;
+    });
   }
 
   summary(day: string, config: SpendConfig): DaySummary {
