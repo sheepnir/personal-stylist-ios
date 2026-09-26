@@ -281,6 +281,57 @@ describe('corrupt day reconcile (Q2)', () => {
   });
 });
 
+describe('Sol round-4 decode regressions', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const HIGH_CONFIG = { dailyCapUSD: 10_000, softThresholdUSD: 5000 };
+
+  it('reload after reconcile task override keeps day valid (entry.task matches k)', () => {
+    const originalTask = 'task-original-xx';
+    const overrideTask = 'task-override-xx';
+    const { ledger, getStoredState } = createDeviceSpendLedgerHarness();
+    expect(ledger.reserve('override-id', 0.01, DAY, CONFIG, originalTask)).toEqual({ ok: true });
+    expect(ledger.reconcile(DAY, 'override-id', 0.01, overrideTask)).toEqual({ ok: true });
+    const reloaded = getStoredState();
+    expect(isDayStorageCorrupt(reloaded!, DAY)).toBe(false);
+    expect(reloaded?.days[DAY]?.attempts['override-id']?.task).toBe(overrideTask);
+    expect(reloaded?.days[DAY]?.tasks[overrideTask]).toBeGreaterThan(0);
+  });
+
+  it('reload after actual-over-ceiling at max reserve bound keeps day valid (O matches recompute)', () => {
+    const { ledger, getStoredState } = createDeviceSpendLedgerHarness();
+    expect(ledger.reserve('ceil-id', MAX_ATTEMPT_USD, DAY, HIGH_CONFIG, 'generate')).toEqual({
+      ok: true,
+    });
+    expect(ledger.reconcile(DAY, 'ceil-id', MAX_ATTEMPT_USD + 500)).toEqual({
+      ok: false,
+      reason: 'actual_over_ceiling',
+    });
+    const reloaded = getStoredState();
+    expect(isDayStorageCorrupt(reloaded!, DAY)).toBe(false);
+    expect(reloaded?.days[DAY]?.overReservationCount).toBe(1);
+    expect(reloaded?.days[DAY]?.attempts['ceil-id']?.overReservation).toBe(true);
+  });
+
+  it('throws while probing raw bucket JSON mark only that day corrupt', () => {
+    const cyclic: Record<string, unknown> = { s: 0, r: 0, o: 0, a: {}, k: {} };
+    cyclic.self = cyclic;
+    const kv = memoryKv({
+      [bucketStorageKey(PAST_DAY)]: cyclic,
+      [bucketStorageKey(DAY)]: { s: 0, r: 0, o: 0, a: {}, k: {} },
+    });
+    const state = loadLedgerFromStorage(kv);
+    expect(isDayStorageCorrupt(state, PAST_DAY)).toBe(true);
+    expect(isDayStorageCorrupt(state, DAY)).toBe(false);
+    expect(state.days[DAY]).toBeDefined();
+  });
+});
+
 function maxLengthTaskUnique(index: number): string {
   const suffix = String(index).padStart(4, '0');
   return `${'T'.repeat(16 - suffix.length)}${suffix}`;

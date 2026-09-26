@@ -372,7 +372,7 @@ export function recomputeDayTotalsFromAttempts(
       return null;
     }
     tasks[entry.task] = nextTask;
-    if (entry.actualMicro > entry.upperBoundMicro) {
+    if (entry.overReservation === true || entry.actualMicro > entry.upperBoundMicro) {
       overReservationCount += 1;
     }
   }
@@ -802,6 +802,7 @@ export function reconcileAttempt(
 
   entry.state = 'reconciled';
   entry.actualMicro = actualMicro;
+  entry.task = taskKey;
   entry.reconciledAt = new Date().toISOString();
   if (actualOverCeiling) {
     return { ok: false, reason: 'actual_over_ceiling' };

@@ -362,18 +362,22 @@ function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): v
   if (raw === undefined) {
     return;
   }
-  const encodedBytes = persistedBucketJsonByteLength(raw);
-  const stored = validateStoredDayBucket(raw);
-  if (!stored || storedDayBucketViolatesLedgerLimits(stored, encodedBytes)) {
+  try {
+    const encodedBytes = persistedBucketJsonByteLength(raw);
+    const stored = validateStoredDayBucket(raw);
+    if (!stored || storedDayBucketViolatesLedgerLimits(stored, encodedBytes)) {
+      markDayStorageCorrupt(state, day);
+      return;
+    }
+    const decoded = decodeDayFromStorage(day, stored);
+    if (!decoded) {
+      markDayStorageCorrupt(state, day);
+      return;
+    }
+    state.days[day] = decoded;
+  } catch {
     markDayStorageCorrupt(state, day);
-    return;
   }
-  const decoded = decodeDayFromStorage(day, stored);
-  if (!decoded) {
-    markDayStorageCorrupt(state, day);
-    return;
-  }
-  state.days[day] = decoded;
 }
 
 export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
