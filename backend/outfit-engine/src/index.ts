@@ -60,3 +60,21 @@ export type {
   RankAlternativesOutput,
 } from "./alternatives/rankAlternatives.js";
 export { templateReason } from "./alternatives/reasonTemplate.js";
+
+export {
+  CURRENT_STYLIST_PROMPT,
+  CURRENT_STYLIST_PROMPT_VERSION,
+  REGISTERED_PROMPT_CONTENT_HASHES,
+  STYLIST_PROMPT_MODULES,
+  getStylistPromptByVersion,
+  assertPromptRegistryIntegrity,
+  hashPromptContent,
+  buildProviderSuccessGeneration,
+  outfitT2V1,
+} from "./provider/index.js";
+export type {
+  StylistPromptModule,
+  StylistProviderPayload,
+  ProviderSuccessGenerationMeta,
+  BuildProviderSuccessGenerationOptions,
+} from "./provider/index.js";
