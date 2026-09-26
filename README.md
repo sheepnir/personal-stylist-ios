@@ -95,6 +95,20 @@ Tools, prefix the command with
 
 See `docs/demo-local.md` for the Simulator demo runbook and launch arguments.
 
+### Release build numbers
+
+Build numbers follow `YYYYMMDDNN`: the date plus a two-digit counter for builds made on
+that day (for example, the first build on 26 September 2026 is `2026092601`). Every
+distributed build must use a number strictly greater than the last distributed one, or
+the upload is rejected as not newer. The value lives in `project.yml` as
+`CURRENT_PROJECT_VERSION`; run `xcodegen generate` after changing it and commit the
+regenerated project. `MARKETING_VERSION` (currently `0.1.0`) is the user-visible version
+and changes independently.
+
+A release build also needs the untracked local configuration described under
+[Local configuration (untracked)](#local-configuration-untracked): the bundle identifier
+of the distribution record and the signing team.
+
 ### Repository checks
 
 ```bash
