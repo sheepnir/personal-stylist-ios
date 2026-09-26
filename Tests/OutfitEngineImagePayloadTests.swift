@@ -43,25 +43,23 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         String(String.UnicodeScalarView(s.unicodeScalars.drop { ecmaScriptWhitespace.contains($0.value) }))
     }
 
-    private static func isWorkerDefaultIgnorable(_ scalar: Unicode.Scalar) -> Bool {
-        let v = scalar.value
-        if v == 0x00ad || v == 0x034f || v == 0x180e || v == 0xfeff { return true }
-        if (0x200b...0x200f).contains(v) { return true }
-        if (0x2060...0x206f).contains(v) { return true }
-        if (0xfe00...0xfe0f).contains(v) { return true }
-        return scalar.properties.generalCategory == .format
-    }
-
     private static func isWorkerKeySeparator(_ scalar: Unicode.Scalar) -> Bool {
         let v = scalar.value
         if v == 0x5F || v == 0x2D || v == 0x2E { return true }
         return ecmaScriptWhitespace.contains(v)
     }
 
+    private static func workerKeyFailsPrintableAscii(_ key: String) -> Bool {
+        for scalar in key.unicodeScalars {
+            let v = scalar.value
+            if v < 0x20 || v > 0x7E { return true }
+        }
+        return false
+    }
+
     private static func normalizeWorkerKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
-            if isWorkerDefaultIgnorable(scalar) { continue }
             if isWorkerKeySeparator(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
@@ -73,6 +71,7 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     private static func workerSegmentImageBearing(_ key: String) -> Bool {
+        if workerKeyFailsPrintableAscii(key) { return true }
         let normalized = normalizeWorkerKey(key)
         return workerForbiddenTokens.contains { normalized.contains($0) }
     }
@@ -97,14 +96,22 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     private static func workerConsentTimestampHasControlCharacter(_ value: String) -> Bool {
-        value.unicodeScalars.contains { $0.value <= 0x1f || $0.value == 0x7f }
+        value.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return v <= 0x1f || v == 0x7f || v == 0x2028 || v == 0x2029
+        }
     }
 
     private static func workerAllowedConsent(_ value: Any) -> Bool {
         guard let string = value as? String, !string.isEmpty, string.count <= 64 else { return false }
         guard !workerConsentTimestampHasControlCharacter(string) else { return false }
         let nsRange = NSRange(string.startIndex..., in: string)
-        guard let match = workerConsentRfc3339.firstMatch(in: string, range: nsRange) else { return false }
+        guard let match = workerConsentRfc3339.firstMatch(
+            in: string,
+            options: [.anchored],
+            range: nsRange
+        ) else { return false }
+        guard match.range.length == nsRange.length else { return false }
         func intAt(_ index: Int) -> Int? {
             guard let range = Range(match.range(at: index), in: string) else { return nil }
             return Int(string[range])
@@ -113,9 +120,17 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         return workerRfc3339CalendarValid(year: year, month: month, day: day)
     }
 
+    private static let workerConsentPathDepth = 2
+
     /// Same traversal as `containsImage` in `backend/workers/src/validation.ts`.
     /// Returns the offending key or value prefix, or nil when the body is clean.
-    private static func workerImageFinding(in value: Any, path: [String] = [], underArrayAncestor: Bool = false) -> String? {
+    private static func workerImageFinding(
+        in value: Any,
+        path: [String] = [],
+        pathLen: Int = 0,
+        pastConsentDepth: Bool = false,
+        underArrayAncestor: Bool = false
+    ) -> String? {
         if let s = value as? String {
             let t = asciiLowercased(jsTrimStart(s))
             if workerValuePattern.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
@@ -125,19 +140,38 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         }
         if let array = value as? [Any] {
             for child in array {
-                if let found = workerImageFinding(in: child, path: path, underArrayAncestor: true) { return found }
+                if let found = workerImageFinding(
+                    in: child,
+                    path: path,
+                    pathLen: pathLen,
+                    pastConsentDepth: pastConsentDepth,
+                    underArrayAncestor: true
+                ) { return found }
             }
             return nil
         }
         if let object = value as? [String: Any] {
             for (key, child) in object {
-                let nextPath = path + [key]
-                if !underArrayAncestor && workerConsentPathMatches(nextPath) {
-                    if !workerAllowedConsent(child) { return "consent \(nextPath.joined(separator: "."))" }
-                    continue
+                var childPath = path
+                var childPathLen = pathLen
+                var childPastConsentDepth = pastConsentDepth
+                if !underArrayAncestor && !pastConsentDepth && pathLen < workerConsentPathDepth {
+                    childPath = pathLen == 0 ? [key] : [path[0], key]
+                    childPathLen = childPath.count
+                    childPastConsentDepth = childPathLen >= workerConsentPathDepth
+                    if workerConsentPathMatches(childPath) {
+                        if !workerAllowedConsent(child) { return "consent \(childPath.joined(separator: "."))" }
+                        continue
+                    }
                 }
                 if workerSegmentImageBearing(key) { return "key \(key)" }
-                if let found = workerImageFinding(in: child, path: nextPath, underArrayAncestor: underArrayAncestor) { return found }
+                if let found = workerImageFinding(
+                    in: child,
+                    path: childPath,
+                    pathLen: childPathLen,
+                    pastConsentDepth: childPastConsentDepth,
+                    underArrayAncestor: underArrayAncestor
+                ) { return found }
             }
         }
         return nil
@@ -400,39 +434,62 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
     }
 
     func testCaseFoldingIsASCIIOnly() {
-        // `ſ` (U+017F) does not fold to `s` under the JS `i` flag; segment has no forbidden token.
-        XCTAssertFalse(OutfitEngineClient.isImageBearingKey("maſterlabel"))
-        XCTAssertEqual(OutfitEngineClient.strippingImagePayload(["maſterlabel": 1])["maſterlabel"] as? Int, 1)
-        XCTAssertNil(Self.workerImageFinding(in: ["maſterlabel": 1]))
-        // ASCII `image` substring is still matched after normalization.
+        // Non-printable-ASCII keys are rejected outright.
+        XCTAssertTrue(OutfitEngineClient.isImageBearingKey("maſterlabel"))
+        XCTAssertNil(OutfitEngineClient.strippingImagePayload(["maſterlabel": 1])["maſterlabel"])
+        XCTAssertNotNil(Self.workerImageFinding(in: ["maſterlabel": 1]))
         XCTAssertTrue(OutfitEngineClient.isImageBearingKey("maſterimage"))
-        XCTAssertNil(OutfitEngineClient.strippingImagePayload(["maſterimage": 1])["maſterimage"])
         XCTAssertNotNil(Self.workerImageFinding(in: ["maſterimage": 1]))
-        // ASCII case still folds on both sides.
         XCTAssertTrue(OutfitEngineClient.isImageBearingKey("MASTERIMAGE"))
         XCTAssertTrue(OutfitEngineClient.looksLikeImageData("DATA:IMAGE/PNG;base64,AAAA"))
         XCTAssertTrue(OutfitEngineClient.looksLikeImageData("IVBORW0KGGO"))
-        // Kelvin sign (U+212A) is not ASCII `k`.
         XCTAssertFalse(OutfitEngineClient.looksLikeImageData("iVBORw0\u{212A}Ggo"))
     }
 
-    func testDefaultIgnorableCharactersStrippedBeforeTokenMatch() {
-        let zwspKey = "im\u{200B}age"
-        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(zwspKey))
-        XCTAssertNil(OutfitEngineClient.strippingImagePayload([zwspKey: 1])[zwspKey])
-        XCTAssertNotNil(Self.workerImageFinding(in: [zwspKey: 1]))
-        let bomKey = "photo\u{FEFF}Url"
-        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(bomKey))
-        XCTAssertNotNil(Self.workerImageFinding(in: [bomKey: 1]))
-        let zwjPixel = "pixel\u{200D}data"
-        XCTAssertTrue(OutfitEngineClient.isImageBearingKey(zwjPixel))
-        XCTAssertNotNil(Self.workerImageFinding(in: [zwjPixel: 1]))
+    func testNonPrintableAsciiObjectKeysAreRejected() {
+        for key in ["im\u{200B}age", "photo\u{FEFF}Url", "pixel\u{200D}data", "\u{0438}mage"] {
+            XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
+            XCTAssertNotNil(Self.workerImageFinding(in: [key: 1]), key)
+        }
     }
 
     func testWordSeparatorsFoldBeforeTokenMatch() {
         for key in ["pixel data", "pixel.data", "pixel_data", "bit map", "pho.to", "thu.mb"] {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
             XCTAssertNotNil(Self.workerImageFinding(in: [key: 1]), key)
+        }
+    }
+
+    func testImageGuardCorpusMatchesClientGuard() throws {
+        let corpusURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("fixtures/image-guard/corpus.json")
+        let data = try Data(contentsOf: corpusURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let keySegments = try XCTUnwrap(json["keySegments"] as? [[String: Any]])
+        for entry in keySegments {
+            let key = try XCTUnwrap(entry["key"] as? String)
+            let expect = try XCTUnwrap(entry["imageBearing"] as? Bool)
+            XCTAssertEqual(OutfitEngineClient.isImageBearingKey(key), expect, key)
+        }
+        let valueStrings = json["imageValueStrings"] as? [[String: Any]] ?? []
+        for entry in valueStrings {
+            let value = try XCTUnwrap(entry["value"] as? String)
+            let expect = try XCTUnwrap(entry["imageBearing"] as? Bool)
+            XCTAssertEqual(OutfitEngineClient.looksLikeImageData(value), expect, value.prefix(24).description)
+        }
+        let rejectBodies = try XCTUnwrap(json["rejectBodies"] as? [[String: Any]])
+        for entry in rejectBodies {
+            let label = entry["label"] as? String ?? "reject"
+            let body = try XCTUnwrap(entry["body"] as? [String: Any])
+            XCTAssertNotNil(Self.workerImageFinding(in: body), label)
+        }
+        let allowBodies = try XCTUnwrap(json["allowBodies"] as? [[String: Any]])
+        for entry in allowBodies {
+            let label = entry["label"] as? String ?? "allow"
+            let body = try XCTUnwrap(entry["body"] as? [String: Any])
+            XCTAssertNil(Self.workerImageFinding(in: body), label)
         }
     }
 

@@ -10,9 +10,9 @@ export const WARDROBE_IMAGES_ACCEPTED_AT_MAX_LENGTH = 64;
 /** Longest values matching {@link WARDROBE_IMAGES_ACCEPTED_AT_RFC3339} are ~35 chars; 64-char valid timestamps are not buildable under this rule. */
 
 export function consentTimestampHasControlCharacter(value: string): boolean {
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x1f || code === 0x7f) return true;
+  for (const char of value) {
+    const code = char.codePointAt(0)!;
+    if (code <= 0x1f || code === 0x7f || code === 0x2028 || code === 0x2029) return true;
   }
   return false;
 }

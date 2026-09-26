@@ -6,8 +6,9 @@
  * - #171: fail-closed rejection of image/thumbnail payloads (VF-03). The
  *   backend holds no user image content, so any image-bearing field is
  *   rejected before the engine runs.
- * - #36: normalize keys (lowercase, strip `_` / `-`) and match forbidden tokens
- *   anywhere in the segment, not only at non-letter boundaries.
+ * - #36: printable-ASCII object keys only; normalize allowed keys (lowercase,
+ *   strip `_` / `-` / `.` / ECMAScript whitespace) and match forbidden tokens
+ *   anywhere in the segment.
  */
 
 import type { Env, ProblemDetail } from './types.js';
@@ -23,12 +24,20 @@ import {
 
 export {
   FORBIDDEN_IMAGE_KEY_TOKENS,
+  ECMA_SCRIPT_WHITESPACE_CODE_POINTS,
+  IMAGE_GUARD_KEY_SEPARATOR_CODE_POINTS,
+  IMAGE_GUARD_PRINTABLE_ASCII_MAX,
+  IMAGE_GUARD_PRINTABLE_ASCII_MIN,
   normalizeImageGuardKey,
   normalizedKeyContainsForbiddenImageToken,
+  objectKeyFailsPrintableAsciiRule,
 } from './imageGuardKey.js';
 
-/** Maximum accepted request body size for content endpoints. */
-export const MAX_BODY_BYTES = 512 * 1024; // 512 KiB
+/** Prefixes matched on string values after `trimStart()` (case-insensitive on ASCII). */
+export const IMAGE_VALUE_PREFIXES = ['data:image/', '/9j/', 'iVBORw0KGgo'] as const;
+
+/** Detects data: URLs and common raw image encodings inside string values. */
+const IMAGE_VALUE_PATTERN = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
 
 /** Rate limit: max authenticated content requests per period. */
 export const RATE_LIMIT_MAX = 60;
@@ -44,8 +53,8 @@ export const RATE_LIMIT_WINDOW_SECONDS = 60;
  */
 export const IMAGE_GUARD_CONSENT_FIELD_SEGMENTS = ['privacyConsent', 'wardrobeImagesAcceptedAt'] as const;
 
-/** Detects data: URLs and common raw image encodings inside string values. */
-const IMAGE_VALUE_PATTERN = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
+/** Maximum accepted request body size for content endpoints. */
+export const MAX_BODY_BYTES = 512 * 1024; // 512 KiB
 
 export { isAllowedWardrobeImagesAcceptedAtValue } from './imageGuardConsent.js';
 
@@ -142,35 +151,68 @@ export function rejectImagePayload(body: unknown): Response | null {
   return null;
 }
 
-function consentPathMatches(path: readonly string[]): boolean {
+function consentPathMatches(path: readonly string[], pathLen: number): boolean {
   return (
-    path.length === IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.length &&
+    pathLen === IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.length &&
     IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.every((segment, index) => path[index] === segment)
   );
 }
 
+const CONSENT_PATH_DEPTH = IMAGE_GUARD_CONSENT_FIELD_SEGMENTS.length;
+
 function containsImage(value: unknown): boolean {
   // Iterative traversal: no depth-based fail-open or call-stack exhaustion.
-  const pending: Array<{ item: unknown; path: string[]; underArrayAncestor: boolean }> = [
-    { item: value, path: [], underArrayAncestor: false },
+  type Frame = {
+    item: unknown;
+    path: string[];
+    pathLen: number;
+    pastConsentDepth: boolean;
+    underArrayAncestor: boolean;
+  };
+  const pathBuf: string[] = [];
+  const pending: Frame[] = [
+    { item: value, path: pathBuf, pathLen: 0, pastConsentDepth: false, underArrayAncestor: false },
   ];
   while (pending.length) {
-    const { item, path, underArrayAncestor } = pending.pop()!;
+    const { item, path, pathLen, pastConsentDepth, underArrayAncestor } = pending.pop()!;
     if (typeof item === 'string' && IMAGE_VALUE_PATTERN.test(item.trimStart())) return true;
     if (Array.isArray(item)) {
-      for (const child of item) pending.push({ item: child, path, underArrayAncestor: true });
+      for (const child of item) {
+        pending.push({ item: child, path, pathLen, pastConsentDepth, underArrayAncestor: true });
+      }
     } else if (item !== null && typeof item === 'object') {
       for (const [key, child] of Object.entries(item)) {
-        const nextPath = [...path, key];
-        if (!underArrayAncestor && consentPathMatches(nextPath)) {
-          if (!isAllowedWardrobeImagesAcceptedAtValue(child)) return true;
-          continue;
+        let childPath = path;
+        let childPathLen = pathLen;
+        let childPastConsentDepth = pastConsentDepth;
+        if (!underArrayAncestor && !pastConsentDepth && pathLen < CONSENT_PATH_DEPTH) {
+          childPath = pathLen === 0 ? [key] : [path[0], key];
+          childPathLen = childPath.length;
+          childPastConsentDepth = childPathLen >= CONSENT_PATH_DEPTH;
+          if (consentPathMatches(childPath, childPathLen)) {
+            if (!isAllowedWardrobeImagesAcceptedAtValue(child)) return true;
+            continue;
+          }
         }
         if (normalizedKeyContainsForbiddenImageToken(key)) return true;
         if (Array.isArray(child)) {
-          for (const element of child) pending.push({ item: element, path: nextPath, underArrayAncestor: true });
+          for (const element of child) {
+            pending.push({
+              item: element,
+              path: childPath,
+              pathLen: childPathLen,
+              pastConsentDepth: childPastConsentDepth,
+              underArrayAncestor: true,
+            });
+          }
         } else {
-          pending.push({ item: child, path: nextPath, underArrayAncestor });
+          pending.push({
+            item: child,
+            path: childPath,
+            pathLen: childPathLen,
+            pastConsentDepth: childPastConsentDepth,
+            underArrayAncestor,
+          });
         }
       }
     }

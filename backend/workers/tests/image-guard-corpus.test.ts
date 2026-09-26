@@ -14,10 +14,17 @@ import {
   rejectImagePayload,
 } from '../src/validation.js';
 
+const corpusValuePattern = /^data:image\/|^\/9j\/|^iVBORw0KGgo/i;
+
+function corpusValueLooksLikeImage(value: string): boolean {
+  return corpusValuePattern.test(value.trimStart());
+}
+
 const corpusPath = join(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/image-guard/corpus.json');
 
 type Corpus = {
   keySegments: Array<{ key: string; imageBearing: boolean }>;
+  imageValueStrings?: Array<{ value: string; imageBearing: boolean }>;
   allowGuardedEndpointKeys?: string[];
   rejectBodies: Array<{ label?: string; body: Record<string, unknown> }>;
   allowBodies: Array<{ label?: string; body: Record<string, unknown> }>;
@@ -33,6 +40,10 @@ describe('image-guard corpus (#36)', () => {
 
   it.each(corpus.keySegments)('key segment $key → imageBearing=$imageBearing', ({ key, imageBearing }) => {
     expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(imageBearing);
+  });
+
+  it.each(corpus.imageValueStrings ?? [])('value string → imageBearing=$imageBearing', ({ value, imageBearing }) => {
+    expect(corpusValueLooksLikeImage(value)).toBe(imageBearing);
   });
 
   it.each(corpus.allowGuardedEndpointKeys ?? [])('guarded endpoint key $key is not image-bearing', (key) => {

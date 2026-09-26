@@ -255,6 +255,15 @@ describe('review regressions', () => {
   it.each(['null', '[]', '123', '"hello"'])('rejects non-object root %s', async (body) => {
     expect((await readJsonWithLimit(post(body)) as Response).status).toBe(400);
   });
+  it('scans deeply nested objects without quadratic path copying', () => {
+    let inner: Record<string, unknown> = { id: '1' };
+    for (let i = 0; i < 100_000; i++) {
+      inner = { [`n${i}`]: inner };
+    }
+    const started = performance.now();
+    expect(rejectImagePayload({ root: inner })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
   it('rejects deep image payloads and camel-case image keys', () => {
     let body: unknown = { imageUrl: 'https://example.test/x.png' };
     for (let i = 0; i < 100; i++) body = { nested: body };

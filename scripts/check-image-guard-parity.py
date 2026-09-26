@@ -53,6 +53,28 @@ WORKER_IMAGE_VALUE = re.compile(r"const IMAGE_VALUE_PATTERN = /(.+?)/i;")
 CLIENT_IMAGE_VALUE = re.compile(
     r"imageValuePattern = try! NSRegularExpression\(\s*pattern:\s*\"([^\"]+)\""
 )
+WORKER_IMAGE_PREFIXES = re.compile(
+    r"export const IMAGE_VALUE_PREFIXES = \[([\s\S]*?)\] as const;"
+)
+CLIENT_IMAGE_PREFIXES = re.compile(
+    r"private static let imageValuePrefixes = \[([\s\S]*?)\]"
+)
+WORKER_WHITESPACE = re.compile(
+    r"export const ECMA_SCRIPT_WHITESPACE_CODE_POINTS = \[([\s\S]*?)\] as const;"
+)
+CLIENT_WHITESPACE = re.compile(
+    r"private static let javaScriptWhitespace: Set<UInt32> = \[([\s\S]*?)\]"
+)
+WORKER_SEPARATORS = re.compile(
+    r"export const IMAGE_GUARD_KEY_SEPARATOR_CODE_POINTS = \[([\s\S]*?)\] as const;"
+)
+CLIENT_SEPARATORS = re.compile(
+    r"private static let imageGuardKeySeparatorCodePoints: \[UInt32\] = \[([\s\S]*?)\]"
+)
+WORKER_ASCII_MIN = re.compile(r"export const IMAGE_GUARD_PRINTABLE_ASCII_MIN = (0x[0-9a-fA-F]+);")
+WORKER_ASCII_MAX = re.compile(r"export const IMAGE_GUARD_PRINTABLE_ASCII_MAX = (0x[0-9a-fA-F]+);")
+CLIENT_ASCII_MIN = re.compile(r"private static let imageGuardPrintableAsciiMin: UInt32 = (0x[0-9A-Fa-f]+)")
+CLIENT_ASCII_MAX = re.compile(r"private static let imageGuardPrintableAsciiMax: UInt32 = (0x[0-9A-Fa-f]+)")
 
 GUARDED_REQUEST_ROOTS = ("GenerateRequest", "AlternativesRequest")
 
@@ -85,6 +107,36 @@ def extract_image_value_pattern(path: Path, pattern: re.Pattern[str]) -> str:
     if not match:
         sys.exit(f"{path.relative_to(ROOT)}: could not extract image value pattern")
     return match.group(1)
+
+
+def extract_quoted_strings(raw: str) -> list[str]:
+    return [m.group(1) for m in re.finditer(r"""['"]([^'"]+)['"]""", raw)]
+
+
+def extract_hex_list(raw: str) -> list[int]:
+    return [int(m.group(1), 16) for m in re.finditer(r"0x([0-9A-Fa-f]+)", raw)]
+
+
+def extract_ascii_bound(path: Path, pattern: re.Pattern[str]) -> int:
+    match = pattern.search(path.read_text(encoding="utf-8"))
+    if not match:
+        sys.exit(f"{path.relative_to(ROOT)}: could not extract printable ASCII bound")
+    return int(match.group(1), 16)
+
+
+def extract_image_prefixes(path: Path, pattern: re.Pattern[str]) -> list[str]:
+    match = pattern.search(path.read_text(encoding="utf-8"))
+    if not match:
+        sys.exit(f"{path.relative_to(ROOT)}: could not extract image value prefixes")
+    return [s.lower() for s in extract_quoted_strings(match.group(1))]
+
+
+def assert_same_lists(label: str, worker: list, client: list) -> bool:
+    if worker != client:
+        print(f"MISMATCH {label}:\n  worker: {worker}\n  client: {client}")
+        return False
+    print(f"OK {label}: {len(worker)} entries match")
+    return True
 
 
 def normalize_image_value_pattern(pattern: str) -> str:
@@ -244,6 +296,42 @@ def main() -> int:
         )
         return 1
     print("OK IMAGE_VALUE_PATTERN")
+
+    worker_prefixes = extract_image_prefixes(WORKER, WORKER_IMAGE_PREFIXES)
+    client_prefixes = extract_image_prefixes(CLIENT, CLIENT_IMAGE_PREFIXES)
+    if not assert_same_lists("IMAGE_VALUE_PREFIXES", worker_prefixes, client_prefixes):
+        return 1
+
+    worker_ws_match = WORKER_WHITESPACE.search(WORKER_KEY.read_text(encoding="utf-8"))
+    client_ws_match = CLIENT_WHITESPACE.search(CLIENT.read_text(encoding="utf-8"))
+    if not worker_ws_match or not client_ws_match:
+        sys.exit("could not extract ECMAScript whitespace lists")
+    worker_ws = sorted(extract_hex_list(worker_ws_match.group(1)))
+    client_ws = sorted(extract_hex_list(client_ws_match.group(1)))
+    if not assert_same_lists("ECMAScript whitespace code points", worker_ws, client_ws):
+        return 1
+
+    worker_sep_match = WORKER_SEPARATORS.search(WORKER_KEY.read_text(encoding="utf-8"))
+    client_sep_match = CLIENT_SEPARATORS.search(CLIENT.read_text(encoding="utf-8"))
+    if not worker_sep_match or not client_sep_match:
+        sys.exit("could not extract key separator code points")
+    worker_sep = extract_hex_list(worker_sep_match.group(1))
+    client_sep = extract_hex_list(client_sep_match.group(1))
+    if not assert_same_lists("key separator code points", worker_sep, client_sep):
+        return 1
+
+    worker_min = extract_ascii_bound(WORKER_KEY, WORKER_ASCII_MIN)
+    worker_max = extract_ascii_bound(WORKER_KEY, WORKER_ASCII_MAX)
+    client_min = extract_ascii_bound(CLIENT, CLIENT_ASCII_MIN)
+    client_max = extract_ascii_bound(CLIENT, CLIENT_ASCII_MAX)
+    if worker_min != client_min or worker_max != client_max:
+        print(
+            "MISMATCH printable ASCII bounds:\n"
+            f"  worker: {worker_min:#x}..{worker_max:#x}\n"
+            f"  client: {client_min:#x}..{client_max:#x}"
+        )
+        return 1
+    print(f"OK printable ASCII key bounds: {worker_min:#x}..{worker_max:#x}")
 
     corpus = load_corpus()
     print(

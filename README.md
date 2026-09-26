@@ -27,8 +27,9 @@ Nothing here is presented as production-ready.
   Cloudflare Worker for devices.
 - **One contract.** The bridge and the Worker implement `docs/openapi.yaml`:
   `GET /health`, `POST /v1/outfit/generate`, `POST /v1/outfit/alternatives`.
-- **Images stay on the device.** Anything that would send an image off-device is
-  fail-closed.
+- **Images stay on the device.** Guarded request bodies use printable-ASCII property names only;
+  anything that would send an image off-device is fail-closed (see `fixtures/image-guard/corpus.json`
+  and `scripts/check-image-guard-parity.py`).
 - **Secrets never ship in the app bundle.** Device tokens live in the Keychain;
   nothing secret is written to `Info.plist` or xcconfig.
 
@@ -118,6 +119,7 @@ python3 scripts/check-asset-library.py
 python3 scripts/verify-cost-per-wear-copy.py
 python3 scripts/verify-generate-failure-copy.py
 python3 scripts/verify-openapi-contract-examples.py   # needs `pip install jsonschema pyyaml`
+python3 scripts/check-image-guard-parity.py           # Worker ↔ iOS image guard; run `npm ci` in backend/workers first
 npx @redocly/cli@2.53.3 lint docs/openapi.yaml
 ```
 

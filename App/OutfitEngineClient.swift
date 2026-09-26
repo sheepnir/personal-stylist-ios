@@ -232,8 +232,9 @@ enum OutfitEngineClient {
 
     // MARK: - Image-payload guard (VF-03)
 
-    // Mirrors `backend/workers/src/imageGuardKey.ts`. Keys are lowercased (ASCII A–Z only),
-    // `_`, `-`, `.`, ECMAScript whitespace, and default-ignorable scalars are stripped,
+    // Mirrors `backend/workers/src/imageGuardKey.ts`. Object keys must be printable ASCII
+    // (U+0020–U+007E); otherwise the payload is treated as image-bearing. Allowed keys are
+    // lowercased (ASCII A–Z only), `_`, `-`, `.`, and ECMAScript whitespace are stripped,
     // then forbidden tokens are matched anywhere in the segment.
     // `scripts/check-image-guard-parity.py` runs `fixtures/image-guard/corpus.json`
     // through both implementations.
@@ -253,6 +254,10 @@ enum OutfitEngineClient {
     private static let wardrobeImagesAcceptedAtRfc3339 = try! NSRegularExpression(
         pattern: #"^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"#
     )
+    private static let imageGuardPrintableAsciiMin: UInt32 = 0x20
+    private static let imageGuardPrintableAsciiMax: UInt32 = 0x7E
+    private static let imageGuardKeySeparatorCodePoints: [UInt32] = [0x5F, 0x2D, 0x2E]
+    private static let imageValuePrefixes = ["data:image/", "/9j/", "ivborw0kggo"]
     private static let imageValuePattern = try! NSRegularExpression(
         pattern: "^data:image/|^/9j/|^ivborw0kggo"
     )
@@ -279,25 +284,23 @@ enum OutfitEngineClient {
         pattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
 
-    private static func isDefaultIgnorableCodePoint(_ scalar: Unicode.Scalar) -> Bool {
-        let v = scalar.value
-        if v == 0x00ad || v == 0x034f || v == 0x180e || v == 0xfeff { return true }
-        if (0x200b...0x200f).contains(v) { return true }
-        if (0x2060...0x206f).contains(v) { return true }
-        if (0xfe00...0xfe0f).contains(v) { return true }
-        return scalar.properties.generalCategory == .format
+    private static func objectKeyFailsPrintableAsciiRule(_ key: String) -> Bool {
+        for scalar in key.unicodeScalars {
+            let v = scalar.value
+            if v < imageGuardPrintableAsciiMin || v > imageGuardPrintableAsciiMax { return true }
+        }
+        return false
     }
 
     private static func isImageGuardKeySeparator(_ scalar: Unicode.Scalar) -> Bool {
         let v = scalar.value
-        if v == 0x5F || v == 0x2D || v == 0x2E { return true }
+        if imageGuardKeySeparatorCodePoints.contains(v) { return true }
         return javaScriptWhitespace.contains(v)
     }
 
     private static func normalizeImageGuardKey(_ key: String) -> String {
         var normalized = ""
         for scalar in key.unicodeScalars {
-            if isDefaultIgnorableCodePoint(scalar) { continue }
             if isImageGuardKeySeparator(scalar) { continue }
             if (0x41...0x5A).contains(scalar.value) {
                 normalized.unicodeScalars.append(Unicode.Scalar(scalar.value + 0x20)!)
@@ -308,11 +311,14 @@ enum OutfitEngineClient {
         return normalized
     }
 
-    /// True when the key segment contains a forbidden image token after normalisation.
+    /// True when the key segment is non-printable-ASCII or contains a forbidden image token.
     static func isImageBearingKey(_ key: String) -> Bool {
+        if objectKeyFailsPrintableAsciiRule(key) { return true }
         let normalized = normalizeImageGuardKey(key)
         return forbiddenImageKeyTokens.contains { normalized.contains($0) }
     }
+
+    private static let consentPathDepth = 2
 
     private static func consentPathMatches(_ path: [String]) -> Bool {
         path.count == imageGuardConsentFieldSegments.count
@@ -321,7 +327,8 @@ enum OutfitEngineClient {
 
     private static func consentTimestampHasControlCharacter(_ value: String) -> Bool {
         value.unicodeScalars.contains { scalar in
-            scalar.value <= 0x1f || scalar.value == 0x7f
+            let v = scalar.value
+            return v <= 0x1f || v == 0x7f || v == 0x2028 || v == 0x2029
         }
     }
 
@@ -343,7 +350,12 @@ enum OutfitEngineClient {
         guard !value.isEmpty, value.count <= wardrobeImagesAcceptedAtMaxLength else { return false }
         guard !consentTimestampHasControlCharacter(value) else { return false }
         let nsRange = NSRange(value.startIndex..., in: value)
-        guard let match = wardrobeImagesAcceptedAtRfc3339.firstMatch(in: value, range: nsRange) else { return false }
+        guard let match = wardrobeImagesAcceptedAtRfc3339.firstMatch(
+            in: value,
+            options: [.anchored],
+            range: nsRange
+        ) else { return false }
+        guard match.range.length == nsRange.length else { return false }
         func intAt(_ index: Int) -> Int? {
             guard let range = Range(match.range(at: index), in: value) else { return nil }
             return Int(value[range])
@@ -368,32 +380,73 @@ enum OutfitEngineClient {
     /// Recursively removes image-bearing keys and image-looking string values from
     /// an outgoing JSON object. Everything else is passed through untouched.
     static func strippingImagePayload(_ object: [String: Any]) -> [String: Any] {
-        strippingImagePayload(object, path: [], underArrayAncestor: false)
+        strippingImagePayload(object, path: [], pathLen: 0, pastConsentDepth: false, underArrayAncestor: false)
     }
 
-    private static func strippingImagePayload(_ object: [String: Any], path: [String], underArrayAncestor: Bool) -> [String: Any] {
+    private static func strippingImagePayload(
+        _ object: [String: Any],
+        path: [String],
+        pathLen: Int,
+        pastConsentDepth: Bool,
+        underArrayAncestor: Bool
+    ) -> [String: Any] {
         var cleaned: [String: Any] = [:]
         for (key, value) in object {
-            let nextPath = path + [key]
-            if !underArrayAncestor && consentPathMatches(nextPath) {
-                if isAllowedWardrobeImagesAcceptedAtValue(value) {
-                    cleaned[key] = value
+            var childPath = path
+            var childPathLen = pathLen
+            var childPastConsentDepth = pastConsentDepth
+            if !underArrayAncestor && !pastConsentDepth && pathLen < consentPathDepth {
+                childPath = pathLen == 0 ? [key] : [path[0], key]
+                childPathLen = childPath.count
+                childPastConsentDepth = childPathLen >= consentPathDepth
+                if consentPathMatches(childPath) {
+                    if isAllowedWardrobeImagesAcceptedAtValue(value) {
+                        cleaned[key] = value
+                    }
+                    continue
                 }
-                continue
             }
             guard !isImageBearingKey(key) else { continue }
-            if let kept = strippingImagePayload(value, path: nextPath, underArrayAncestor: underArrayAncestor) { cleaned[key] = kept }
+            if let kept = strippingImagePayload(
+                value,
+                path: childPath,
+                pathLen: childPathLen,
+                pastConsentDepth: childPastConsentDepth,
+                underArrayAncestor: underArrayAncestor
+            ) {
+                cleaned[key] = kept
+            }
         }
         return cleaned
     }
 
     /// `nil` means "drop this value". Arrays and nested objects are cleaned in place.
-    private static func strippingImagePayload(_ value: Any, path: [String], underArrayAncestor: Bool) -> Any? {
+    private static func strippingImagePayload(
+        _ value: Any,
+        path: [String],
+        pathLen: Int,
+        pastConsentDepth: Bool,
+        underArrayAncestor: Bool
+    ) -> Any? {
         switch value {
         case let object as [String: Any]:
-            return strippingImagePayload(object, path: path, underArrayAncestor: underArrayAncestor)
+            return strippingImagePayload(
+                object,
+                path: path,
+                pathLen: pathLen,
+                pastConsentDepth: pastConsentDepth,
+                underArrayAncestor: underArrayAncestor
+            )
         case let array as [Any]:
-            return array.compactMap { strippingImagePayload($0, path: path, underArrayAncestor: true) }
+            return array.compactMap {
+                strippingImagePayload(
+                    $0,
+                    path: path,
+                    pathLen: pathLen,
+                    pastConsentDepth: pastConsentDepth,
+                    underArrayAncestor: true
+                )
+            }
         case let string as String:
             return looksLikeImageData(string) ? nil : string
         default:
