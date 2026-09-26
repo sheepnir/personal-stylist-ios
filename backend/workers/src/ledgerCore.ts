@@ -62,9 +62,16 @@ export interface DaySummary {
   date: string;
   spentUSD: number;
   reservedUSD: number;
+  /** Unknown-outcome attempts still awaiting provider reconciliation (VF-13). */
+  unresolvedAttempts: number;
   softThresholdReached: boolean;
   hardCapReached: boolean;
   byTask: Record<string, number>;
+}
+
+export function countUnresolvedAttempts(state: LedgerState, day: string): number {
+  const record = getDay(state, day);
+  return Object.values(record.attempts).filter((entry) => entry.state === 'unknown').length;
 }
 
 export function emptyLedgerState(): LedgerState {
@@ -263,6 +270,7 @@ export function summarizeDay(
     date: day,
     spentUSD: record.spentUSD,
     reservedUSD: record.reservedUSD,
+    unresolvedAttempts: countUnresolvedAttempts(state, day),
     softThresholdReached: totalCommitted >= config.softThresholdUSD,
     hardCapReached: totalCommitted >= config.dailyCapUSD,
     byTask: { ...record.tasks },
