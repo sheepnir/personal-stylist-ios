@@ -466,6 +466,101 @@ final class DeviceTokenStoreTests: XCTestCase {
         XCTAssertNil(DeviceTokenEnrollment.parseDeviceToken(from: missing))
     }
 
+    @MainActor
+    func testEnrollSuccessClearsDeviceAccessRejectedFlag() async throws {
+        let model = LoopDemoModel(store: InMemoryPersistenceStore(garments: [], sets: []))
+        model.markDeviceAccessRejected()
+        XCTAssertTrue(model.deviceAccessRejected)
+
+        let body = try XCTUnwrap(
+            #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
+                .data(using: .utf8)
+        )
+        RecordingURLProtocol.install { _ in
+            .http(status: 201, body: body)
+        }
+        DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
+
+        let ok = await DeviceTokenEnrollment.enrollAndSave(
+            baseURL: URL(string: "https://example.test")!,
+            enrollmentSecret: "enroll-secret"
+        )
+        XCTAssertTrue(ok)
+        model.clearDeviceAccessRejected()
+        XCTAssertFalse(model.deviceAccessRejected)
+    }
+
+    func test401OnGenerateKeepsStoredToken() async throws {
+        let token = DeviceAccessTestFixtures.validIssuedToken
+        XCTAssertTrue(DeviceTokenStore.save(token))
+        OutfitEngineClient.baseURLOverride = URL(string: "https://engine.test")!
+        OutfitEngineClient.urlSession = EngineURLSessionStub.makeSession()
+        RecordingURLProtocol.install { _ in
+            .http(status: 401, body: Data())
+        }
+        let garments = try DeviceAccessTestFixtures.readyGarments()
+        do {
+            _ = try await OutfitEngineClient.generate(
+                garments: garments,
+                sets: [],
+                anchorId: garments[0].id,
+                flight: OutfitEngineClient.EngineDataTask()
+            )
+            XCTFail("expected unauthorized")
+        } catch OutfitEngineClient.ClientError.unauthorized {
+            XCTAssertEqual(DeviceTokenStore.load(), token)
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+        OutfitEngineClient.resetTestHooks()
+        RecordingURLProtocol.reset()
+    }
+
+    func testIssuedTokenShapeValidation() {
+        XCTAssertTrue(DeviceTokenFormat.isIssuedShape(DeviceAccessTestFixtures.validIssuedToken))
+        XCTAssertTrue(DeviceTokenFormat.isIssuedShape(DeviceAccessTestFixtures.validIssuedTokenWithURLChars))
+
+        XCTAssertFalse(DeviceTokenFormat.isIssuedShape("enrollment-secret-not-a-token"))
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-8000-000000000001".uppercased()
+                    + ".\(DeviceAccessTestFixtures.secret43)"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-1000-8000-000000000001.\(DeviceAccessTestFixtures.secret43)"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-c000-000000000001.\(DeviceAccessTestFixtures.secret43)"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-8000-000000000001.\(String(DeviceAccessTestFixtures.secret43.prefix(42)))"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-8000-000000000001.\(DeviceAccessTestFixtures.secret43)x"
+            )
+        )
+        XCTAssertFalse(
+            DeviceTokenFormat.isIssuedShape(
+                "00000000-0000-4000-8000-000000000001\(DeviceAccessTestFixtures.secret43)"
+            )
+        )
+        XCTAssertFalse(DeviceTokenFormat.isIssuedShape(""))
+        XCTAssertFalse(DeviceTokenFormat.isIssuedShape("   "))
+
+        XCTAssertTrue(DeviceTokenStore.save(DeviceAccessTestFixtures.validIssuedToken))
+        let baseline = DeviceTokenStore.load()
+        XCTAssertFalse(DeviceTokenFormat.isIssuedShape("not-a-valid-issued-token-shape"))
+        XCTAssertEqual(DeviceTokenStore.load(), baseline)
+    }
+
     func testEnrollAndSaveSuccessWritesToken() async throws {
         let body = try XCTUnwrap(
             #"{"deviceToken":"enrolled-opaque","issuedAt":"2026-09-20T00:00:00Z"}"#.data(using: .utf8)

@@ -1,5 +1,19 @@
 import Foundation
 
+/// Issued device-token shape — mirrors `backend/workers/src/tokens.ts` `deviceId` regex (#34).
+enum DeviceTokenFormat {
+    private static let issuedShape = try! NSRegularExpression(
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.[A-Za-z0-9_-]{43}$"
+    )
+
+    static func isIssuedShape(_ raw: String) -> Bool {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return false }
+        let range = NSRange(token.startIndex..<token.endIndex, in: token)
+        return issuedShape.firstMatch(in: token, range: range) != nil
+    }
+}
+
 /// Shared `POST /v1/auth/device` client for Debug bootstrap and Release Profile UI (D-46 / #89).
 /// Never persists the enrollment secret. Does not touch Keychain until `enrollAndSave` succeeds.
 enum DeviceTokenEnrollment {

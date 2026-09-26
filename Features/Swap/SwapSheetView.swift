@@ -6,6 +6,7 @@ struct SwapSheetView: View {
     var onClose: () -> Void
     var onChangeStartingItem: () -> Void = {}
     var onOpenWardrobe: () -> Void = {}
+    var onSetUpDeviceAccess: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -20,6 +21,8 @@ struct SwapSheetView: View {
                 } else if model.isLoadingAlternatives {
                     ProgressView("Finding alternatives…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.deviceAccessRejected {
+                    deviceAccessRejectedView
                 } else if model.swapAlternatives.isEmpty {
                     emptyAlternativesView
                 } else {
@@ -185,23 +188,55 @@ struct SwapSheetView: View {
         }
     }
 
+    private var deviceAccessRejectedView: some View {
+        ScrollView {
+            swapEmptyView(
+                title: DressingCopy.deviceAccessRejectedTitle,
+                systemImage: AssetLibrary.Symbol.privacy,
+                message: DressingCopy.deviceAccessRejectedSwap,
+                messageStyle: .primary,
+                iconHiddenFromAccessibility: true,
+                actions: {
+                    VStack(spacing: 12) {
+                        Button(DressingCopy.deviceAccessSetUpAction, action: onSetUpDeviceAccess)
+                            .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityHint(DressingCopy.deviceAccessSetUpActionHint)
+                        Button("Close", action: onClose)
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+            )
+        }
+    }
+
+    private enum SwapEmptyMessageStyle {
+        case primary, secondary
+    }
+
     private func swapEmptyView<Actions: View>(
         title: String,
         systemImage: String,
         message: String,
+        messageStyle: SwapEmptyMessageStyle = .secondary,
+        iconHiddenFromAccessibility: Bool = false,
         @ViewBuilder actions: () -> Actions
     ) -> some View {
         VStack(spacing: 20) {
             Image(systemName: systemImage)
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(iconHiddenFromAccessibility)
             Text(title)
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(messageStyle == .primary ? .primary : .secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
             actions()
                 .padding(.horizontal, 24)

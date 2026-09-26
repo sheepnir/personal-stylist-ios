@@ -210,6 +210,8 @@ enum OutfitEngineClient {
         case anchorNotInWardrobe(UUID)
         /// Remote HTTPS generate/swap refused — no Keychain device token (#175 / D-46).
         case missingDeviceToken
+        /// Device token was sent but the engine rejected it (HTTP 401 only).
+        case unauthorized
 
         var errorDescription: String? {
             switch self {
@@ -222,6 +224,8 @@ enum OutfitEngineClient {
                 return "That starting item isn’t in the wardrobe sent to the engine. Finish details and try again."
             case .missingDeviceToken:
                 return "This build has no device token for the remote stylist. Enroll a token before sending wardrobe data."
+            case .unauthorized:
+                return "Device access rejected (HTTP 401)"
             }
         }
     }
@@ -533,6 +537,10 @@ enum OutfitEngineClient {
             throw ClientError.http(400, String(data: data, encoding: .utf8) ?? "")
         }
 
+        if http.statusCode == 401 {
+            throw ClientError.unauthorized
+        }
+
         guard (200..<300).contains(http.statusCode) else {
             throw ClientError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
@@ -659,6 +667,9 @@ enum OutfitEngineClient {
                 throw ClientError.problem(problem)
             }
             throw ClientError.http(400, String(data: data, encoding: .utf8) ?? "")
+        }
+        if http.statusCode == 401 {
+            throw ClientError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
             throw ClientError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")

@@ -105,6 +105,8 @@ enum DressingCopy {
                 return ("This starting item isn't ready to send yet.", client.errorDescription ?? "anchor")
             case .missingDeviceToken:
                 return ("This build isn't signed in to the remote stylist yet.", client.errorDescription ?? "missing device token")
+            case .unauthorized:
+                return (deviceAccessRejectedTitle, client.errorDescription ?? "unauthorized")
             case .badURL, .decode:
                 return (generateServiceError, client.errorDescription ?? "engine")
             }
@@ -182,6 +184,28 @@ enum DressingCopy {
     static let deviceAccessEnrollFailure = "Couldn’t set up device access. Check the secret and try again."
     static let deviceAccessEnrollEmpty = "Enter the enrollment secret first"
     static let deviceAccessCleared = "Device access cleared"
+
+    static let deviceAccessRejectedTitle = "This phone isn't authorized"
+    static let deviceAccessRejectedNoOutfit =
+        "New outfits can't load until device access is set up again. Your wardrobe is safe on this phone."
+    static let deviceAccessRejectedWithOutfit =
+        "Showing your previous outfit. New outfits and swaps can't load until device access is set up again."
+    static let deviceAccessRejectedSwap =
+        "Swaps can't load until device access is set up again. Your outfit hasn't changed."
+    static let deviceAccessSetUpAction = "Set up device access"
+    static let deviceAccessRequiredHint = "Set up device access first."
+    static let deviceAccessNotAccepted = "Device access: not accepted"
+    static let deviceAccessNotAcceptedHelp =
+        "This phone's access wasn't accepted. Enroll again with your enrollment secret."
+    static let deviceAccessAskOwner = "If you didn't set up this app, ask the person who did."
+    static let deviceAccessModeHelpSecret =
+        "Use this to set up a phone. The app gets its own access from it."
+    static let deviceAccessModeHelpToken =
+        "Only for access this app already issued. Most people should use Enrollment secret."
+    static let deviceAccessWrongShape =
+        "That doesn't look like a device token. If it's an enrollment secret, choose Enrollment secret and paste it there."
+    static let deviceAccessEnrollSuccessAnnouncement = "Device access set up. New outfits can load again."
+    static let deviceAccessSetUpActionHint = "Opens Device access in Style profile."
 
     /// Set partner line for swap rows (#109 AC-3).
     static func swapSetPartnerLines(partnerGarments: [StubGarment]) -> [String] {

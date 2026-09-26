@@ -5,11 +5,13 @@ import UIKit
 
 extension LoopDemoModel {
     /// Post a short confirmation toast with VoiceOver announcement (#105).
-    func showToast(_ message: String, dismissAfter: Duration = .seconds(2.5)) {
+    func showToast(_ message: String, dismissAfter: Duration = .seconds(2.5), announce: Bool = true) {
         toastDismissTask?.cancel()
         swapUndoAssignmentsSnapshot = nil
         updateToastState(message)
-        AccessibilityNotification.Announcement(message).post()
+        if announce {
+            AccessibilityNotification.Announcement(message).post()
+        }
         toastDismissTask = Task { @MainActor in
             try? await Task.sleep(for: dismissAfter)
             guard !Task.isCancelled else { return }
