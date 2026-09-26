@@ -1499,21 +1499,22 @@ components:
       description: |
         Read from the backend usage ledger (PRD §9.6, D-20) — the backend's only persistent
         state. `reservedTodayUSD` is cost reserved for in-flight requests and not yet
-        reconciled; `spentTodayUSD + reservedTodayUSD` is what the cap is checked against.
+        reconciled; `spentTodayUSD + reservedTodayUSD` is the committed total used for
+        soft-threshold and hard-cap flags (same headroom as reserve).
       required:
         [last7DaysUSD, last30DaysUSD, dailyCapUSD, softThresholdUSD, spentTodayUSD,
-         reservedTodayUSD, softThresholdReached, hardCapReached]
+         reservedTodayUSD, softThresholdReached, hardCapReached, ledgerConfigStatus]
       properties:
         last7DaysUSD: { type: number, minimum: 0 }
         last30DaysUSD: { type: number, minimum: 0 }
         dailyCapUSD:
-          type: number
+          type: [number, 'null']
           minimum: 0
-          description: The hard cap.
+          description: The hard cap. Null when spend configuration is invalid or the ledger is unavailable.
         softThresholdUSD:
-          type: number
+          type: [number, 'null']
           minimum: 0
-          description: Above this, the secondary model is used.
+          description: Informational soft-spend hint for usage UI. Does not change routing or models. Null when caps are unavailable.
         spentTodayUSD: { type: number, minimum: 0 }
         reservedTodayUSD:
           type: number
@@ -1523,8 +1524,25 @@ components:
           type: integer
           minimum: 0
           description: Paid attempts awaiting reconciliation from the provider's usage record (VF-13). Each ages to "spent" after 24 h.
-        softThresholdReached: { type: boolean }
-        hardCapReached: { type: boolean }
+        softThresholdReached:
+          type: boolean
+          description: |
+            True when settled spend plus open reservations for the ledger day is at or above
+            `softThresholdUSD` (same committed total as cap checks).
+        hardCapReached:
+          type: boolean
+          description: |
+            True when a new hold at the minimum representable cost would be refused with
+            `hard_cap` — settled spend plus open reservations leaves no room under
+            `dailyCapUSD`.
+        ledgerConfigStatus:
+          type: string
+          enum: [ok, config_error, ledger_unavailable, legacy, storage_error]
+          description: |
+            `ok` when caps were read from valid configuration and the ledger responded.
+            `legacy` for the shared legacy device token (no per-device spend ledger).
+            `storage_error` when the per-device ledger is blocked (legacy monolith key present).
+            `config_error` or `ledger_unavailable` fail closed (treat caps as reached; do not infer limits from null caps).
         ledgerDayEndsAt:
           type: [string, 'null']
           format: date-time
