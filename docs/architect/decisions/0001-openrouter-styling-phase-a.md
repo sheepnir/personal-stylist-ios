@@ -55,7 +55,7 @@ Product decisions, PM, 2026-09-26 (folded into this record before CTO review):
 |---|---|
 | Data sent to the model | Structured, enum-valued attributes of **shortlisted candidates only**, with per-request opaque tokens. No names, notes, free text, UUIDs, images, dates, or behavioural signals. Section 4. |
 | Privacy | No prompt or output persisted or logged. `data_collection: "deny"` on every call. Upstream error bodies are never logged. Disclosure before any live use. Section 5. |
-| Models | Phase A allowlist = the mock model only. Live models are chosen later under the PRD §10.1 procedure and need CTO and founder approval. Allowlist in code, selection in environment config (narrow-only). Intended live model (founder, 2026-09-26): `typesafe/jev-1.13`, a typed-decision model, set at paid activation only (section 7.1). Section 7. |
+| Models | Phase A allowlist = the mock model only. **Evaluation model (founder, 2026-09-26):** `typesafe/jev-1.13`, a typed-decision model (section 7.1). **Production activation** of that model is gated on every paid-activation precondition (section 11). Allowlist in code, selection in environment config (narrow-only). Section 7. |
 | Prompt versioning | Immutable prompt modules, with the version recorded in `generation.promptVersion` on every result and a hash guard in CI. Section 8. |
 | Validator | Schema and token-map check, then `runStage4` (reused), then contract length and text checks. Any violation means the output is never returned. Section 6. |
 | Fallback | Deterministic `generateLocal` on flag-off (silent), provider error or timeout, invalid output, or spend cap. The new `fallbackReason` field is present only when an eligible provider attempt fell back. Section 10. |
