@@ -110,8 +110,14 @@ npx @redocly/cli@2.53.3 lint docs/openapi.yaml   # same lint as CI
 - **Workers typecheck** needs `@types/node` and `"types": [..., "node"]` in
   `backend/workers/tsconfig.json` because the linked engine Stage 3 (and Workers auth)
   import `node:crypto` / `Buffer`. Do not drop those types to "fix" Workers-only typing.
-- **`PersonalStylist.xcodeproj` is generated but tracked.** Don't hand-edit
-  `project.pbxproj`; run `xcodegen generate` and commit the result.
+- **`PersonalStylist.xcodeproj` is generated but tracked.** After adding or removing Swift
+  files under a `project.yml` source path (for example `App/`), run `xcodegen generate` and
+  commit the updated `project.pbxproj`. macOS CI runs XcodeGen too, but a new file on disk
+  without a project reference breaks local Xcode builds until the project is regenerated.
+  If XcodeGen cannot run in your environment (typical on Linux cloud agents), add the file
+  to `project.pbxproj` manually in XcodeGen's shape: `PBXFileReference`, `PBXBuildFile`, the
+  `App` group, and the `PersonalStylist` target Sources build phase. Prefer `xcodegen
+  generate` whenever it is available; hand-edit only when it is not.
 - **Fixtures are single-source:** `project.yml` bundles `fixtures/wardrobe/*.json` and
   `fixtures/profile/founder-seed.json` directly, so an edit changes the iOS seed *and*
   engine tests/eval. "Founder profile" is the app's term for the primary user's profile; the

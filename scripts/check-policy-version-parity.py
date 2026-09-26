@@ -53,14 +53,22 @@ def policy_ts_uses_json_import() -> bool:
 
 
 def load_verify_module(verify_script: Path = VERIFY_SCRIPT):
-    spec = importlib.util.spec_from_file_location(
-        "verify_openapi_contract_examples_parity",
-        verify_script,
+    mod_name = (
+        f"verify_openapi_contract_examples_parity_{verify_script.stat().st_mtime_ns}"
     )
+    cache_path = importlib.util.cache_from_source(str(verify_script))
+    if cache_path:
+        Path(cache_path).unlink(missing_ok=True)
+    spec = importlib.util.spec_from_file_location(mod_name, verify_script)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {verify_script}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    old_dwb = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.dont_write_bytecode = old_dwb
     return mod
 
 
