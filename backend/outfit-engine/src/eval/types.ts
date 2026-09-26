@@ -15,6 +15,8 @@ export interface ScenarioEvalResult {
   title?: string;
   task?: string;
   model: string;
+  /** ADR-0001 §8: recorded per eval model arm (`none` for deterministic). */
+  promptVersion: string;
   /** Soft pass: classification + must_* / gap / problem_code / alternatives constraints. */
   passed: boolean;
   expectedClassification: OutcomeClassification;

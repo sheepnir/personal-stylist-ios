@@ -1,0 +1,366 @@
+import { describe, expect, it, vi } from "vitest";
+import * as promptContentHash from "../../src/provider/promptContentHash.js";
+import {
+  assertPromptRegistryIntegrity,
+  buildProviderSuccessGeneration,
+  CURRENT_STYLIST_PROMPT_VERSION,
+  getStylistPromptByVersion,
+  hashStylistPromptModule,
+  hashStylistPromptVersionContent,
+  outfitT2D1,
+  OUTFIT_T2_D1_ANSWER_TYPES,
+  OUTFIT_T2_D1_OPTION_DESCRIPTIONS,
+  REGISTERED_PROMPT_CONTENT_HASHES,
+  resolveRegisteredStylistPrompt,
+  slotChoiceQuestionId,
+  SLOT_CHOICE_QUESTION_SLOTS,
+  UnregisteredPromptVersionError,
+  PromptRegistryHashMismatchError,
+} from "../../src/provider/index.js";
+import { generateLocal, isLocalProblem } from "../../src/pipeline/generateLocal.js";
+import {
+  loadScenario,
+  stage1InputFromScenario,
+} from "../stage1/helpers.js";
+
+function normalizeForForbiddenTermScan(text: string): string {
+  return text.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+const FORBIDDEN_NORMALIZED_TERMS = [
+  "freetext",
+  "gapreason",
+  "rationale",
+  "placeholder",
+  "explanation",
+  "explanatory",
+  "chat",
+  "conversation",
+] as const;
+
+function rawStringHasGarmentPlaceholderPattern(raw: string): boolean {
+  return raw.toLowerCase().includes("{g_");
+}
+
+type HashedFieldFragment = { kind: "key" | "value"; text: string };
+
+function fragmentViolatesForbiddenTerms(fragment: HashedFieldFragment): boolean {
+  if (rawStringHasGarmentPlaceholderPattern(fragment.text)) {
+    return true;
+  }
+  const normalized = normalizeForForbiddenTermScan(fragment.text);
+  return FORBIDDEN_NORMALIZED_TERMS.some((term) => normalized.includes(term));
+}
+
+/** Walk keys and string values at every depth (hashed prompt fields). */
+function collectKeysAndStringValues(
+  value: unknown,
+  out: HashedFieldFragment[],
+  seen = new WeakSet<object>(),
+): void {
+  if (typeof value === "string") {
+    out.push({ kind: "value", text: value });
+    return;
+  }
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectKeysAndStringValues(entry, out, seen);
+    }
+    return;
+  }
+
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    out.push({ kind: "key", text: key });
+    collectKeysAndStringValues(nested, out, seen);
+  }
+}
+
+function assertHashedPromptFieldsAvoidForbiddenTerms(
+  instructionText: string,
+  optionDescriptions: unknown,
+  answerTypes: unknown,
+): void {
+  const fragments: HashedFieldFragment[] = [];
+  collectKeysAndStringValues(
+    { instructionText, optionDescriptions, answerTypes },
+    fragments,
+  );
+  for (const fragment of fragments) {
+    expect(fragmentViolatesForbiddenTerms(fragment)).toBe(false);
+  }
+}
+
+function hashedFieldsContainForbiddenTerm(
+  instructionText: string,
+  optionDescriptions: unknown,
+  answerTypes: unknown,
+): boolean {
+  const fragments: HashedFieldFragment[] = [];
+  collectKeysAndStringValues(
+    { instructionText, optionDescriptions, answerTypes },
+    fragments,
+  );
+  return fragments.some((fragment) => fragmentViolatesForbiddenTerms(fragment));
+}
+
+const FORBIDDEN_CHAT_KEYS = new Set([
+  "messages",
+  "chat",
+  "message",
+  "system",
+  "systemPrompt",
+]);
+
+function assertNoChatCompletionFields(value: unknown, seen = new WeakSet<object>()): void {
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  const objectValue = value as object;
+  if (seen.has(objectValue)) {
+    return;
+  }
+  seen.add(objectValue);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      assertNoChatCompletionFields(entry, seen);
+    }
+    return;
+  }
+
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    expect(FORBIDDEN_CHAT_KEYS.has(key)).toBe(false);
+    assertNoChatCompletionFields(
+      (value as Record<string, unknown>)[key],
+      seen,
+    );
+  }
+}
+
+describe("prompt registry (ADR-0001 §8)", () => {
+  it("registered hash matches instructionText, optionDescriptions, and answerTypes", () => {
+    expect(() => assertPromptRegistryIntegrity()).not.toThrow();
+  });
+
+  it("content hash is identical when only the module version string changes", () => {
+    const base = hashStylistPromptModule(outfitT2D1);
+    const sameContentDifferentVersion = {
+      ...outfitT2D1,
+      version: "outfit-t2-d1-shadow",
+    };
+    expect(hashStylistPromptModule(sameContentDifferentVersion)).toBe(base);
+
+    const tamperedAnswerTypes = {
+      ...(outfitT2D1.answerTypes as object),
+      extra: { type: "string" },
+    };
+    expect(
+      hashStylistPromptVersionContent(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        tamperedAnswerTypes,
+      ),
+    ).not.toBe(base);
+  });
+
+  it("fails when template content changes without a version bump", () => {
+    const actual = hashStylistPromptModule(outfitT2D1);
+    const registered = REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"];
+    expect(registered).toBeTruthy();
+    expect(actual).toBe(registered);
+
+    const tampered = hashStylistPromptVersionContent(
+      `${outfitT2D1.instructionText}\n`,
+      outfitT2D1.optionDescriptions,
+      outfitT2D1.answerTypes,
+    );
+    expect(tampered).not.toBe(registered);
+  });
+
+  it("CURRENT_STYLIST_PROMPT resolves outfit-t2-d1 only (outfit-t2-v1 removed)", () => {
+    expect(CURRENT_STYLIST_PROMPT_VERSION).toBe("outfit-t2-d1");
+    expect(getStylistPromptByVersion("outfit-t2-d1")).toBe(outfitT2D1);
+    expect(getStylistPromptByVersion("outfit-t2-v1")).toBeUndefined();
+    expect(getStylistPromptByVersion("missing")).toBeUndefined();
+  });
+
+  it("registry lookups use Object.hasOwn (prototype pollution safe)", () => {
+    expect(() => resolveRegisteredStylistPrompt("toString")).toThrow(
+      UnregisteredPromptVersionError,
+    );
+    expect(Object.hasOwn(REGISTERED_PROMPT_CONTENT_HASHES, "outfit-t2-d1")).toBe(
+      true,
+    );
+  });
+
+  it("uses Decisions typed answers, not chat completion messages", () => {
+    assertNoChatCompletionFields(outfitT2D1);
+    assertHashedPromptFieldsAvoidForbiddenTerms(
+      outfitT2D1.instructionText,
+      outfitT2D1.optionDescriptions,
+      outfitT2D1.answerTypes,
+    );
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("rationale");
+    expect(JSON.stringify(outfitT2D1.answerTypes)).not.toContain("gapReason");
+    expect(hashStylistPromptModule(outfitT2D1)).toBe(
+      REGISTERED_PROMPT_CONTENT_HASHES["outfit-t2-d1"],
+    );
+  });
+
+  it("forbidden-term scanner rejects legacy free-text and gap-reason wording", () => {
+    const legacyInstruction =
+      "Do not emit free text, explanatory prose, gap reasons, garment placeholders.";
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        legacyInstruction,
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toBe(true);
+    expect(() =>
+      assertHashedPromptFieldsAvoidForbiddenTerms(
+        legacyInstruction,
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toThrow();
+  });
+
+  it("forbidden-term scanner catches keys and nested forbidden fragments", () => {
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { gapReason: "x" },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { rationale: "x" },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        outfitT2D1.instructionText,
+        outfitT2D1.optionDescriptions,
+        { meta: { gap_reason: "x" } },
+      ),
+    ).toBe(true);
+    expect(
+      hashedFieldsContainForbiddenTerm(
+        "Use token {g_1} in summary",
+        outfitT2D1.optionDescriptions,
+        outfitT2D1.answerTypes,
+      ),
+    ).toBe(true);
+  });
+
+  it("answerTypes keys match canonical slot_<SLOT> question ids (ADR-0001 §7.1.2)", () => {
+    const keys = Object.keys(OUTFIT_T2_D1_ANSWER_TYPES).sort();
+    const expected = SLOT_CHOICE_QUESTION_SLOTS.map((slot) =>
+      slotChoiceQuestionId(slot),
+    ).sort();
+    expect(keys).toEqual(expected);
+    for (const slot of SLOT_CHOICE_QUESTION_SLOTS) {
+      const questionId = slotChoiceQuestionId(slot);
+      expect(questionId).toBe(`slot_${slot}`);
+      expect(OUTFIT_T2_D1_ANSWER_TYPES[questionId]).toBeDefined();
+      const desc = OUTFIT_T2_D1_OPTION_DESCRIPTIONS.find(
+        (d) => d.questionId === questionId,
+      );
+      expect(desc).toBeDefined();
+    }
+    expect(keys.some((k) => k.startsWith("slot_ACCESSORY"))).toBe(false);
+  });
+
+  it("prompt exports are deep-frozen", () => {
+    expect(Object.isFrozen(outfitT2D1)).toBe(true);
+    expect(Object.isFrozen(outfitT2D1.optionDescriptions)).toBe(true);
+    expect(Object.isFrozen(outfitT2D1.answerTypes)).toBe(true);
+    expect(Object.isFrozen(OUTFIT_T2_D1_OPTION_DESCRIPTIONS)).toBe(true);
+    expect(Object.isFrozen(OUTFIT_T2_D1_ANSWER_TYPES)).toBe(true);
+
+    const hashBefore = hashStylistPromptModule(outfitT2D1);
+
+    expect(() => {
+      (outfitT2D1 as { instructionText: string }).instructionText = "tampered";
+    }).toThrow();
+
+    expect(hashStylistPromptModule(outfitT2D1)).toBe(hashBefore);
+  });
+});
+
+describe("generation.promptVersion on every path", () => {
+  it("deterministic generateLocal sets promptVersion to none", () => {
+    const scenario = loadScenario("T2-01-sportcoat-mild-work");
+    const s1 = stage1InputFromScenario(scenario);
+    const result = generateLocal({
+      wardrobe: s1.wardrobe,
+      context: s1.context,
+      anchorGarmentId: s1.anchorGarmentId,
+      lockedAssignments: s1.lockedAssignments,
+      options: s1.options,
+      profile: s1.profile,
+      sets: s1.sets,
+    });
+    expect(isLocalProblem(result)).toBe(false);
+    if (isLocalProblem(result)) return;
+    expect(result.generation.promptVersion).toBe("none");
+  });
+
+  it("provider success metadata names the registered prompt template", () => {
+    const meta = buildProviderSuccessGeneration({
+      candidateSetHash: "abc123",
+      latencyMs: 42,
+      modelId: "mock/stylist-v0",
+    });
+    expect(meta.promptVersion).toBe("outfit-t2-d1");
+    expect(getStylistPromptByVersion(meta.promptVersion)).toBe(outfitT2D1);
+    expect(meta.modelId).toBe("mock/stylist-v0");
+    expect(meta.candidateSetHash).toBe("abc123");
+    expect(meta.fallbackLevel).toBe("NONE");
+  });
+
+  it("buildProviderSuccessGeneration rejects unregistered prompt versions", () => {
+    expect(() =>
+      buildProviderSuccessGeneration({
+        candidateSetHash: "x",
+        latencyMs: 1,
+        modelId: "mock/stylist-v0",
+        promptVersion: "not-a-real-version",
+      }),
+    ).toThrow(UnregisteredPromptVersionError);
+
+    expect(() => resolveRegisteredStylistPrompt("not-a-real-version")).toThrow(
+      UnregisteredPromptVersionError,
+    );
+  });
+
+  it("resolveRegisteredStylistPrompt rejects pinned hash mismatches", () => {
+    const spy = vi
+      .spyOn(promptContentHash, "hashStylistPromptModule")
+      .mockReturnValue("deadbeef");
+    expect(() => resolveRegisteredStylistPrompt("outfit-t2-d1")).toThrow(
+      PromptRegistryHashMismatchError,
+    );
+    expect(() =>
+      buildProviderSuccessGeneration({
+        candidateSetHash: "x",
+        latencyMs: 1,
+        modelId: "mock/stylist-v0",
+        promptVersion: "outfit-t2-d1",
+      }),
+    ).toThrow(PromptRegistryHashMismatchError);
+    spy.mockRestore();
+  });
+});
