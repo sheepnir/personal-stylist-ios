@@ -191,7 +191,14 @@ final class OutfitEngineClientStubTests: XCTestCase {
         XCTAssertTrue(model.deviceAccessRejected)
         XCTAssertNil(model.outfit)
         XCTAssertEqual(model.generateFailureMessage, DressingCopy.deviceAccessRejectedTitle)
-        XCTAssertEqual(model.generateFailureSubtitle, DressingCopy.deviceAccessRejectedNoOutfit)
+        XCTAssertEqual(
+            model.generateFailureSubtitle,
+            DressingCopy.deviceAccessRejectedNoOutfit
+        )
+        XCTAssertEqual(
+            model.generateFailureSubtitle,
+            "New outfits can't load until device access is set up again. Your wardrobe is safe on this phone."
+        )
         XCTAssertNotEqual(model.generateFailureSubtitle, DressingCopy.generateServiceError)
     }
 
@@ -304,12 +311,26 @@ final class OutfitEngineClientStubTests: XCTestCase {
     }
 
     @MainActor
-    func testOutfitEngineActionsDisabledWhileRejectedAndReenabledAfterClear() async throws {
+    func testOutfitEngineActionsDisabledWhileRejectedAndReenabledAfterProfileEnroll() async throws {
         let model = try await makeModelForDeviceAccessTests()
         XCTAssertFalse(model.outfitEngineActionsDisabled)
         model.markDeviceAccessRejected()
         XCTAssertTrue(model.outfitEngineActionsDisabled)
-        model.noteDeviceAccessCredentialStored()
+
+        let body = try XCTUnwrap(
+            #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
+                .data(using: .utf8)
+        )
+        RecordingURLProtocol.install { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/v1/auth/device")
+            return .http(status: 201, body: body)
+        }
+        DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
+
+        let ok = await model.enrollDeviceAccessFromProfile(enrollmentSecret: "enroll-secret")
+        XCTAssertTrue(ok)
+        XCTAssertFalse(model.deviceAccessRejected)
         XCTAssertFalse(model.outfitEngineActionsDisabled)
     }
 
@@ -436,7 +457,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
             sets: [],
             defaults: isolatedDefaults
         )
-        let model = LoopDemoModel(store: store, preferences: .standard)
+        let model = LoopDemoModel(store: store, preferences: isolatedDefaults)
         await model.load()
         model.confirmProfileForDemoIfNeeded()
         model.select(garments[0])
