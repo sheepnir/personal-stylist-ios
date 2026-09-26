@@ -263,12 +263,27 @@ function utcDayAgeDays(day: string, now: Date): number {
   return Math.floor((nowMs - dayMs) / 86_400_000);
 }
 
-/** Valid ledger day for mutations: real UTC date, not more than one calendar day ahead of now. */
+/** Valid ledger day for mutations: today or at most one UTC calendar day ahead. */
 export function isLedgerDayKeyUsable(day: string, now: Date): boolean {
   if (!isValidLedgerDayKey(day)) {
     return false;
   }
-  return utcDayAgeDays(day, now) >= -1;
+  const age = utcDayAgeDays(day, now);
+  return age >= -1 && age <= 0;
+}
+
+const UNSAFE_TASK_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function isValidReserveTaskName(task: string): boolean {
+  return typeof task === 'string' && task.length > 0 && !UNSAFE_TASK_NAMES.has(task);
+}
+
+function isProtectedSettledWindowBucket(key: string, now: Date): boolean {
+  if (!isValidLedgerDayKey(key)) {
+    return false;
+  }
+  const age = utcDayAgeDays(key, now);
+  return age >= 0 && age <= LEDGER_MAX_DAY_AGE;
 }
 
 function enforceBucketLimit(state: LedgerState, now: Date): void {
@@ -278,27 +293,16 @@ function enforceBucketLimit(state: LedgerState, now: Date): void {
 
   const today = utcDayString(now);
 
-  let oldestOpenValidKey: string | null = null;
-  for (const key of Object.keys(state.days)) {
-    const day = state.days[key];
-    if (!dayHasOpenAttempts(day) || !isValidLedgerDayKey(key)) {
-      continue;
-    }
-    if (oldestOpenValidKey === null || key < oldestOpenValidKey) {
-      oldestOpenValidKey = key;
-    }
-  }
-
   const deletable = Object.keys(state.days)
     .filter((key) => {
       if (key === today) {
         return false;
       }
       const day = state.days[key];
-      if (dayHasOpenAttempts(day)) {
+      if (dayHasOpenAttempts(day) || !dayIsFullySettled(day)) {
         return false;
       }
-      if (isValidLedgerDayKey(key) && oldestOpenValidKey !== null && key >= oldestOpenValidKey) {
+      if (isProtectedSettledWindowBucket(key, now)) {
         return false;
       }
       return true;
@@ -405,6 +409,9 @@ export function reserveAttempt(
     return { ok: false, reason: 'invalid' };
   }
   if (!isLedgerDayKeyUsable(day, now)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (!isValidReserveTaskName(task)) {
     return { ok: false, reason: 'invalid' };
   }
 

@@ -11,6 +11,7 @@ describe('DeviceSpendLedger RPC return values', () => {
   it('summary on empty ledger is structured-clone plain', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     const summary = ledger.summary(DAY, CONFIG);
+    // structuredClone alone does not reject null-prototype objects; assertRpcPlainDeep does.
     expect(() => structuredClone(summary)).not.toThrow();
     assertRpcPlainDeep(summary);
   });
@@ -19,7 +20,6 @@ describe('DeviceSpendLedger RPC return values', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
     const summary = ledger.summary(DAY, BAD_CONFIG);
     expect(summary.hardCapReached).toBe(true);
-    expect(() => structuredClone(summary)).not.toThrow();
     assertRpcPlainDeep(summary);
   });
 
@@ -41,11 +41,11 @@ describe('DeviceSpendLedger RPC return values', () => {
     assertRpcPlainDeep(ledger.markUnknown('x'));
   });
 
-  it('skips __proto__ task key in byTask without polluting the RPC object', () => {
+  it('RPC byTask omits unsafe keys from legacy storage without polluting clones', () => {
     const state = emptyLedgerState();
     const day = state.days[DAY] ?? {
       date: DAY,
-      spentMicro: 0,
+      spentMicro: 2_000_000,
       reservedMicro: 0,
       overReservationCount: 0,
       attempts: Object.create(null),
@@ -60,17 +60,14 @@ describe('DeviceSpendLedger RPC return values', () => {
     assertRpcPlainDeep(summary);
     expect(Object.prototype.hasOwnProperty.call(summary.byTask, '__proto__')).toBe(false);
     expect(summary.byTask.generate).toBeCloseTo(2);
-    const probe: Record<string, unknown> = {};
-    expect(Object.getPrototypeOf(probe)).toBe(Object.prototype);
+    expect(summary.spentUSD).toBeCloseTo(2);
   });
 
-  it('reconcile with __proto__ task label does not pollute summary.byTask', () => {
+  it('rejects __proto__ task name at reserve time', () => {
     const { ledger } = createDeviceSpendLedgerHarness();
-    expect(ledger.reserve('proto-task', 0.05, DAY, CONFIG, '__proto__')).toEqual({ ok: true });
-    expect(ledger.reconcile('proto-task', 0.02, '__proto__')).toEqual({ ok: true });
-    const summary = ledger.summary(DAY, CONFIG);
-    assertRpcPlainDeep(summary);
-    expect(Object.prototype.hasOwnProperty.call(summary.byTask, '__proto__')).toBe(false);
-    expect(summary.spentUSD).toBeCloseTo(0.02);
+    expect(ledger.reserve('proto-task', 0.05, DAY, CONFIG, '__proto__')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
   });
 });

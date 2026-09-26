@@ -104,13 +104,14 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
   });
 
-  it('tracks task named constructor without prototype pollution', () => {
+  it('rejects unsafe reserve task names', () => {
     const state = emptyLedgerState();
-    reserveAttempt(state, 'a1', 0.2, DAY, CONFIG, 'constructor');
-    reconcileAttempt(state, 'a1', 0.15, 'constructor');
-    const summary = summarizeDay(state, DAY, CONFIG);
-    expect(summary.byTask.constructor).toBeCloseTo(0.15);
-    expect(Object.prototype.hasOwnProperty.call(summary.byTask, 'constructor')).toBe(true);
+    for (const task of ['__proto__', 'constructor', 'prototype']) {
+      expect(reserveAttempt(state, `a-${task}`, 0.1, DAY, CONFIG, task)).toEqual({
+        ok: false,
+        reason: 'invalid',
+      });
+    }
   });
 
   it('rejects reserve when spent + reserved + upper bound exceeds hard cap', () => {
@@ -175,6 +176,16 @@ describe('ledgerCore future day keys', () => {
   it('rejects reserve on a day more than one UTC day ahead', () => {
     const state = emptyLedgerState();
     expect(reserveAttempt(state, 'a1', 0.1, '2026-09-28', CONFIG, 'unknown', NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('rejects reserve on a UTC day before today', () => {
+    const now = new Date(`${DAY}T12:00:00.000Z`);
+    const state = emptyLedgerState();
+    const pastDay = utcDayKeyMinusDays(DAY, 40);
+    expect(reserveAttempt(state, 'past', 0.1, pastDay, CONFIG, 'generate', now)).toEqual({
       ok: false,
       reason: 'invalid',
     });
@@ -326,6 +337,32 @@ describe('ledgerCore retention', () => {
       reason: 'hard_cap',
     });
   });
+
+  it('evicts oldest settled buckets first without dropping settled days inside the 30-day window', () => {
+    const now = new Date(`${DAY}T12:00:00.000Z`);
+    const state = emptyLedgerState();
+
+    for (let age = 0; age <= 30; age += 1) {
+      const dayKey = utcDayKeyMinusDays(DAY, age);
+      state.days[dayKey] = settledDay(dayKey, age === 0 ? 1_000_000 : 1000);
+    }
+
+    const staleOpenKey = utcDayKeyMinusDays(DAY, 40);
+    state.days[staleOpenKey] = openReservedDay(staleOpenKey, 'stale-open', 50_000);
+
+    const tomorrow = utcDayKeyMinusDays(DAY, -1);
+    state.days[tomorrow] = settledDay(tomorrow, 500);
+
+    const age29Key = utcDayKeyMinusDays(DAY, 29);
+    const age30Key = utcDayKeyMinusDays(DAY, 30);
+
+    pruneOldDays(state, now);
+
+    expect(state.days[age29Key]).toBeDefined();
+    expect(state.days[age30Key]).toBeDefined();
+    expect(state.days[DAY]?.spentMicro).toBe(1_000_000);
+    expect(state.days[staleOpenKey]).toBeDefined();
+  });
 });
 
 function utcDayKeyMinusDays(day: string, daysBack: number): string {
@@ -348,6 +385,17 @@ function openReservedDay(dayKey: string, attemptId: string, upperBoundMicro: num
         createdAt: new Date().toISOString(),
       },
     },
+    tasks: Object.create(null),
+  };
+}
+
+function settledDay(dayKey: string, spentMicro: number) {
+  return {
+    date: dayKey,
+    spentMicro,
+    reservedMicro: 0,
+    overReservationCount: 0,
+    attempts: {},
     tasks: Object.create(null),
   };
 }
