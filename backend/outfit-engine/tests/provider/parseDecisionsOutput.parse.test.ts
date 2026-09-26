@@ -100,6 +100,29 @@ describe("parseDecisionsResponseBody", () => {
     const literalProto = `{"model":"${MODEL}","usage":{"input_tokens":1,"output_tokens":1},"answers":{"__proto__":{"type":"choice","choice":"g_evil"},"slot_TOP":{"type":"choice","choice":"g_1"}}}`;
     const result = parseDecisionsResponseBody(literalProto);
     expect(result).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+
+    const escapedProtoKey = `{"model":"${MODEL}","usage":{"input_tokens":1,"output_tokens":1},"answers":{"\\u005f\\u005fproto\\u005f\\u005f":{"type":"choice","choice":"g_evil"},"slot_TOP":{"type":"choice","choice":"g_1"}}}`;
+    expect(parseDecisionsResponseBody(escapedProtoKey)).toEqual({
+      ok: false,
+      cause: "OUTPUT_SCHEMA",
+    });
+  });
+
+  it("rejects noul outside 0..1 with OUTPUT_SCHEMA", () => {
+    expect(
+      parseDecisionsResponseBody(
+        body({
+          slot_TOP: { type: "noul", noul: 1.01 },
+        }),
+      ),
+    ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
+    expect(
+      parseDecisionsResponseBody(
+        body({
+          slot_TOP: { type: "noul", noul: -0.001 },
+        }),
+      ),
+    ).toEqual({ ok: false, cause: "OUTPUT_SCHEMA" });
   });
 
   it("maps malformed answer shapes to OUTPUT_SCHEMA", () => {

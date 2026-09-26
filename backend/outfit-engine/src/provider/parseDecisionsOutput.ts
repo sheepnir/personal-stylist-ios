@@ -48,6 +48,7 @@ function parseAnswerShape(raw: unknown): DecisionsAnswer | null {
     if (!ownHas(raw, "noul")) return null;
     const noul = raw.noul;
     if (typeof noul !== "number" || !Number.isFinite(noul)) return null;
+    if (noul < 0 || noul > 1) return null;
     return { type: "noul", noul };
   }
   return null;
