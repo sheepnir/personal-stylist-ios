@@ -51,7 +51,6 @@ describe('DeviceSpendLedger RPC return values', () => {
       attempts: Object.create(null),
       tasks: Object.create(null),
     };
-    day.tasks['__proto__'] = 1_000_000;
     day.tasks['generate'] = 2_000_000;
     state.days[DAY] = day;
 

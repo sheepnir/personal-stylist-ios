@@ -14,6 +14,8 @@ import {
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  boundedAttemptUsdToMicro,
+  MAX_ATTEMPT_USD,
   isValidLedgerDayKey,
   LEDGER_DAY_BUCKETS,
   LEDGER_MAX_DAY_AGE,
@@ -93,14 +95,27 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(summarizeDay(state, DAY, CONFIG).overReservationCount).toBe(1);
   });
 
-  it('accepts reconcile actual cost above 10000 USD when representable in micro-USD', () => {
+  it('accepts reconcile actual cost at MAX_ATTEMPT_USD when representable in micro-USD', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'big', 0.01, DAY, { dailyCapUSD: 20_000, softThresholdUSD: 10_000 });
-    const actualUsd = 15_000;
-    expect(actualUsdToMicro(actualUsd).ok).toBe(true);
+    const actualUsd = MAX_ATTEMPT_USD;
+    expect(boundedAttemptUsdToMicro(actualUsd).ok).toBe(true);
     expect(reconcileAttempt(state, DAY, 'big', actualUsd)).toEqual({ ok: true });
-    expect(state.days[DAY].spentMicro).toBe(15_000 * MICRO_USD);
+    expect(state.days[DAY].spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
     expect(state.days[DAY].attempts.big.overReservation).toBe(true);
+  });
+
+  it('rejects reserve and reconcile above MAX_ATTEMPT_USD', () => {
+    const state = emptyLedgerState();
+    expect(reserveAttempt(state, 'too-big', MAX_ATTEMPT_USD + 1, DAY, CONFIG)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    reserveAttempt(state, 'hold', 0.1, DAY, CONFIG);
+    expect(reconcileAttempt(state, DAY, 'hold', MAX_ATTEMPT_USD + 1)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
   });
 
   it('rejects reconcile at zero or negative zero USD without releasing the hold', () => {

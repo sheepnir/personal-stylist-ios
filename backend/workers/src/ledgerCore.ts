@@ -38,6 +38,8 @@ export interface DayRecord {
 
 export interface LedgerState {
   days: Record<string, DayRecord>;
+  /** Persisted buckets that failed validation — fail-closed for that UTC day. */
+  corruptDays?: Record<string, true>;
 }
 
 /** Retain today plus the 30 preceding UTC calendar days (31 buckets). */
@@ -61,11 +63,17 @@ export const MAX_TASK_NAME_LENGTH = 16;
  */
 export const MAX_BUCKET_BYTES = 100 * 1024;
 
+/** Per-attempt reserve / reconcile USD ceiling (keeps bucket JSON bounded). */
+export const MAX_ATTEMPT_USD = 1000;
+
+/** Max distinct task labels on one UTC day bucket (worst-case JSON sizing). */
+export const MAX_DISTINCT_TASKS_PER_DAY = 32;
+
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ReserveResult {
   ok: boolean;
-  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error' | 'attempt_limit';
+  reason?: 'hard_cap' | 'invalid' | 'already_settled' | 'config_error' | 'attempt_limit' | 'storage_error';
 }
 
 export interface ReconcileResult {
@@ -246,7 +254,48 @@ function mapAdd(map: Record<string, number>, key: string, delta: number): boolea
 }
 
 export function emptyLedgerState(): LedgerState {
-  return { days: {} };
+  return {
+    days: nullRecord() as Record<string, DayRecord>,
+    corruptDays: nullRecord() as Record<string, true>,
+  };
+}
+
+export function markDayStorageCorrupt(state: LedgerState, day: string): void {
+  if (!state.corruptDays) {
+    state.corruptDays = nullRecord() as Record<string, true>;
+  }
+  state.corruptDays[day] = true;
+  delete state.days[day];
+}
+
+export function isDayStorageCorrupt(state: LedgerState, day: string): boolean {
+  return state.corruptDays !== undefined && Object.hasOwn(state.corruptDays, day);
+}
+
+/** Reserve / reconcile attempt costs above {@link MAX_ATTEMPT_USD} are rejected as invalid. */
+export function boundedAttemptUsdToMicro(usd: number): CostMicroResult {
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0 || usd > MAX_ATTEMPT_USD) {
+    return { ok: false };
+  }
+  return costUsdToMicro(usd);
+}
+
+function distinctTasksOnDay(day: DayRecord): Set<string> {
+  const tasks = new Set<string>();
+  for (const id of Object.keys(day.attempts)) {
+    if (Object.hasOwn(day.attempts, id)) {
+      tasks.add(day.attempts[id]!.task);
+    }
+  }
+  return tasks;
+}
+
+function reserveTaskAllowedOnDay(day: DayRecord, task: string): boolean {
+  const tasks = distinctTasksOnDay(day);
+  if (tasks.has(task)) {
+    return true;
+  }
+  return tasks.size < MAX_DISTINCT_TASKS_PER_DAY;
 }
 
 function emptyDay(date: string): DayRecord {
@@ -512,7 +561,10 @@ export function reserveAttempt(
   task = 'unknown',
   now: Date = new Date()
 ): ReserveResult {
-  const bounds = costUsdToMicro(upperBoundUSD);
+  if (isDayStorageCorrupt(state, day)) {
+    return { ok: false, reason: 'storage_error' };
+  }
+  const bounds = boundedAttemptUsdToMicro(upperBoundUSD);
   if (!isValidAttemptId(attemptId) || !bounds.ok) {
     return { ok: false, reason: 'invalid' };
   }
@@ -533,6 +585,11 @@ export function reserveAttempt(
     return { ok: false, reason: 'invalid' };
   }
   if (!isValidReserveTaskName(task)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const dayRecordForTask = readDay(state, day);
+  if (!reserveTaskAllowedOnDay(dayRecordForTask, task)) {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -591,13 +648,16 @@ export function reconcileAttempt(
   actualUSD: number,
   task?: string
 ): ReconcileResult {
+  if (isDayStorageCorrupt(state, day)) {
+    return { ok: false, reason: 'invalid' };
+  }
   if (!isValidLedgerDayKey(day)) {
     return { ok: false, reason: 'invalid' };
   }
   if (task !== undefined && !isValidReserveTaskName(task)) {
     return { ok: false, reason: 'invalid' };
   }
-  const actual = actualUsdToMicro(actualUSD);
+  const actual = boundedAttemptUsdToMicro(actualUSD);
   if (!isValidAttemptId(attemptId) || !actual.ok) {
     return { ok: false, reason: 'invalid' };
   }
@@ -653,6 +713,9 @@ export function summarizeDay(
   day: string,
   config: SpendConfig
 ): DaySummary {
+  if (isDayStorageCorrupt(state, day)) {
+    return failClosedDaySummary(day);
+  }
   if (!isValidLedgerDayKey(day)) {
     return {
       date: day,

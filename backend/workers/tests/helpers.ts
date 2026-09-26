@@ -12,7 +12,7 @@ import {
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
-import { bucketStorageKey, loadLedgerFromStorage } from '../src/ledgerBucketStorage.js';
+import { bucketStorageKey, encodeDayForStorage, loadLedgerFromStorage } from '../src/ledgerBucketStorage.js';
 import { DeviceSpendLedger } from '../src/spendLedger.js';
 
 export class MemoryKV {
@@ -115,7 +115,10 @@ export function spendLedger(): DurableObjectNamespace {
 }
 
 /** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */
-export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
+export function createDeviceSpendLedgerHarness(
+  initialState?: LedgerState,
+  options?: { maxValueBytes?: number }
+): {
   ledger: DeviceSpendLedger;
   putCount: () => number;
   resetPutCount: () => void;
@@ -125,13 +128,18 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
   const putLog: unknown[] = [];
   if (initialState) {
     for (const [day, record] of Object.entries(initialState.days)) {
-      kvStore.set(bucketStorageKey(day), structuredClone(record));
+      kvStore.set(bucketStorageKey(day), encodeDayForStorage(structuredClone(record)));
     }
   }
+  const maxValueBytes = options?.maxValueBytes;
   const storage = {
     kv: {
       get: <T>(key: string): T | undefined => kvStore.get(key) as T | undefined,
       put: (key: string, value: unknown) => {
+        const bytes = new TextEncoder().encode(JSON.stringify(value)).length;
+        if (maxValueBytes !== undefined && bytes > maxValueBytes) {
+          throw new Error('SQLITE_TOOBIG');
+        }
         putLog.push(value);
         kvStore.set(key, value);
       },
@@ -160,7 +168,10 @@ export function createDeviceSpendLedgerHarness(initialState?: LedgerState): {
     },
     getStoredState: () => {
       const state = loadLedgerFromStorage(storage.kv);
-      return Object.keys(state.days).length > 0 ? state : undefined;
+      const hasDays = Object.keys(state.days).length > 0;
+      const hasCorrupt =
+        state.corruptDays !== undefined && Object.keys(state.corruptDays).length > 0;
+      return hasDays || hasCorrupt ? state : undefined;
     },
   };
 }

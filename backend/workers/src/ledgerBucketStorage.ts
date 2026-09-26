@@ -5,6 +5,11 @@
 import {
   emptyLedgerState,
   hydrateDayRecord,
+  isValidAttemptId,
+  isValidLedgerDayKey,
+  isValidReserveTaskName,
+  markDayStorageCorrupt,
+  isDayStorageCorrupt,
   type AttemptEntry,
   type AttemptState,
   type DayRecord,
@@ -13,6 +18,8 @@ import {
 
 export const BUCKET_KEY_PREFIX = 'bucket:';
 const LEGACY_LEDGER_KEY = 'ledger';
+
+const STATE_CODES = new Set([0, 1, 2]);
 
 /** Compact persisted attempt (attempt id is the map key). */
 interface StoredAttempt {
@@ -46,14 +53,84 @@ const CODE_TO_STATE: Record<0 | 1 | 2, AttemptState> = {
   2: 'unknown',
 };
 
-function isStoredDayBucket(raw: unknown): raw is StoredDayBucket {
-  return (
-    typeof raw === 'object' &&
-    raw !== null &&
-    'a' in raw &&
-    'k' in raw &&
-    !('attempts' in raw)
-  );
+function isNonNegativeSafeInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isEpochMs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function validateStoredAttempt(id: string, raw: unknown): StoredAttempt | null {
+  if (!isValidAttemptId(id) || typeof raw !== 'object' || raw === null) {
+    return null;
+  }
+  const a = raw as Record<string, unknown>;
+  if (!isNonNegativeSafeInt(a.u) || !isValidReserveTaskName(String(a.t))) {
+    return null;
+  }
+  if (!STATE_CODES.has(a.S as number)) {
+    return null;
+  }
+  if (!isEpochMs(a.c)) {
+    return null;
+  }
+  if (a.a !== undefined && !isNonNegativeSafeInt(a.a)) {
+    return null;
+  }
+  if (a.R !== undefined && !isEpochMs(a.R)) {
+    return null;
+  }
+  if (a.O !== undefined && a.O !== 1) {
+    return null;
+  }
+  return raw as StoredAttempt;
+}
+
+/** Strict validation of persisted compact bucket JSON; null when malformed. */
+export function validateStoredDayBucket(raw: unknown): StoredDayBucket | null {
+  if (typeof raw !== 'object' || raw === null || 'attempts' in raw) {
+    return null;
+  }
+  const top = raw as Record<string, unknown>;
+  if (!isNonNegativeSafeInt(top.s) || !isNonNegativeSafeInt(top.r) || !isNonNegativeSafeInt(top.o)) {
+    return null;
+  }
+  if (typeof top.a !== 'object' || top.a === null || typeof top.k !== 'object' || top.k === null) {
+    return null;
+  }
+  const attemptsRaw = top.a as Record<string, unknown>;
+  const attempts = Object.create(null) as Record<string, StoredAttempt>;
+  for (const id of Object.keys(attemptsRaw)) {
+    if (!Object.hasOwn(attemptsRaw, id)) {
+      continue;
+    }
+    const attempt = validateStoredAttempt(id, attemptsRaw[id]);
+    if (!attempt) {
+      return null;
+    }
+    attempts[id] = attempt;
+  }
+  const tasksRaw = top.k as Record<string, unknown>;
+  const tasks = Object.create(null) as Record<string, number>;
+  for (const task of Object.keys(tasksRaw)) {
+    if (!Object.hasOwn(tasksRaw, task)) {
+      continue;
+    }
+    if (!isValidReserveTaskName(task) || !isNonNegativeSafeInt(tasksRaw[task])) {
+      return null;
+    }
+    tasks[task] = tasksRaw[task] as number;
+  }
+  return { s: top.s, r: top.r, o: top.o, a: attempts, k: tasks };
+}
+
+export function parseBucketStorageKey(key: string): string | null {
+  if (!key.startsWith(BUCKET_KEY_PREFIX)) {
+    return null;
+  }
+  const day = key.slice(BUCKET_KEY_PREFIX.length);
+  return isValidLedgerDayKey(day) ? day : null;
 }
 
 function encodeAttempt(entry: AttemptEntry): StoredAttempt {
@@ -162,31 +239,46 @@ type WritableKv = ReadableKv & {
   delete: (key: string) => void;
 };
 
-export function listStoredDayKeys(kv: ListableKv): string[] {
+function listValidBucketDaysFromStorage(kv: ListableKv): string[] {
   const days: string[] = [];
   for (const [name] of kv.list({ prefix: BUCKET_KEY_PREFIX })) {
-    days.push(name.slice(BUCKET_KEY_PREFIX.length));
+    const day = parseBucketStorageKey(name);
+    if (day) {
+      days.push(day);
+      continue;
+    }
+    if (name.startsWith(BUCKET_KEY_PREFIX)) {
+      console.warn(`DeviceSpendLedger: ignoring invalid bucket storage key ${name}`);
+    }
   }
   return days;
 }
 
-/** Day keys present in storage before a transaction (bucket keys + legacy monolith days). */
+/** Day keys present in storage before a transaction (valid bucket keys + legacy monolith days). */
 export function dayKeysInStorage(kv: ReadableKv): Set<string> {
-  const keys = new Set(listStoredDayKeys(kv));
+  const keys = new Set(listValidBucketDaysFromStorage(kv));
   const legacy = kv.get<LedgerState>(LEGACY_LEDGER_KEY);
   if (legacy?.days) {
     for (const day of Object.keys(legacy.days)) {
-      keys.add(day);
+      if (isValidLedgerDayKey(day)) {
+        keys.add(day);
+      }
     }
   }
   return keys;
 }
 
-function decodeStoredBucket(day: string, raw: unknown): DayRecord {
-  if (isStoredDayBucket(raw)) {
-    return decodeDayFromStorage(day, raw);
+function loadStoredDayBucket(kv: ReadableKv, day: string, state: LedgerState): void {
+  const raw = kv.get<unknown>(bucketStorageKey(day));
+  if (raw === undefined) {
+    return;
   }
-  return hydrateDayRecord(raw as DayRecord);
+  const stored = validateStoredDayBucket(raw);
+  if (!stored) {
+    markDayStorageCorrupt(state, day);
+    return;
+  }
+  state.days[day] = decodeDayFromStorage(day, stored);
 }
 
 export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
@@ -194,14 +286,19 @@ export function loadLedgerFromStorage(kv: ReadableKv): LedgerState {
   const legacy = kv.get<LedgerState>(LEGACY_LEDGER_KEY);
   if (legacy?.days) {
     for (const [day, record] of Object.entries(legacy.days)) {
-      state.days[day] = hydrateDayRecord(record);
+      if (!isValidLedgerDayKey(day)) {
+        continue;
+      }
+      const encoded = validateStoredDayBucket(encodeDayForStorage(hydrateDayRecord(record)));
+      if (!encoded) {
+        markDayStorageCorrupt(state, day);
+      } else {
+        state.days[day] = decodeDayFromStorage(day, encoded);
+      }
     }
   }
-  for (const day of listStoredDayKeys(kv)) {
-    const raw = kv.get<unknown>(bucketStorageKey(day));
-    if (raw) {
-      state.days[day] = decodeStoredBucket(day, raw);
-    }
+  for (const day of listValidBucketDaysFromStorage(kv)) {
+    loadStoredDayBucket(kv, day, state);
   }
   return state;
 }
@@ -211,7 +308,7 @@ export function persistLedgerToStorage(kv: WritableKv, state: LedgerState, dayKe
   kv.delete(LEGACY_LEDGER_KEY);
   const dayKeysAfter = new Set(Object.keys(state.days));
   for (const day of dayKeysBefore) {
-    if (!dayKeysAfter.has(day)) {
+    if (!dayKeysAfter.has(day) && !isDayStorageCorrupt(state, day)) {
       kv.delete(bucketStorageKey(day));
     }
   }
