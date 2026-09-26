@@ -1,0 +1,8 @@
+{
+  "name": "personal-stylist-ios (Linux: backend + repo checks; no iOS build)",
+  "build": {
+    "dockerfileContents": "# Node 22 = lowest major satisfying every lockfile engine (wrangler/miniflare >=22). Pin by digest when implementing.\nFROM node:22-bookworm-slim AS node\n# Ubuntu 24.04 matches GitHub ubuntu-latest (glibc 2.39, CPython 3.12 as noted in scripts/ci-requirements.txt).\nFROM ubuntu:24.04\nENV DEBIAN_FRONTEND=noninteractive\nRUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-pip python3-venv sudo && rm -rf /var/lib/apt/lists/*\nCOPY --from=node /usr/local/bin/node /usr/local/bin/node\nCOPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules\nRUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && node -v && npm -v\n# Same pin as the Backend CI 'OpenAPI Lint' job.\nRUN npm install -g @redocly/cli@2.53.3\n",
+    "context": ".."
+  },
+  "install": "bash -c 'set -euo pipefail; node -v | grep -q \"^v22\\.\"; (cd backend/outfit-engine && npm ci --no-audit --no-fund); (cd backend/workers && npm ci --no-audit --no-fund); python3 -m venv \"$HOME/.venvs/ps-ci\"; \"$HOME/.venvs/ps-ci/bin/pip\" install --require-hashes -r scripts/ci-requirements.txt'"
+}
