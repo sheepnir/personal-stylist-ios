@@ -156,10 +156,55 @@ enum OutfitEngineClient {
         var cautions: [String]?
     }
 
+    /// `GenerationMeta` (docs/openapi.yaml). Every field decodes leniently: a missing or
+    /// mistyped field is nil and never fails the generate response (#44).
     struct EngineGeneration: Decodable {
         var fallbackLevel: String?
         var spendState: String?
         var modelId: String?
+        var promptVersion: String?
+        /// ADR-0001 §10.2 — extensible string, keyed on presence. Absent or JSON `null` is
+        /// `nil` (no notice). A present non-string value decodes as `""`, which still counts
+        /// as present (generic notice).
+        var fallbackReason: String?
+        var candidateSetHash: String?
+        var latencyMs: Int?
+        var repairAttempts: Int?
+        var costUSD: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case fallbackLevel, spendState, modelId, promptVersion, fallbackReason
+            case candidateSetHash, latencyMs, repairAttempts, costUSD
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            fallbackLevel = try? c.decodeIfPresent(String.self, forKey: .fallbackLevel)
+            spendState = try? c.decodeIfPresent(String.self, forKey: .spendState)
+            modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
+            promptVersion = try? c.decodeIfPresent(String.self, forKey: .promptVersion)
+            if c.contains(.fallbackReason), (try? c.decodeNil(forKey: .fallbackReason)) == false {
+                fallbackReason = (try? c.decode(String.self, forKey: .fallbackReason)) ?? ""
+            }
+            candidateSetHash = try? c.decodeIfPresent(String.self, forKey: .candidateSetHash)
+            latencyMs = try? c.decodeIfPresent(Int.self, forKey: .latencyMs)
+            repairAttempts = try? c.decodeIfPresent(Int.self, forKey: .repairAttempts)
+            costUSD = try? c.decodeIfPresent(Double.self, forKey: .costUSD)
+        }
+
+        var metadata: OutfitGenerationMetadata {
+            OutfitGenerationMetadata(
+                modelId: modelId,
+                promptVersion: promptVersion,
+                fallbackLevel: fallbackLevel,
+                fallbackReason: fallbackReason,
+                spendState: spendState,
+                candidateSetHash: candidateSetHash,
+                latencyMs: latencyMs,
+                repairAttempts: repairAttempts,
+                costUSD: costUSD
+            )
+        }
     }
 
     struct EngineCandidate: Decodable {
@@ -735,7 +780,8 @@ enum OutfitEngineClient {
             id: outfitId,
             assignments: assignments,
             rationaleSummary: summary,
-            offlineCached: false
+            offlineCached: false,
+            generation: response.generation?.metadata
         )
     }
 
