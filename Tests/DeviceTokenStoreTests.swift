@@ -478,14 +478,13 @@ final class DeviceTokenStoreTests: XCTestCase {
             #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
                 .data(using: .utf8)
         )
-        EngineConfig.baseURLOverride = URL(string: "https://example.test")!
         RecordingURLProtocol.install { _ in
             .http(status: 201, body: body)
         }
         DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
 
         let ok = await DeviceTokenEnrollment.enrollAndSave(
-            baseURL: EngineConfig.baseURL,
+            baseURL: URL(string: "https://example.test")!,
             enrollmentSecret: "enroll-secret"
         )
         XCTAssertTrue(ok)

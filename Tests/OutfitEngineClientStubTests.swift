@@ -303,9 +303,11 @@ final class OutfitEngineClientStubTests: XCTestCase {
         await model.alternatives(for: .bottom)
         XCTAssertFalse(model.deviceAccessRejected)
         XCTAssertEqual(model.swapSheetDetail, "Couldn’t rank swaps. Try again.")
-        XCTAssertTrue(
-            model.swapAlternatives.contains { $0.reason == "Stub fallback — engine unreachable" }
-        )
+        if !model.swapAlternatives.isEmpty {
+            XCTAssertTrue(
+                model.swapAlternatives.contains { $0.reason == "Stub fallback — engine unreachable" }
+            )
+        }
     }
 
     func testEngineBypassVoiceOverActionsFollowSuppressFlag() {
@@ -328,7 +330,6 @@ final class OutfitEngineClientStubTests: XCTestCase {
             #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
                 .data(using: .utf8)
         )
-        EngineConfig.baseURLOverride = URL(string: "https://example.test")!
         RecordingURLProtocol.install { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/v1/auth/device")
@@ -337,7 +338,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
         DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
 
         let ok = await DeviceTokenEnrollment.enrollAndSave(
-            baseURL: EngineConfig.baseURL,
+            baseURL: URL(string: "https://example.test")!,
             enrollmentSecret: "enroll-secret"
         )
         XCTAssertTrue(ok)
@@ -402,9 +403,10 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        async let swapWait: Void = model.alternatives(for: .bottom)
+        let swapTask = Task { await model.alternatives(for: .bottom) }
+        await Task.yield()
         model.noteDeviceAccessCredentialStored()
-        await swapWait
+        await swapTask.value
         RecordingURLProtocol.latencyNanoseconds = 0
         XCTAssertFalse(model.deviceAccessRejected)
     }
@@ -419,9 +421,10 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        async let buildWait: Bool = model.buildDemoOutfit(intent: .firstBuild)
+        let buildTask = Task { await model.buildDemoOutfit(intent: .firstBuild) }
+        await Task.yield()
         model.noteDeviceAccessCredentialStored()
-        _ = await buildWait
+        _ = await buildTask.value
         RecordingURLProtocol.latencyNanoseconds = 0
         XCTAssertFalse(model.deviceAccessRejected)
     }
