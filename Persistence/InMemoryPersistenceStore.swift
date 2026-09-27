@@ -71,7 +71,12 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
     func saveOutfit(_ outfit: StubOutfit) async throws {
         lock.lock(); defer { lock.unlock() }
         if let idx = outfits.firstIndex(where: { $0.id == outfit.id }) {
-            outfits[idx] = outfit
+            var updated = outfit
+            // #44: mirror SwiftData — a stub without metadata keeps the stored metadata.
+            if updated.generation == nil {
+                updated.generation = outfits[idx].generation
+            }
+            outfits[idx] = updated
         } else {
             outfits.append(outfit)
         }

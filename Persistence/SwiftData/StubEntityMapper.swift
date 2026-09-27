@@ -163,7 +163,8 @@ enum StubEntityMapper {
             id: entity.id,
             assignments: assignments,
             rationaleSummary: entity.rationaleSummary,
-            offlineCached: entity.offlineCached
+            offlineCached: entity.offlineCached,
+            generation: OutfitGenerationEnvelope.decode(entity.generationJSON)
         )
     }
 
@@ -174,7 +175,8 @@ enum StubEntityMapper {
             sessionId: UUID(),
             rationaleSummary: stub.rationaleSummary,
             offlineCached: stub.offlineCached,
-            statusRaw: "SUGGESTED"
+            statusRaw: "SUGGESTED",
+            generationJSON: OutfitGenerationEnvelope.encode(stub.generation)
         )
         outfit.assignments = stub.assignments.map { a in
             OutfitAssignmentEntity(

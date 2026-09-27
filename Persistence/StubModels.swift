@@ -140,6 +140,8 @@ struct StubOutfit: Identifiable, Hashable, Sendable {
     var assignments: [StubOutfitAssignment]
     var rationaleSummary: String
     var offlineCached: Bool
+    /// #44 — set from the generate response; unchanged by swap, lock, or offline reuse.
+    var generation: OutfitGenerationMetadata? = nil
 }
 
 struct StubWearEvent: Identifiable, Hashable, Sendable {

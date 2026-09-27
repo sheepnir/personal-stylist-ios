@@ -175,6 +175,10 @@ final class SwiftDataPersistenceStore: PersistenceStore, @unchecked Sendable {
                 }
                 existing.rationaleSummary = outfit.rationaleSummary
                 existing.offlineCached = outfit.offlineCached
+                // #44: an outfit's origin never changes; a stub without metadata keeps the stored blob.
+                if let generation = outfit.generation {
+                    existing.generationJSON = OutfitGenerationEnvelope.encode(generation)
+                }
                 existing.updatedAt = Date()
                 existing.assignments = outfit.assignments.map { assignment in
                     OutfitAssignmentEntity(
