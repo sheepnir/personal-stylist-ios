@@ -286,6 +286,9 @@ struct OutfitBoardView: View {
                 Text(primary.title)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(
                         (wearDisabled ? Color.accentColor.opacity(0.4) : Color.accentColor),
@@ -307,14 +310,28 @@ struct OutfitBoardView: View {
     private func boardMiniAction(
         _ title: String,
         disabled: Bool = false,
+        hint: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(title, action: action)
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .frame(minHeight: 44)
-            .disabled(disabled)
+        DailyWearA11yButton(
+            identifier: "board.action.\(title)",
+            label: title,
+            hint: hint,
+            isEnabled: !disabled,
+            action: action
+        ) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1)
+                )
+        }
     }
 
     private func keepTapped(slot: StubSlot, assignmentId: UUID) {
@@ -324,15 +341,6 @@ struct OutfitBoardView: View {
             showKeepTipBanner = true
         }
     }
-
-    private func filledTileLabel(_ a: StubOutfitAssignment, _ g: StubGarment) -> String {
-        var parts = [g.displayName]
-        if a.isAnchor { parts.append("Starting item") }
-        if a.isLocked { parts.append("Kept") }
-        parts.append(g.availabilityToken.accessibilityName)
-        return parts.joined(separator: ", ")
-    }
-
 
     private func noAlternativeBanner(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -544,16 +552,7 @@ struct OutfitBoardView: View {
                 }
                 compositionTileActionRow(a)
             }
-            .modifier(FilledTileAccess(
-                label: filledTileLabel(a, g),
-                isAnchor: a.isAnchor,
-                isLocked: a.isLocked,
-                suppressEngineActions: model.outfitEngineActionsDisabled,
-                onSwap: { onSwap(a.slot) },
-                onKeep: { keepTapped(slot: a.slot, assignmentId: a.id) },
-                onUnlock: { model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id) },
-                onChangeAnchor: onChangeAnchor
-            ))
+            .accessibilityElement(children: .contain)
         } else if let reason = a.gapReason {
             VStack(alignment: .leading, spacing: 8) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -564,14 +563,11 @@ struct OutfitBoardView: View {
                 BoardTileActionRow {
                     boardMiniAction(
                         "Find \(a.slot.displayLabel.lowercased())",
-                        disabled: model.isOffline || model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
-                    .accessibilityLabel("Find \(a.slot.displayLabel.lowercased())")
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Gap · \(a.slot.displayLabel)")
@@ -583,14 +579,7 @@ struct OutfitBoardView: View {
             }
             .padding(10)
             .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .modifier(
-                GapTileVoiceOver(
-                    combinedLabel: "Empty \(a.slot.displayLabel). \(reason)",
-                    findActionName: "Find \(a.slot.displayLabel)",
-                    suppressEngineActions: model.outfitEngineActionsDisabled,
-                    onFind: { onSwap(a.slot) }
-                )
-            )
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -600,32 +589,32 @@ struct OutfitBoardView: View {
             if a.isAnchor {
                 boardMiniAction(
                     "Change starting item",
-                    disabled: model.isOffline || model.outfitEngineActionsDisabled
-                ) { onChangeAnchor() }
-                .accessibilityHint(
-                    model.outfitEngineActionsDisabled
+                    disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                    hint: model.outfitEngineActionsDisabled
                         ? DressingCopy.deviceAccessRequiredHint
-                        : ""
-                )
+                        : nil
+                ) { onChangeAnchor() }
             } else if a.isLocked {
-                boardMiniAction("Unlock") {
+                boardMiniAction(
+                    "Unlock",
+                    hint: "Allows swapping this piece again"
+                ) {
                     model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id)
                 }
-                .accessibilityHint("Allows swapping this piece again")
             } else {
                 if !model.isOffline {
                     boardMiniAction(
                         "Swap",
-                        disabled: model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
-                boardMiniAction("Keep") { keepTapped(slot: a.slot, assignmentId: a.id) }
-                    .accessibilityHint("Kept pieces survive Try another")
+                boardMiniAction(
+                    "Keep",
+                    hint: "Kept pieces survive Try another"
+                ) { keepTapped(slot: a.slot, assignmentId: a.id) }
             }
         }
     }
@@ -696,36 +685,31 @@ struct OutfitBoardView: View {
                     .frame(width: 88)
                 BoardTileActionRow {
                     if a.isLocked {
-                        boardMiniAction("Unlock") {
+                        boardMiniAction(
+                            "Unlock",
+                            hint: "Allows swapping this piece again"
+                        ) {
                             model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id)
                         }
                     } else {
                         if !model.isOffline {
                             boardMiniAction(
                                 "Swap",
-                                disabled: model.outfitEngineActionsDisabled
-                            ) { onSwap(a.slot) }
-                            .accessibilityHint(
-                                model.outfitEngineActionsDisabled
+                                disabled: model.outfitEngineActionsDisabled,
+                                hint: model.outfitEngineActionsDisabled
                                     ? DressingCopy.deviceAccessRequiredHint
-                                    : ""
-                            )
+                                    : nil
+                            ) { onSwap(a.slot) }
                         }
-                        boardMiniAction("Keep") { keepTapped(slot: a.slot, assignmentId: a.id) }
+                        boardMiniAction(
+                            "Keep",
+                            hint: "Kept pieces survive Try another"
+                        ) { keepTapped(slot: a.slot, assignmentId: a.id) }
                     }
                 }
                 .frame(width: 88)
             }
-            .modifier(FilledTileAccess(
-                label: filledTileLabel(a, g),
-                isAnchor: false,
-                isLocked: a.isLocked,
-                suppressEngineActions: model.outfitEngineActionsDisabled,
-                onSwap: { onSwap(a.slot) },
-                onKeep: { keepTapped(slot: a.slot, assignmentId: a.id) },
-                onUnlock: { model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id) },
-                onChangeAnchor: onChangeAnchor
-            ))
+            .accessibilityElement(children: .contain)
         } else if a.gapReason != nil {
             VStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 10)
@@ -737,29 +721,21 @@ struct OutfitBoardView: View {
                 BoardTileActionRow {
                     boardMiniAction(
                         "Find accessory",
-                        disabled: model.isOffline || model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
                 .frame(width: 88)
             }
-            .modifier(
-                GapTileVoiceOver(
-                    combinedLabel: "Empty accessory",
-                    findActionName: "Find accessory",
-                    suppressEngineActions: model.outfitEngineActionsDisabled,
-                    onFind: { onSwap(a.slot) }
-                )
-            )
+            .accessibilityElement(children: .contain)
         }
     }
 }
 
-/// When device access is rejected, omit Find custom actions (same policy as `FilledTileAccess`).
+/// When device access is rejected, Find and Swap stay disabled buttons.
+/// They are not custom actions that can fire while the button is disabled.
 enum OutfitBoardAccessibilityPolicy {
     static func exposesEngineBypassVoiceOverActions(suppressEngineActions: Bool) -> Bool {
         !suppressEngineActions
@@ -778,74 +754,3 @@ private struct BoardTileActionRow<Content: View>: View {
     }
 }
 
-/// Gap-tile VoiceOver — Find custom action omitted when engine actions are disabled (#34 R6).
-private struct GapTileVoiceOver: ViewModifier {
-    var combinedLabel: String
-    var findActionName: String
-    var suppressEngineActions: Bool
-    var onFind: () -> Void
-
-    func body(content: Content) -> some View {
-        if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-            suppressEngineActions: suppressEngineActions
-        ) {
-            content
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(combinedLabel)
-                .accessibilityAction(named: Text(findActionName), onFind)
-        } else {
-            content
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(combinedLabel)
-        }
-    }
-}
-
-/// Combined-tile VoiceOver: label + custom actions so Swap/Keep are never swallowed (#128).
-private struct FilledTileAccess: ViewModifier {
-    var label: String
-    var isAnchor: Bool
-    var isLocked: Bool
-    var suppressEngineActions: Bool
-    var onSwap: () -> Void
-    var onKeep: () -> Void
-    var onUnlock: () -> Void
-    var onChangeAnchor: () -> Void
-
-    func body(content: Content) -> some View {
-        Group {
-            if isAnchor {
-                if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-                    suppressEngineActions: suppressEngineActions
-                ) {
-                    content
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(label)
-                        .accessibilityAction(named: "Change starting item", onChangeAnchor)
-                } else {
-                    content
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(label)
-                }
-            } else if isLocked {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Unlock", onUnlock)
-            } else if !OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-                suppressEngineActions: suppressEngineActions
-            ) {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Keep", onKeep)
-            } else {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Swap", onSwap)
-                    .accessibilityAction(named: "Keep", onKeep)
-            }
-        }
-    }
-}
