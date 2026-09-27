@@ -327,7 +327,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
         XCTAssertTrue(model.outfitEngineActionsDisabled)
 
         let body = try XCTUnwrap(
-            #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
+            #"{"deviceToken":"\#(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
                 .data(using: .utf8)
         )
         RecordingURLProtocol.install { request in
