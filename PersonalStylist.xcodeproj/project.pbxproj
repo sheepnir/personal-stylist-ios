@@ -53,6 +53,7 @@
 		69F8CB1936558FF26AD1CAC6 /* DeviceAccessSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1143BB3F6714DFC707E71BE4 /* DeviceAccessSection.swift */; };
 		6AC49F55B1E4A50136AC99DF /* PhotoReplaceHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2403922423F68A48B3450864 /* PhotoReplaceHostedTests.swift */; };
 		6B907B7A35F3F4871483CC22 /* FixtureAttributeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA3B97DCCD17FF027D6D5FC /* FixtureAttributeTests.swift */; };
+		6B9234838CF082F2362A916F /* DeviceAccessPasteValidationUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FAF5147B001A4F62D7AADCA /* DeviceAccessPasteValidationUI.swift */; };
 		6C14A8A825D8684E850F1CC7 /* ReadyBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77766F5FA05206C1CB555C5 /* ReadyBatchTests.swift */; };
 		6C5E162B58597CD11CB1B63B /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2B41D488D744CE76E52914 /* AppIdentity.swift */; };
 		6DF742E3B66B6D7DCFEE4E2A /* ReviewCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65BCADD6D973B7F51B996C9A /* ReviewCardView.swift */; };
@@ -230,6 +231,7 @@
 		8CA73EF6D8AC351700F6FB6A /* founder-seed.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "founder-seed.json"; sourceTree = "<group>"; };
 		8DC4FDEAE5B2D92C8945D549 /* UUIDListCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UUIDListCodec.swift; sourceTree = "<group>"; };
 		8F7327576F709295FF4B4CFB /* CameraAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraAuthorization.swift; sourceTree = "<group>"; };
+		8FAF5147B001A4F62D7AADCA /* DeviceAccessPasteValidationUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceAccessPasteValidationUI.swift; sourceTree = "<group>"; };
 		9196F05FB4FC2C4C028B3EB5 /* FixtureImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureImageView.swift; sourceTree = "<group>"; };
 		925BA06440A547B1DDD21056 /* OutfitBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitBoardView.swift; sourceTree = "<group>"; };
 		92F463FD8011F9A109E1E24E /* FinishDetailsColorPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsColorPersistenceTests.swift; sourceTree = "<group>"; };
@@ -314,6 +316,7 @@
 				80E0F3AE097CF4024CAF5E58 /* CameraIntakePresentation.swift */,
 				D3B5AACF3C9487578830C5AD /* CameraIntakeServing.swift */,
 				8738C66DE63B926C41BC63B8 /* ContentView.swift */,
+				8FAF5147B001A4F62D7AADCA /* DeviceAccessPasteValidationUI.swift */,
 				04B95AF0FBD205A6341A8A06 /* DeviceTokenEnrollment.swift */,
 				034F7728C8BE48F0C965A014 /* DeviceTokenStore.swift */,
 				95E8DAFD38F9F7EE2927A0E3 /* EngineConfig.swift */,
@@ -752,6 +755,7 @@
 				CAC033C5118DF1C817622F7C /* DataControlsCopy.swift in Sources */,
 				A428765A3EF42F76D272391D /* DemoToast.swift in Sources */,
 				733EFCF1065D41F20E2E3467 /* DestructiveCascade.swift in Sources */,
+				6B9234838CF082F2362A916F /* DeviceAccessPasteValidationUI.swift in Sources */,
 				69F8CB1936558FF26AD1CAC6 /* DeviceAccessSection.swift in Sources */,
 				36D9F97337F0E7997D6C0B1C /* DeviceTokenEnrollment.swift in Sources */,
 				FF0AEE79F3857159AF2DD41B /* DeviceTokenStore.swift in Sources */,
