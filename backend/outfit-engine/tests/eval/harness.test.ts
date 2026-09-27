@@ -9,6 +9,7 @@ describe("eval harness (M0-17)", () => {
     expect(r01.expectedClassification).toBe("complete");
     expect(r01.actualClassification).toBe("complete");
     expect(r01.passed).toBe(true);
+    expect(r01.promptVersion).toBe("none");
 
     expect(r03.expectedClassification).toBe("complete");
     expect(r03.actualClassification).toBe("complete");

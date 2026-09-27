@@ -2,6 +2,21 @@
  * Shared in-memory KV for Workers unit tests.
  */
 
+import { NO_COST_SOURCE } from '../src/costSource.js';
+import {
+  ageLedger,
+  emptyLedgerState,
+  markAttemptUnknown,
+  reconcileAttempt,
+  removeEmptyDayBucket,
+  reserveAttempt,
+  summarizeDay,
+  type LedgerState,
+} from '../src/ledgerCore.js';
+import type { SpendConfig } from '../src/types.js';
+import { bucketStorageKey, encodeDayForStorage, loadLedgerFromStorage } from '../src/ledgerBucketStorage.js';
+import { DeviceSpendLedger } from '../src/spendLedger.js';
+
 export class MemoryKV {
   store = new Map<string, string>();
   async get(key: string, type?: 'json'): Promise<unknown> {
@@ -40,4 +55,155 @@ export function tokenRegistry(): DurableObjectNamespace {
       devices.set(id, { hash, issuedAt, status: 'active' }); return true;
     },
   }) } as unknown as DurableObjectNamespace;
+}
+
+export type MarkUnknownCall = {
+  deviceId: string;
+  attemptId: string;
+  generationId?: string;
+};
+
+/** In-memory per-device spend ledger stub (same API as DeviceSpendLedger). */
+export interface SpendLedgerMock {
+  namespace: DurableObjectNamespace;
+  dumpState: (deviceId: string) => LedgerState;
+  markUnknownCalls: MarkUnknownCall[];
+}
+
+export type SpendLedgerTestHarness = DurableObjectNamespace & {
+  markUnknownCalls: MarkUnknownCall[];
+};
+
+export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolean }): SpendLedgerMock {
+  const byDevice = new Map<string, LedgerState>();
+  const markUnknownCalls: MarkUnknownCall[] = [];
+
+  const stateFor = (deviceId: string): LedgerState => {
+    let state = byDevice.get(deviceId);
+    if (!state) {
+      state = emptyLedgerState();
+      if (options?.legacyMonolithPresent) {
+        state.legacyMonolithPresent = true;
+      }
+      byDevice.set(deviceId, state);
+    }
+    return state;
+  };
+
+  const namespace = {
+    getByName: (deviceId: string) => ({
+      reserve: async (
+        attemptId: string,
+        upperBoundUSD: number,
+        day: string,
+        config: SpendConfig,
+        task = 'unknown'
+      ) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        const result = reserveAttempt(state, attemptId, upperBoundUSD, day, config, task);
+        if (!result.ok) {
+          removeEmptyDayBucket(state, day);
+        }
+        return result;
+      },
+      reconcile: async (day: string, attemptId: string, actualUSD: number, task?: string) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return reconcileAttempt(state, day, attemptId, actualUSD, task);
+      },
+      summary: async (day: string, config: SpendConfig) => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return summarizeDay(state, day, config);
+      },
+      markUnknown: async (_day: string, attemptId: string, generationId?: string) => {
+        markUnknownCalls.push({ deviceId, attemptId, generationId });
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return markAttemptUnknown(state, attemptId, generationId);
+      },
+    }),
+  } as unknown as DurableObjectNamespace;
+
+  return {
+    namespace,
+    dumpState: (deviceId: string) => structuredClone(byDevice.get(deviceId) ?? emptyLedgerState()),
+    markUnknownCalls,
+  };
+}
+
+export function spendLedger(): SpendLedgerTestHarness {
+  const mock = createSpendLedgerMock();
+  return Object.assign(mock.namespace, { markUnknownCalls: mock.markUnknownCalls });
+}
+
+/** Fake DO storage for unit-testing {@link DeviceSpendLedger} persist + RPC returns. */
+export function createDeviceSpendLedgerHarness(
+  initialState?: LedgerState,
+  options?: { maxValueBytes?: number; initialKv?: Record<string, unknown> }
+): {
+  ledger: DeviceSpendLedger;
+  putCount: () => number;
+  resetPutCount: () => void;
+  getStoredState: () => LedgerState | undefined;
+  kvHas: (key: string) => boolean;
+} {
+  const kvStore = new Map<string, unknown>();
+  const putLog: unknown[] = [];
+  if (initialState) {
+    for (const [day, record] of Object.entries(initialState.days)) {
+      kvStore.set(bucketStorageKey(day), encodeDayForStorage(structuredClone(record)));
+    }
+  }
+  if (options?.initialKv) {
+    for (const [key, value] of Object.entries(options.initialKv)) {
+      kvStore.set(key, value);
+    }
+  }
+  const maxValueBytes = options?.maxValueBytes;
+  const storage = {
+    kv: {
+      get: <T>(key: string): T | undefined => kvStore.get(key) as T | undefined,
+      put: (key: string, value: unknown) => {
+        const bytes = new TextEncoder().encode(JSON.stringify(value)).length;
+        if (maxValueBytes !== undefined && bytes > maxValueBytes) {
+          throw new Error('SQLITE_TOOBIG');
+        }
+        putLog.push(value);
+        kvStore.set(key, value);
+      },
+      delete: (key: string) => {
+        kvStore.delete(key);
+      },
+      list: (options?: { prefix?: string }) => {
+        const prefix = options?.prefix ?? '';
+        const entries: [string, unknown][] = [];
+        for (const [name, value] of kvStore) {
+          if (name.startsWith(prefix)) {
+            entries.push([name, value]);
+          }
+        }
+        return entries;
+      },
+    },
+    transactionSync: <T>(fn: () => T): T => fn(),
+  };
+  const ledger = new DeviceSpendLedger({ storage } as DurableObjectState, {} as import('../src/types.js').Env);
+  return {
+    ledger,
+    putCount: () => putLog.length,
+    resetPutCount: () => {
+      putLog.length = 0;
+    },
+    getStoredState: () => {
+      const state = loadLedgerFromStorage(storage.kv);
+      const hasDays = Object.keys(state.days).length > 0;
+      const hasCorrupt =
+        state.corruptDays !== undefined && Object.keys(state.corruptDays).length > 0;
+      const legacyBlocked = state.legacyMonolithPresent === true;
+      return hasDays || hasCorrupt || legacyBlocked ? state : undefined;
+    },
+    kvHas: (key: string) => kvStore.has(key),
+  };
 }

@@ -11,6 +11,7 @@ import {
 import type { AlternativesResponse } from "../alternatives/rankAlternatives.js";
 import type { AlternativesScenarioStep, ScenarioExpected } from "./scenarios.js";
 import type { OutcomeClassification, ScenarioEvalResult } from "./types.js";
+import { promptVersionForEvalArm } from "./promptVersion.js";
 
 function assignmentMaps(result: LocalGenerateResponse): {
   outfit: Record<string, string | null>;
@@ -262,6 +263,7 @@ export function compareExpected(
   | "exactOutfitMatch"
   | "failures"
   | "actualSummary"
+  | "promptVersion"
 > {
   const expClass = expectedClassification(expected);
   const actClass = actualClassification(actual);
@@ -314,6 +316,7 @@ export function compareExpected(
     exactOutfitMatch,
     failures,
     actualSummary,
+    promptVersion: promptVersionForEvalArm(model),
   };
 }
 

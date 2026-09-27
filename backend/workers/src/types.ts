@@ -1,10 +1,13 @@
 import type { DeviceTokenRegistry } from './tokenRegistry.js';
+import type { DeviceSpendLedger } from './spendLedger.js';
 /**
  * Cloudflare Workers environment bindings for Personal Stylist backend (M0-09).
  */
 
-export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVICE_TOKENS"> {
+export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVICE_TOKENS" | "SPEND_LEDGER"> {
   DEVICE_TOKENS?: DurableObjectNamespace<DeviceTokenRegistry>;
+  /** Per-device spend ledger (keyed by device locator id). */
+  SPEND_LEDGER?: DurableObjectNamespace<DeviceSpendLedger>;
   /** Platform abuse throttle; missing binding fails closed. */
   REQUEST_RATE_LIMITER?: Cloudflare.Env["REQUEST_RATE_LIMITER"];
   /** KV namespace for usage ledger (device token → day → spend). */
@@ -61,10 +64,12 @@ export interface ProblemDetail {
 /**
  * Spend state for usage tracking.
  */
+export type SpendLedgerAccess = 'ok' | 'legacy' | 'unavailable';
+
 export interface SpendRecord {
   /**
-   * SHA-256 hash (hex) of the device token. The raw token is never persisted
-   * in the ledger value (#174); only this non-reversible identifier is stored.
+   * SHA-256 hash (hex) of the device token for correlating API responses only;
+   * never stored in the Durable Object spend ledger (#174).
    */
   tokenHash: string;
   date: string; // YYYY-MM-DD
@@ -72,6 +77,8 @@ export interface SpendRecord {
   reservedUSD: number;
   tasks: Record<string, number>; // task -> cost
   lastUpdated: string; // ISO timestamp
+  /** Distinguishes legacy (no ledger), unavailable (fail-closed), and normal reads. */
+  ledgerAccess: SpendLedgerAccess;
 }
 
 /**
@@ -89,20 +96,4 @@ export const SPEND_CONFIG = {
 export interface SpendConfig {
   dailyCapUSD: number;
   softThresholdUSD: number;
-}
-
-/**
- * Resolve the spend config for this deployment: valid positive env vars win over the sample
- * defaults; the soft threshold is clamped to the hard cap.
- */
-export function resolveSpendConfig(
-  env: Pick<Env, 'DAILY_CAP_USD' | 'SOFT_THRESHOLD_USD'>
-): SpendConfig {
-  const parse = (raw: string | undefined, fallback: number): number => {
-    const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
-  const dailyCapUSD = parse(env.DAILY_CAP_USD, SPEND_CONFIG.dailyCapUSD);
-  const soft = parse(env.SOFT_THRESHOLD_USD, SPEND_CONFIG.softThresholdUSD);
-  return { dailyCapUSD, softThresholdUSD: Math.min(soft, dailyCapUSD) };
 }

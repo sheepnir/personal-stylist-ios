@@ -4,6 +4,7 @@
  */
 
 import type { Env } from './types.js';
+import { assertPhaseANoLiveProvider } from './phaseA.js';
 
 export interface OpenRouterRequest {
   model: string;
@@ -43,6 +44,8 @@ export async function callOpenRouter(
   request: OpenRouterRequest,
   env: Env
 ): Promise<OpenRouterResponse> {
+  assertPhaseANoLiveProvider('callOpenRouter');
+
   // VF-03 FAIL-CLOSED: Enforce data_collection: deny on every request
   const safeRequest: OpenRouterRequest = {
     ...request,

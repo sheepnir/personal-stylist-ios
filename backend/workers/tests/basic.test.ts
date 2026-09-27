@@ -162,21 +162,30 @@ describe('POST /v1/outfit/generate ledger reads', () => {
 
 describe('Types', () => {
   it('ships illustrative SPEND_CONFIG sample defaults', async () => {
-    const { SPEND_CONFIG, resolveSpendConfig } = await import('../src/types.js');
+    const { SPEND_CONFIG } = await import('../src/types.js');
+    const { resolveSpendConfig } = await import('../src/spendConfig.js');
 
     expect(SPEND_CONFIG.softThresholdUSD).toBeLessThan(SPEND_CONFIG.dailyCapUSD);
-    expect(resolveSpendConfig({})).toEqual({ ...SPEND_CONFIG });
+    expect(resolveSpendConfig({})).toEqual({
+      configError: false,
+      dailyCapUSD: SPEND_CONFIG.dailyCapUSD,
+      softThresholdUSD: SPEND_CONFIG.softThresholdUSD,
+    });
   });
 
   it('lets env vars override the sample spend config', async () => {
-    const { SPEND_CONFIG, resolveSpendConfig } = await import('../src/types.js');
+    const { resolveSpendConfig } = await import('../src/spendConfig.js');
 
-    expect(resolveSpendConfig({ DAILY_CAP_USD: '4', SOFT_THRESHOLD_USD: '3' }))
-      .toEqual({ dailyCapUSD: 4, softThresholdUSD: 3 });
-    // soft threshold is clamped to the cap
-    expect(resolveSpendConfig({ DAILY_CAP_USD: '4', SOFT_THRESHOLD_USD: '9' }).softThresholdUSD).toBe(4);
-    // invalid / non-positive values fall back to the defaults
-    expect(resolveSpendConfig({ DAILY_CAP_USD: 'abc', SOFT_THRESHOLD_USD: '-1' }))
-      .toEqual({ ...SPEND_CONFIG });
+    expect(resolveSpendConfig({ DAILY_CAP_USD: '4', SOFT_THRESHOLD_USD: '3' })).toEqual({
+      configError: false,
+      dailyCapUSD: 4,
+      softThresholdUSD: 3,
+    });
+    expect(resolveSpendConfig({ DAILY_CAP_USD: '4', SOFT_THRESHOLD_USD: '9' })).toEqual({
+      configError: false,
+      dailyCapUSD: 4,
+      softThresholdUSD: 4,
+    });
+    expect(resolveSpendConfig({ DAILY_CAP_USD: 'abc' })).toEqual({ configError: true });
   });
 });
