@@ -123,6 +123,7 @@ final class CoreControlsA11yHostedTests: XCTestCase {
         )
         let available = try XCTUnwrap(button("Available"), describedLabels())
         XCTAssertEqual(available.label, "Available")
+        XCTAssertGreaterThan(available.frame.width, 80, "Filter label must have visible width inside its horizontal scroll row")
         XCTAssertGreaterThanOrEqual(available.frame.height, 44)
     }
 
