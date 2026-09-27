@@ -91,6 +91,10 @@ final class LoopDemoModel: ObservableObject {
     private var fixtureLastWornOn: [UUID: String] = [:]
     /// D-75 — one in-flight daily-wear persist at a time (rapid tap / retry).
     private var dailyWearWriteInFlight = false
+    /// #46 — VoiceOver announcement sink for the fallback notice; tests replace it.
+    var postAccessibilityAnnouncement: (String) -> Void = { message in
+        AccessibilityNotification.Announcement(message).post()
+    }
 
     init(
         store: PersistenceStore = InMemoryPersistenceStore.shared,
@@ -631,6 +635,7 @@ final class LoopDemoModel: ObservableObject {
                     outfit = built
                     outfitWearable = true
                     recordShown(built)
+                    announceFallbackNoticeIfPresent(for: built)
                 }
                 return true
             }
@@ -640,6 +645,7 @@ final class LoopDemoModel: ObservableObject {
             outfitWearable = true
             outfitSnapshotBeforeGenerate = nil
             recordShown(built)
+            announceFallbackNoticeIfPresent(for: built)
             if excludeShown {
                 boardUpdatedFlash = true
                 scheduleBoardUpdatedFlashDismiss()
