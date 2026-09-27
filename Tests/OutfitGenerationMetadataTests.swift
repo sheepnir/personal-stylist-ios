@@ -126,8 +126,14 @@ final class OutfitGenerationMetadataTests: XCTestCase {
         XCTAssertEqual(response.generation?.fallbackReason, "")
     }
 
+    func testNullFallbackReasonIsAbsent() throws {
+        let response = try decodeResponse(generationJSON: ADR0001GenerateFixtures.generationJSON(fallbackReasonJSON: "null"))
+        XCTAssertNil(response.generation?.fallbackReason, "not nullable on the wire; null means no notice")
+        XCTAssertNil(OutfitEngineClient.mapToStubOutfit(response, anchorId: UUID()).generation?.fallbackReason)
+    }
+
     func testUndecodableFallbackReasonNeverFailsDecoding() throws {
-        for raw in ["42", "null", "true", #"{"code":"X"}"#, #"["PROVIDER_ERROR"]"#] {
+        for raw in ["42", "true", #"{"code":"X"}"#, #"["PROVIDER_ERROR"]"#] {
             let response = try decodeResponse(generationJSON: ADR0001GenerateFixtures.generationJSON(fallbackReasonJSON: raw))
             XCTAssertEqual(response.generation?.fallbackReason, "", "value \(raw) must decode as present-but-unknown")
         }

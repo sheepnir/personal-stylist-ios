@@ -8,8 +8,8 @@ struct OutfitGenerationMetadata: Codable, Hashable, Sendable {
     var promptVersion: String?
     var fallbackLevel: String?
     /// Raw engine value, kept as a String (never a closed enum). Present only when an
-    /// eligible provider attempt fell back; absent means no fallback notice.
-    /// A present-but-undecodable value is stored as `""` so it stays "present".
+    /// eligible provider attempt fell back; absent (or JSON `null`) means no fallback notice.
+    /// A present non-string value is stored as `""` so it stays "present".
     var fallbackReason: String?
     var spendState: String?
     var candidateSetHash: String?

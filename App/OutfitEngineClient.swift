@@ -163,8 +163,9 @@ enum OutfitEngineClient {
         var spendState: String?
         var modelId: String?
         var promptVersion: String?
-        /// ADR-0001 §10.2 — extensible string, keyed on presence. A present value that is
-        /// not a string (including `null`) decodes as `""`, which still counts as present.
+        /// ADR-0001 §10.2 — extensible string, keyed on presence. Absent or JSON `null` is
+        /// `nil` (no notice). A present non-string value decodes as `""`, which still counts
+        /// as present (generic notice).
         var fallbackReason: String?
         var candidateSetHash: String?
         var latencyMs: Int?
@@ -182,7 +183,7 @@ enum OutfitEngineClient {
             spendState = try? c.decodeIfPresent(String.self, forKey: .spendState)
             modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
             promptVersion = try? c.decodeIfPresent(String.self, forKey: .promptVersion)
-            if c.contains(.fallbackReason) {
+            if c.contains(.fallbackReason), (try? c.decodeNil(forKey: .fallbackReason)) == false {
                 fallbackReason = (try? c.decode(String.self, forKey: .fallbackReason)) ?? ""
             }
             candidateSetHash = try? c.decodeIfPresent(String.self, forKey: .candidateSetHash)
