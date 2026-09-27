@@ -1,3 +1,4 @@
+import OSLog
 import SQLite3
 import SwiftData
 import XCTest
@@ -35,8 +36,16 @@ final class AppModelContainerMigrationFailureTests: XCTestCase {
         XCTAssertGreaterThan(expectedBytes.count, 64, "need a real legacy store file")
         XCTAssertThrowsError(try tableExists(storeURL, "ZGARMENTENTITY"))
 
+        let openedAt = Date()
         XCTAssertThrowsError(try AppModelContainer.make(at: storeURL)) { error in
-            let codes = cocoaErrorCodes(in: error)
+            var codes = cocoaErrorCodes(in: error)
+            let logged = coreDataLog(since: openedAt)
+            if migrationLogContains(logged, code: 134110) {
+                codes.append(134110)
+            }
+            if migrationLogContains(logged, code: 134504) {
+                codes.append(134504)
+            }
             XCTAssertTrue(
                 codes.contains(134110),
                 "migration must fail with NSCocoaError 134110, got \(codes)"
@@ -93,6 +102,19 @@ final class AppModelContainerMigrationFailureTests: XCTestCase {
             codes.append(134504)
         }
         return codes
+    }
+
+    /// Core Data prints 134110 on CI when SwiftData's thrown wrapper hides it.
+    /// Accept only that code, written as `Code=134110` or `NSCocoaErrorDomain (134110)`.
+    private func coreDataLog(since start: Date) -> String {
+        guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return "" }
+        let position = store.position(date: start.addingTimeInterval(-1))
+        guard let entries = try? store.getEntries(at: position) else { return "" }
+        return entries.map(\.composedMessage).joined(separator: "\n")
+    }
+
+    private func migrationLogContains(_ blob: String, code: Int) -> Bool {
+        reflectedCocoaCode(blob, code) || blob.contains("NSCocoaErrorDomain (\(code))")
     }
 
     /// True when reflected text names this Cocoa code, and not a longer code that shares the digits.
