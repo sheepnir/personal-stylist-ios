@@ -14,11 +14,16 @@ enum EngineConfig {
     /// `true` in DEBUG (Simulator demo); `false` in Release/TestFlight.
     #if DEBUG
     static let allowsLaunchArgAndEnvOverride = true
+    /// Unit-test override (DEBUG only); mirrors `OutfitEngineClient.baseURLOverride`.
+    static var baseURLOverride: URL?
     #else
     static let allowsLaunchArgAndEnvOverride = false
     #endif
 
     static var baseURL: URL {
+        #if DEBUG
+        if let baseURLOverride { return baseURLOverride }
+        #endif
         if let raw = resolvedBaseString(), let url = URL(string: raw), url.scheme != nil {
             return url
         }
@@ -72,4 +77,10 @@ enum EngineConfig {
         }
         return nil
     }
+
+    #if DEBUG
+    static func resetTestHooks() {
+        baseURLOverride = nil
+    }
+    #endif
 }

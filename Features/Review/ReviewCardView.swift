@@ -6,6 +6,7 @@ struct ReviewCardView: View {
     var onBuild: () -> Void
     var onFinishedDetails: (() -> Void)? = nil
     var onOpenProfile: (() -> Void)? = nil
+    var onSetUpDeviceAccess: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.persistenceStore) private var persistenceStore
@@ -335,6 +336,20 @@ struct ReviewCardView: View {
             .buttonStyle(.borderedProminent)
             .frame(maxWidth: .infinity)
             .accessibilityLabel("Finish details to use this")
+        } else if model.deviceAccessRejected {
+            Button("Build an outfit around this") {}
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .disabled(true)
+                .accessibilityLabel("Build an outfit around this, disabled")
+                .accessibilityHint(DressingCopy.deviceAccessRequiredHint)
+            Button(DressingCopy.deviceAccessSetUpAction) {
+                onSetUpDeviceAccess?()
+            }
+            .font(.footnote)
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .accessibilityHint(DressingCopy.deviceAccessSetUpActionHint)
         } else if profileNeedsConfirm {
             Button("Build an outfit around this") {}
                 .buttonStyle(.borderedProminent)

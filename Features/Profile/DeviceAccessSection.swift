@@ -16,17 +16,50 @@ struct DeviceAccessSection: View {
     @State private var isBusy = false
     @State private var connected = DeviceTokenStore.hasToken
     @State private var showClearConfirm = false
+    @State private var wrongShapeMessage: String?
+
+    private var showsEnrollForm: Bool {
+        !connected || model.deviceAccessRejected
+    }
+
+    private var statusText: String {
+        if model.deviceAccessRejected {
+            return DressingCopy.deviceAccessNotAccepted
+        }
+        return connected ? DressingCopy.deviceAccessReady : DressingCopy.deviceAccessNotSetUp
+    }
+
+    private var modeHelperText: String {
+        mode == .enrollmentSecret
+            ? DressingCopy.deviceAccessModeHelpSecret
+            : DressingCopy.deviceAccessModeHelpToken
+    }
 
     var body: some View {
         Section {
-            Text(connected
-                 ? DressingCopy.deviceAccessReady
-                 : DressingCopy.deviceAccessNotSetUp)
-                .accessibilityLabel(connected
-                                    ? DressingCopy.deviceAccessReady
-                                    : DressingCopy.deviceAccessNotSetUp)
+            Text(statusText)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(statusText)
+                .id(ProfileDraftView.deviceAccessSectionID)
 
-            if !connected {
+            if model.deviceAccessRejected {
+                Text(DressingCopy.deviceAccessNotAcceptedHelp)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(DressingCopy.deviceAccessNotAcceptedHelp)
+            }
+
+            if !connected || model.deviceAccessRejected {
+                Text(DressingCopy.deviceAccessAskOwner)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(DressingCopy.deviceAccessAskOwner)
+            }
+
+            if showsEnrollForm {
                 Picker("Paste kind", selection: $mode) {
                     ForEach(Mode.allCases) { option in
                         Text(option.rawValue).tag(option)
@@ -34,6 +67,13 @@ struct DeviceAccessSection: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityLabel("Paste kind")
+                .accessibilityValue(mode.rawValue)
+
+                Text(modeHelperText)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(modeHelperText)
 
                 SecureField(
                     mode == .enrollmentSecret
@@ -46,6 +86,21 @@ struct DeviceAccessSection: View {
                 .accessibilityLabel(
                     mode == .enrollmentSecret ? "Enrollment secret" : "Device token"
                 )
+                .onChange(of: pasteBuffer) { _, newValue in
+                    if DeviceAccessPasteValidationUI.shouldClearWrongShapeMessage(
+                        whenPasteBufferChangesTo: newValue
+                    ) {
+                        wrongShapeMessage = nil
+                    }
+                }
+
+                if let wrongShapeMessage {
+                    Text(wrongShapeMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(wrongShapeMessage)
+                }
 
                 Button {
                     Task { await submit() }
@@ -59,15 +114,19 @@ struct DeviceAccessSection: View {
                     }
                 }
                 .disabled(isBusy)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .accessibilityLabel(
                     mode == .enrollmentSecret
                         ? "Enroll with enrollment secret"
                         : "Save pasted token"
                 )
-            } else {
+            }
+
+            if connected || model.deviceAccessRejected {
                 Button("Clear device access", role: .destructive) {
                     showClearConfirm = true
                 }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .accessibilityLabel("Clear device access")
             }
         } header: {
@@ -87,6 +146,7 @@ struct DeviceAccessSection: View {
                 _ = DeviceTokenStore.clear()
                 connected = DeviceTokenStore.hasToken
                 pasteBuffer = ""
+                model.noteDeviceAccessCleared()
                 model.showToast(DressingCopy.deviceAccessCleared)
             }
             Button("Cancel", role: .cancel) {}
@@ -98,7 +158,6 @@ struct DeviceAccessSection: View {
     @MainActor
     private func submit() async {
         let raw = pasteBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        pasteBuffer = ""
 
         switch mode {
         case .deviceToken:
@@ -106,8 +165,16 @@ struct DeviceAccessSection: View {
                 model.showToast(DressingCopy.deviceAccessPasteEmpty)
                 return
             }
+            guard DeviceTokenFormat.isIssuedShape(raw) else {
+                wrongShapeMessage = DressingCopy.deviceAccessWrongShape
+                pasteBuffer = ""
+                AccessibilityNotification.Announcement(DressingCopy.deviceAccessWrongShape).post()
+                return
+            }
+            pasteBuffer = ""
             if DeviceTokenStore.save(raw) {
                 connected = true
+                model.noteDeviceAccessCredentialStored()
                 model.showToast(DressingCopy.deviceAccessPasteSuccess)
             } else {
                 model.showToast(DressingCopy.deviceAccessEnrollFailure)
@@ -118,18 +185,18 @@ struct DeviceAccessSection: View {
                 model.showToast(DressingCopy.deviceAccessEnrollEmpty)
                 return
             }
+            pasteBuffer = ""
             isBusy = true
             defer { isBusy = false }
-            let ok = await DeviceTokenEnrollment.enrollAndSave(
-                baseURL: EngineConfig.baseURL,
-                enrollmentSecret: raw
-            )
+            let ok = await model.enrollDeviceAccessFromProfile(enrollmentSecret: raw)
             connected = DeviceTokenStore.hasToken
-            model.showToast(
-                ok
-                    ? DressingCopy.deviceAccessEnrollSuccess
-                    : DressingCopy.deviceAccessEnrollFailure
-            )
+            if ok {
+                model.showToast(DressingCopy.deviceAccessEnrollSuccess, announce: false)
+                AccessibilityNotification.Announcement(DressingCopy.deviceAccessEnrollSuccessAnnouncement)
+                    .post()
+            } else {
+                model.showToast(DressingCopy.deviceAccessEnrollFailure)
+            }
         }
     }
 }

@@ -66,6 +66,17 @@ final class LoopDemoModel: ObservableObject {
     @Published var noAlternativeReason: String?
     /// Brief “Updated” flash when Try another produced a different garment set.
     @Published var boardUpdatedFlash: Bool = false
+    /// Session-only: remote engine rejected the stored device token (#34). Never persisted.
+    @Published private(set) var deviceAccessRejected: Bool = false
+    /// Bumped on enroll, paste, or clear — stale in-flight 401s must not re-reject (#34 R3).
+    private var deviceAccessAuthEpoch: UInt64 = 0
+    private var generateAuthEpochAtStart: UInt64 = 0
+    private var swapAuthEpochAtStart: UInt64 = 0
+    /// Style profile should scroll to Device access when this becomes true (#34).
+    @Published var scrollToDeviceAccessRequested: Bool = false
+
+    /// Board / swap controls that call generate or alternatives read this (#34).
+    var outfitEngineActionsDisabled: Bool { deviceAccessRejected }
 
     var toastDismissTask: Task<Void, Never>?
     var boardFlashDismissTask: Task<Void, Never>?
@@ -508,8 +519,76 @@ final class LoopDemoModel: ObservableObject {
         }
     }
 
+    func markDeviceAccessRejected() {
+        deviceAccessRejected = true
+    }
+
+    private func bumpDeviceAccessAuthEpoch() {
+        deviceAccessAuthEpoch &+= 1
+    }
+
+    func clearDeviceAccessRejected() {
+        deviceAccessRejected = false
+        if generateFailureMessage == DressingCopy.deviceAccessRejectedTitle {
+            generateFailureMessage = nil
+            generateFailureSubtitle = nil
+            generateFailureDetail = nil
+        }
+    }
+
+    func requestScrollToDeviceAccess() {
+        scrollToDeviceAccessRequested = true
+    }
+
+    /// Profile device-access UI after Keychain stores a token (#34).
+    func noteDeviceAccessCredentialStored() {
+        bumpDeviceAccessAuthEpoch()
+        clearDeviceAccessRejected()
+    }
+
+    /// Profile clear — invalidates in-flight auth failures tied to the old credential (#34 R3).
+    func noteDeviceAccessCleared() {
+        bumpDeviceAccessAuthEpoch()
+    }
+
+    @MainActor
+    func enrollDeviceAccessFromProfile(enrollmentSecret: String) async -> Bool {
+        let ok = await DeviceTokenEnrollment.enrollAndSave(
+            baseURL: EngineConfig.baseURL,
+            enrollmentSecret: enrollmentSecret
+        )
+        if ok {
+            noteDeviceAccessCredentialStored()
+        }
+        return ok
+    }
+
     private func applyGenerateFailure(_ error: Error, generation: UInt64) {
         guard generation == activeGenerateGeneration, isCurrentStoreGeneration() else { return }
+        if case OutfitEngineClient.ClientError.unauthorized = error {
+            guard generateAuthEpochAtStart == deviceAccessAuthEpoch else {
+                recordDiagnostic("Generate 401 ignored — device access changed")
+                return
+            }
+            markDeviceAccessRejected()
+            if let snap = outfitSnapshotBeforeGenerate {
+                outfit = snap
+                outfitWearable = wearableSnapshotBeforeGenerate
+                generateFailureMessage = DressingCopy.deviceAccessRejectedTitle
+                generateFailureSubtitle = DressingCopy.deviceAccessRejectedWithOutfit
+            } else {
+                outfit = nil
+                outfitWearable = false
+                generateFailureMessage = DressingCopy.deviceAccessRejectedTitle
+                generateFailureSubtitle = DressingCopy.deviceAccessRejectedNoOutfit
+            }
+            generateFailureDetail = OutfitEngineClient.ClientError.unauthorized.errorDescription
+            outfitSnapshotBeforeGenerate = nil
+            generateIntent = nil
+            generateProgressCopy = nil
+            recordDiagnostic("Generate failure — device access rejected")
+            return
+        }
         let detail = DressingCopy.generateFailureDetail(from: error)
         if let snap = outfitSnapshotBeforeGenerate {
             outfit = snap
@@ -549,6 +628,7 @@ final class LoopDemoModel: ObservableObject {
         boardUpdatedFlash = false
         guard let anchor = selectedGarment else { return false }
         guard validateBuildPreconditions(setFailureMessage: true) else { return false }
+        if deviceAccessRejected { return false }
 
         if isOffline {
             return applyOfflineOutfit(anchor: anchor)
@@ -574,6 +654,7 @@ final class LoopDemoModel: ObservableObject {
             )
         }
         let generation = activeGenerateGeneration
+        generateAuthEpochAtStart = deviceAccessAuthEpoch
         let flight = OutfitEngineClient.EngineDataTask()
         generateFlight = flight
         let started = Date()
@@ -621,6 +702,7 @@ final class LoopDemoModel: ObservableObject {
             generateFailureMessage = nil
             generateFailureSubtitle = nil
             generateFailureDetail = nil
+            clearDeviceAccessRejected()
 
             if excludeShown && (!engineReason.isEmpty || sameSet) {
                 noAlternativeReason = DressingCopy.noAlternative(engineReason.isEmpty ? nil : engineReason)
@@ -761,6 +843,7 @@ final class LoopDemoModel: ObservableObject {
             }
         }
 
+        swapAuthEpochAtStart = deviceAccessAuthEpoch
         do {
             let response = try await OutfitEngineClient.fetchAlternatives(
                 slot: slot,
@@ -773,6 +856,7 @@ final class LoopDemoModel: ObservableObject {
                 precipitation: rain
             )
             guard generation == activeSwapGeneration, isCurrentStoreGeneration() else { return }
+            clearDeviceAccessRejected()
             let mapped = OutfitEngineClient.mapAlternatives(response, garments: garments)
             swapAlternatives = mapped.alts
             swapEmptyReason = mapped.emptyReason
@@ -784,6 +868,18 @@ final class LoopDemoModel: ObservableObject {
             }
         } catch {
             guard generation == activeSwapGeneration, isCurrentStoreGeneration() else { return }
+            if case OutfitEngineClient.ClientError.unauthorized = error {
+                guard swapAuthEpochAtStart == deviceAccessAuthEpoch else {
+                    recordDiagnostic("Alternatives 401 ignored — device access changed")
+                    return
+                }
+                markDeviceAccessRejected()
+                swapAlternatives = []
+                swapEmptyReason = nil
+                swapSheetDetail = nil
+                recordDiagnostic("Swap alternatives — device access rejected")
+                return
+            }
             let used = Set(outfit.assignments.compactMap(\.garmentId))
             let alts = garments.filter {
                 $0.slot == slot && $0.isReady && $0.availability == "AVAILABLE" && !used.contains($0.id)
@@ -890,7 +986,7 @@ final class LoopDemoModel: ObservableObject {
         let ok = await buildDemoOutfit(preserveLocks: false)
         if !ok {
             outfit = fallback
-            if generateFailureMessage == nil {
+            if !deviceAccessRejected && generateFailureMessage == nil {
                 generateFailureMessage = "Couldn’t change starting item"
             }
             recordDiagnostic("Couldn’t change starting item — restored previous outfit")

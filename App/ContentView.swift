@@ -16,6 +16,7 @@ struct ContentView: View {
 #endif
     /// Snapshot of board session until a replacement is committed (or Cancel).
     @State private var outfitBeforeAnchorPick: StubOutfit? = nil
+    @State private var pendingProfileForDeviceAccess = false
 
     private enum Route: Hashable {
         case profile
@@ -53,6 +54,10 @@ struct ContentView: View {
                 },
                 onOpenLoggedToday: {
                     openLoggedToday()
+                },
+                onSetUpDeviceAccess: {
+                    model.requestScrollToDeviceAccess()
+                    path.append(Route.profile)
                 }
             )
             .navigationDestination(for: Route.self) { route in
@@ -75,6 +80,10 @@ struct ContentView: View {
                         },
                         onOpenProfile: {
                             path.append(Route.profile)
+                        },
+                        onSetUpDeviceAccess: {
+                            model.requestScrollToDeviceAccess()
+                            path.append(Route.profile)
                         }
                     )
                 case .board:
@@ -88,7 +97,11 @@ struct ContentView: View {
                         onChangeAnchor: {
                             beginAnchorPick()
                         },
-                        onChangeWhatIWore: { path.append(Route.wear) }
+                        onChangeWhatIWore: { path.append(Route.wear) },
+                        onSetUpDeviceAccess: {
+                            model.requestScrollToDeviceAccess()
+                            path.append(Route.profile)
+                        }
                     )
                 case .wearSuccess:
                     WearSuccessView(
@@ -200,7 +213,13 @@ struct ContentView: View {
                 path.append(Route.review)
             }
         }
-        .sheet(isPresented: $showSwap) {
+        .sheet(isPresented: $showSwap, onDismiss: {
+            if pendingProfileForDeviceAccess {
+                pendingProfileForDeviceAccess = false
+                model.requestScrollToDeviceAccess()
+                path.append(Route.profile)
+            }
+        }) {
             SwapSheetView(
                 model: model,
                 onClose: { showSwap = false },
@@ -211,6 +230,10 @@ struct ContentView: View {
                 onOpenWardrobe: {
                     showSwap = false
                     path = NavigationPath()
+                },
+                onSetUpDeviceAccess: {
+                    pendingProfileForDeviceAccess = true
+                    showSwap = false
                 }
             )
         }
@@ -253,6 +276,7 @@ struct ContentView: View {
 
     @MainActor
     private func buildFromWardrobe(_ g: StubGarment) async {
+        if model.deviceAccessRejected { return }
         if changingAnchor {
             let ok = await model.changeAnchor(to: g, priorOutfit: outfitBeforeAnchorPick)
             if ok {

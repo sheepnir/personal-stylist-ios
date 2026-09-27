@@ -37,4 +37,70 @@ final class OutfitEngineClientAuthTests: XCTestCase {
             XCTFail("unexpected error: \(error)")
         }
     }
+
+    func testGenerateMaps401ToUnauthorized() async throws {
+        EngineURLSessionStub.tearDownClientHooks()
+        DeviceTokenStore.useTestMemory()
+        _ = DeviceTokenStore.save(DeviceAccessTestFixtures.validIssuedToken)
+        OutfitEngineClient.baseURLOverride = URL(string: "https://engine.test")!
+        OutfitEngineClient.urlSession = EngineURLSessionStub.makeSession()
+        RecordingURLProtocol.install { request in
+            XCTAssertTrue(request.url?.path.hasSuffix("/v1/outfit/generate") == true)
+            return .http(status: 401, body: Data(#"{"title":"Unauthorized","status":401}"#.utf8))
+        }
+        let garments = try DeviceAccessTestFixtures.readyGarments()
+        do {
+            _ = try await OutfitEngineClient.generate(
+                garments: garments,
+                sets: [],
+                anchorId: garments[0].id,
+                flight: OutfitEngineClient.EngineDataTask()
+            )
+            XCTFail("expected unauthorized")
+        } catch OutfitEngineClient.ClientError.unauthorized {
+            // expected
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+        RecordingURLProtocol.reset()
+        OutfitEngineClient.resetTestHooks()
+        DeviceTokenStore.resetTestHooks()
+    }
+
+    func testAlternativesMaps401ToUnauthorized() async throws {
+        EngineURLSessionStub.tearDownClientHooks()
+        DeviceTokenStore.useTestMemory()
+        _ = DeviceTokenStore.save(DeviceAccessTestFixtures.validIssuedToken)
+        OutfitEngineClient.baseURLOverride = URL(string: "https://engine.test")!
+        OutfitEngineClient.urlSession = EngineURLSessionStub.makeSession()
+        RecordingURLProtocol.install { request in
+            XCTAssertTrue(request.url?.path.hasSuffix("/v1/outfit/alternatives") == true)
+            return .http(status: 401, body: Data())
+        }
+        let garments = try DeviceAccessTestFixtures.readyGarments()
+        let outfit = StubOutfit(
+            id: UUID(),
+            assignments: [
+                StubOutfitAssignment(slot: .top, garmentId: garments[0].id, gapReason: nil, isAnchor: true),
+            ],
+            rationaleSummary: "test",
+            offlineCached: false
+        )
+        do {
+            _ = try await OutfitEngineClient.fetchAlternatives(
+                slot: .top,
+                outfit: outfit,
+                garments: garments,
+                sets: []
+            )
+            XCTFail("expected unauthorized")
+        } catch OutfitEngineClient.ClientError.unauthorized {
+            // expected
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+        RecordingURLProtocol.reset()
+        OutfitEngineClient.resetTestHooks()
+        DeviceTokenStore.resetTestHooks()
+    }
 }

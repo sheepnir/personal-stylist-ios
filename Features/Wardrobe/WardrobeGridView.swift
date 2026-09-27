@@ -16,6 +16,7 @@ struct WardrobeGridView: View {
     var onReturnToOutfit: (() -> Void)? = nil
     /// D-75 — open today’s persisted log (read-only; correction is the write path).
     var onOpenLoggedToday: (() -> Void)? = nil
+    var onSetUpDeviceAccess: () -> Void = {}
 
     @State private var selectedSlots: Set<StubSlot> = []
     @State private var selectedAvailability: Set<AvailabilityToken> = []
@@ -158,12 +159,17 @@ struct WardrobeGridView: View {
 
     private var profileNeedsConfirm: Bool { model.styleProfile?.confirmedAt == nil }
 
+    private var blocksEngineStart: Bool { model.deviceAccessRejected }
+
     private var filtersActive: Bool {
         !selectedSlots.isEmpty || !selectedAvailability.isEmpty || readinessFilter != .all
     }
 
     @ViewBuilder
     private var singleWardrobeBanner: some View {
+        if model.deviceAccessRejected {
+            deviceAccessRequiredBanner
+        }
         if isPickingAnchor {
             anchorPickBanner
         } else if profileNeedsConfirm {
@@ -544,6 +550,27 @@ struct WardrobeGridView: View {
         }
     }
 
+    private var deviceAccessRequiredBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(DressingCopy.deviceAccessRejectedTitle)
+                .font(.subheadline.weight(.semibold))
+            Text(
+                model.outfit != nil
+                    ? DressingCopy.deviceAccessRejectedWithOutfit
+                    : DressingCopy.deviceAccessRejectedNoOutfit
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            Button(DressingCopy.deviceAccessSetUpAction, action: onSetUpDeviceAccess)
+                .buttonStyle(.borderedProminent)
+                .frame(minHeight: 44, alignment: .leading)
+                .accessibilityHint(DressingCopy.deviceAccessSetUpActionHint)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private var profileConfirmBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -585,7 +612,9 @@ struct WardrobeGridView: View {
         Button {
             // GH #96: in Change starting item mode, commit immediately — do not push Review.
             if isPickingAnchor {
-                onBuild(g)
+                if !blocksEngineStart {
+                    onBuild(g)
+                }
             } else {
                 onSelect(g)
             }
@@ -630,7 +659,9 @@ struct WardrobeGridView: View {
         .accessibilityIdentifier("wardrobe.card.\(g.id.uuidString)")
         .accessibilityHint(
             isPickingAnchor
-                ? "Uses this as the new starting item"
+                ? (blocksEngineStart
+                    ? DressingCopy.deviceAccessRequiredHint
+                    : "Uses this as the new starting item")
                 : "Opens garment details. Long press for availability actions."
         )
         .accessibilityAction(named: "Finish details") {
@@ -638,7 +669,12 @@ struct WardrobeGridView: View {
         }
         .contextMenu {
             if isPickingAnchor {
-                Button("Use as starting item") { onBuild(g) }
+                if blocksEngineStart {
+                    Button("Use as starting item") {}
+                        .disabled(true)
+                } else {
+                    Button("Use as starting item") { onBuild(g) }
+                }
             } else {
                 Button("Open garment") { onSelect(g) }
                 if !g.isReady {

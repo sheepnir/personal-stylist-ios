@@ -3,6 +3,11 @@ import SwiftUI
 import UIKit
 @testable import PersonalStylist
 
+private enum CameraHostedTestTiming {
+    /// Hosted modal transitions plus persist can exceed 6 s on a cold CI runner.
+    static let waitUntilTimeout: TimeInterval = 30
+}
+
 /// #270 hosted-view evidence. Waits for real SwiftUI dismiss / visible chrome.
 /// Does not call `reduce(.coverDismissed)`. Physical shutter is UNVERIFIED_PHONE.
 @MainActor
@@ -38,12 +43,14 @@ final class CameraIntakeHostedTests: XCTestCase {
         rig.startAuthorizedCapture()
         try await injectNativeUsePhoto(rig)
 
-        try await waitUntil(rig, timeout: 6) { rig.hasVisiblePreviewControls() }
+        try await waitUntil(rig) { rig.session.state.cover?.previewPayload != nil }
+        try await waitUntil(rig) { rig.hasVisiblePreviewControls() }
         XCTAssertTrue(rig.hasVisiblePreviewControls(), "preview Use photo / Retake / Cancel must be on screen")
         rig.assertNoBlankProductCover()
 
         XCTAssertTrue(rig.tapVisible(CameraIntakeCopy.usePhoto))
-        try await waitUntil(rig, timeout: 6) { rig.hasVisibleDetails() }
+        try await waitUntil(rig) { rig.session.state.details != nil }
+        try await waitUntil(rig) { rig.hasVisibleDetails() }
         XCTAssertTrue(rig.hasVisibleDetails(), "details must show Name and category plus Select… or Slot")
         XCTAssertFalse(rig.hasVisiblePreviewControls())
         rig.assertNoBlankProductCover()
@@ -53,20 +60,26 @@ final class CameraIntakeHostedTests: XCTestCase {
         let rig = makeRig()
         rig.startAuthorizedCapture()
         try await injectNativeUsePhoto(rig)
-        try await waitUntil(rig, timeout: 6) { rig.hasVisiblePreviewControls() }
+        try await waitUntil(rig) { rig.session.state.cover?.previewPayload != nil }
+        try await waitUntil(rig) { rig.hasVisiblePreviewControls() }
 
         SystemCameraPickerHooks.reset()
         XCTAssertTrue(rig.tapVisible(CameraIntakeCopy.retake))
-        try await waitUntil(rig, timeout: 6) { rig.hasVisibleCaptureCover() }
+        try await waitUntil(rig) { rig.session.state.cover == .capture }
+        try await waitUntil(rig) { rig.hasVisibleCaptureCover() }
         XCTAssertTrue(rig.hasVisibleCaptureCover(), "retake must return the capture cover")
         XCTAssertFalse(rig.hasVisiblePreviewControls())
         rig.assertNoBlankProductCover()
 
         try await injectNativeUsePhoto(rig)
-        try await waitUntil(rig, timeout: 6) { rig.hasVisiblePreviewControls() }
+        try await waitUntil(rig) { rig.session.state.cover?.previewPayload != nil }
+        try await waitUntil(rig) { rig.hasVisiblePreviewControls() }
 
         XCTAssertTrue(rig.tapVisible(CameraIntakeCopy.cancel))
-        try await waitUntil(rig, timeout: 6) {
+        try await waitUntil(rig) {
+            rig.session.state.cover == nil && rig.session.state.details == nil
+        }
+        try await waitUntil(rig) {
             !rig.hasVisiblePreviewControls() && !rig.hasVisibleDetails()
         }
         let garments = await rig.store.fetchGarments()
@@ -90,7 +103,8 @@ final class CameraIntakeHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(40))
         }
 
-        try await waitUntil(rig, timeout: 6) { rig.hasVisiblePreviewControls() }
+        try await waitUntil(rig) { rig.session.state.cover?.previewPayload != nil }
+        try await waitUntil(rig) { rig.hasVisiblePreviewControls() }
         XCTAssertTrue(rig.hasVisiblePreviewControls())
         rig.assertNoBlankProductCover()
     }
@@ -101,7 +115,8 @@ final class CameraIntakeHostedTests: XCTestCase {
         rig.startAuthorizedCapture()
         try await injectNativeUsePhoto(rig)
 
-        try await waitUntil(rig, timeout: 6) { rig.hasVisiblePersistAlert() }
+        try await waitUntil(rig) { rig.session.state.alert != nil }
+        try await waitUntil(rig) { rig.hasVisiblePersistAlert() }
         XCTAssertTrue(rig.hasVisiblePersistAlert(), "root persist alert must be visible")
         XCTAssertTrue(rig.visibleTexts().contains(where: { $0.contains("Couldn’t use that photo") }))
         XCTAssertTrue(
@@ -125,7 +140,7 @@ final class CameraIntakeHostedTests: XCTestCase {
     }
 
     private func injectNativeUsePhoto(_ rig: CameraHostRig) async throws {
-        try await waitUntil(rig, timeout: 6) { SystemCameraPickerHooks.lastCoordinator != nil }
+        try await waitUntil(rig) { SystemCameraPickerHooks.lastCoordinator != nil }
         let coordinator = try XCTUnwrap(
             SystemCameraPickerHooks.lastCoordinator,
             "production SystemCameraPicker.Coordinator must exist"
@@ -139,17 +154,30 @@ final class CameraIntakeHostedTests: XCTestCase {
 
     private func waitUntil(
         _ rig: CameraHostRig,
-        timeout: TimeInterval,
+        timeout: TimeInterval = CameraHostedTestTiming.waitUntilTimeout,
         _ predicate: () -> Bool
     ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
+        let started = Date()
+        var pumpIterations = 0
+        let deadline = started.addingTimeInterval(timeout)
         while Date() < deadline {
             rig.pump()
+            pumpIterations += 1
             if predicate() { return }
             try await Task.sleep(for: .milliseconds(50))
         }
         rig.pump()
-        XCTFail("Timed out waiting for hosted camera chrome. Visible: \(rig.visibleTexts()) cover=\(String(describing: rig.session.state.cover))")
+        pumpIterations += 1
+        let elapsed = Date().timeIntervalSince(started)
+        XCTFail(
+            """
+            Timed out waiting for hosted camera chrome after \(String(format: "%.2f", elapsed))s \
+            (\(pumpIterations) pump iterations). Visible: \(rig.visibleTexts()) \
+            cover=\(String(describing: rig.session.state.cover)) \
+            details=\(String(describing: rig.session.state.details)) \
+            alert=\(String(describing: rig.session.state.alert))
+            """
+        )
     }
 
     private static func makeTinyImage() -> UIImage {
@@ -209,7 +237,7 @@ private final class CameraHostRig {
             controller.view.setNeedsLayout()
             controller.view.layoutIfNeeded()
         }
-        host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        CATransaction.flush()
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
     }
 
