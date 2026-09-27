@@ -21,7 +21,7 @@ describe('imageGuardKey printable ASCII rule', () => {
   });
 
   it('rejects the Unicode lookalike image keys from #51 without any normalization', () => {
-    for (const key of ['ｉｍａｇｅ', 'ima​ge', 'İmage']) {
+    for (const key of ['\uFF49\uFF4D\uFF41\uFF47\uFF45', 'ima\u200Bge', '\u0130mage']) {
       expect(objectKeyFailsPrintableAsciiRule(key)).toBe(true);
       expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(true);
       expect(rejectImagePayload({ wardrobe: [{ id: '1', [key]: 'x' }] })?.status).toBe(415);
