@@ -13,29 +13,37 @@ enum BaselineCleanStart {
 
     static func runIfNeeded(
         defaults: UserDefaults = .standard,
-        fileManager: FileManager = .default,
+        fileSystem: BaselineFileSystem = FileManager.default,
         applicationSupport: URL? = nil,
         documents: URL? = nil
     ) throws {
         if defaults.bool(forKey: completedKey) { return }
 
-        let support = try applicationSupport
-            ?? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let docs = try documents
-            ?? fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let support: URL
+        let docs: URL
+        if let applicationSupport, let documents {
+            support = applicationSupport
+            docs = documents
+        } else {
+            let fm = FileManager.default
+            support = try applicationSupport
+                ?? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            docs = try documents
+                ?? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        }
 
-        try removeStoreFiles(in: support, fileManager: fileManager)
-        try removePhotoDirectory(in: docs, fileManager: fileManager)
+        try removeStoreFiles(in: support, fileSystem: fileSystem)
+        try removePhotoDirectory(in: docs, fileSystem: fileSystem)
 
         SeedSuppression.suppressAutomaticWardrobeSeed(in: defaults)
         SeedSuppression.suppressAutomaticProfileSeed(in: defaults)
         defaults.set(true, forKey: completedKey)
     }
 
-    private static func removeStoreFiles(in directory: URL, fileManager: FileManager) throws {
-        guard fileManager.fileExists(atPath: directory.path) else { return }
+    private static func removeStoreFiles(in directory: URL, fileSystem: BaselineFileSystem) throws {
+        guard fileSystem.fileExists(atPath: directory.path) else { return }
         let name = AppModelContainer.storeName
-        let contents = try fileManager.contentsOfDirectory(
+        let contents = try fileSystem.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
@@ -43,13 +51,25 @@ enum BaselineCleanStart {
         for url in contents {
             let last = url.lastPathComponent
             guard last == name || last.hasPrefix(name + ".") else { continue }
-            try fileManager.removeItem(at: url)
+            try fileSystem.removeItem(at: url)
         }
     }
 
-    private static func removePhotoDirectory(in documents: URL, fileManager: FileManager) throws {
+    private static func removePhotoDirectory(in documents: URL, fileSystem: BaselineFileSystem) throws {
         let photos = documents.appendingPathComponent(UserGarmentPhotoStore.directoryName, isDirectory: true)
-        guard fileManager.fileExists(atPath: photos.path) else { return }
-        try fileManager.removeItem(at: photos)
+        guard fileSystem.fileExists(atPath: photos.path) else { return }
+        try fileSystem.removeItem(at: photos)
     }
 }
+
+protocol BaselineFileSystem {
+    func fileExists(atPath path: String) -> Bool
+    func contentsOfDirectory(
+        at url: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]?,
+        options mask: FileManager.DirectoryEnumerationOptions
+    ) throws -> [URL]
+    func removeItem(at url: URL) throws
+}
+
+extension FileManager: BaselineFileSystem {}

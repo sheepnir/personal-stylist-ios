@@ -36,6 +36,7 @@
 		3D6655BA0BC0FE023A66D8DB /* PhotoReplaceA11yHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A618A4AA57060FD572AA38C /* PhotoReplaceA11yHostedTests.swift */; };
 		3FD612F3DB676D2A8A794E92 /* sets.json in Resources */ = {isa = PBXBuildFile; fileRef = 45C961347D5911BD5EFB2C63 /* sets.json */; };
 		40E553A0B43E79FEE9098916 /* GarmentEditCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C8C9DEF709FCF735F29B3FE /* GarmentEditCopyTests.swift */; };
+		482513DD09365B73350C0467 /* AppStorageLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1142F4A814D4FB8E57D0D157 /* AppStorageLaunch.swift */; };
 		4F28B91D410FCC2284F1AEF2 /* CameraIntakeCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 679368002C6729F0D50FCEF1 /* CameraIntakeCopyTests.swift */; };
 		51FBAA5C4C4D9F0C9D3200CD /* CameraIntakeHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727E00F746895D5DFC46B9DE /* CameraIntakeHostedTests.swift */; };
 		53AA63010A77B6D12848E100 /* SystemCameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4FA83C7D3E85E4F0A82608 /* SystemCameraPicker.swift */; };
@@ -61,6 +62,7 @@
 		767C30CF2AA51F6837AF959A /* TestModelContainers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E74AF500EF319191547C77 /* TestModelContainers.swift */; };
 		78869AC916BC54B17E8F2AB8 /* LoopDemoModel+PhotoReplace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D70AECDECB08D27AE812A0 /* LoopDemoModel+PhotoReplace.swift */; };
 		7A6D6F9482F3BC09B79D98BA /* DeviceTokenStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CDE4727EFA0E02BD90B3 /* DeviceTokenStoreTests.swift */; };
+		7D65717475ABA558A4CDF9CF /* StorageFailureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAC816BC619EE88E7038E23 /* StorageFailureView.swift */; };
 		8018C106F944DFE9FE62A718 /* WardrobeOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2740CB93DA93BD3E32E97951 /* WardrobeOrderingTests.swift */; };
 		82B217D2277CC685582CABD2 /* AssetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A066D71A51E43890E94E9B /* AssetLibrary.swift */; };
 		8352776C76DD34132F71B992 /* PhotoReplacePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646469CB9C19BA19F8362939 /* PhotoReplacePresentationTests.swift */; };
@@ -70,6 +72,7 @@
 		8D5EAE6F0AFBCA214CE0B246 /* AddPriceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3D7276A67287F741726619 /* AddPriceSheet.swift */; };
 		8D812FBE2D62D8FB38D39B9E /* FileOperating.swift in Sources */ = {isa = PBXBuildFile; fileRef = 236B9CF6F7849E76F572821F /* FileOperating.swift */; };
 		93D90EBFCD1FD18F960B4DFF /* TestLegacyStoreFixtureSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA25562D27C214A4FCF70A84 /* TestLegacyStoreFixtureSupportTests.swift */; };
+		95B0D51E06BFEA2D5EC3A28C /* BaselineUpgradeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 024A3AD0676DCE59BFA3E0B7 /* BaselineUpgradeProbe.swift */; };
 		97BEF66FDEADA6F27157E851 /* EngineConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899184226E1FB5377E6490E9 /* EngineConfigTests.swift */; };
 		9BA0594A6A9268E864533549 /* DailyWearA11yHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD52DE2B947CD778383EDD18 /* DailyWearA11yHostedTests.swift */; };
 		9C20FC42F7F47BDE0AFC3D19 /* FinishDetailsSaveBarHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F533BF8358E87F7EF56FA4FE /* FinishDetailsSaveBarHostedTests.swift */; };
@@ -92,6 +95,7 @@
 		B95C7CD1DC843070B99A83E5 /* CameraIntakeCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C1DBC8FA24B704FCAD56DD /* CameraIntakeCopy.swift */; };
 		B97042E89CF1ED5A96BFCD47 /* ReadyBatchSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6CA22A6BBE8A8DB94342F7 /* ReadyBatchSupport.swift */; };
 		BB7E4B108DEE47A444562543 /* OutfitBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925BA06440A547B1DDD21056 /* OutfitBoardView.swift */; };
+		BFBB1BD86830FDCD55A7032F /* AppStorageLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8522683F154877D596C9D66 /* AppStorageLaunchTests.swift */; };
 		C14776A64764DD0C0DA60864 /* CameraIntakeServing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3B5AACF3C9487578830C5AD /* CameraIntakeServing.swift */; };
 		C1A5EFF29E6E2E294A267EF3 /* AppModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 304EA2B6267D9A8CE591A4A6 /* AppModelContainer.swift */; };
 		C1DB6DE19610CA8E01631B2A /* DailyWearModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE8E6C410C0DF9F3A799423 /* DailyWearModelTests.swift */; };
@@ -111,6 +115,7 @@
 		D4CEF7845D12231786D83287 /* LegacyStoreFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDE04AC8A0253033811B151 /* LegacyStoreFixtures.swift */; };
 		D57AFF29FB45B831D9A65106 /* CameraPersistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853974C0862128374BEE223E /* CameraPersistTests.swift */; };
 		DA2765B0F2A6D6E68123051F /* CameraPersistError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30844C11C90DF2A80B725A /* CameraPersistError.swift */; };
+		DABA3A658F1E8F50E576C5C2 /* StorageFailureCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0407C7B2C02967489F6C2A5E /* StorageFailureCopy.swift */; };
 		DC71EBBE05BF6F02FD5234C9 /* PerformanceFixesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EFF8FDF2CF7FB7DE5435130 /* PerformanceFixesTests.swift */; };
 		DD48403A8A2D599B5758FAC6 /* PersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CD67D1EACD80790EAD7B17D /* PersistenceStore.swift */; };
 		DE42D52C912ED87CEDE90403 /* FinishDetailsColorPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F463FD8011F9A109E1E24E /* FinishDetailsColorPersistenceTests.swift */; };
@@ -147,15 +152,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		024A3AD0676DCE59BFA3E0B7 /* BaselineUpgradeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaselineUpgradeProbe.swift; sourceTree = "<group>"; };
 		02C9E7A6E5D07CA62916ADAF /* WardrobeCardInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WardrobeCardInteractionTests.swift; sourceTree = "<group>"; };
 		034F7728C8BE48F0C965A014 /* DeviceTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTokenStore.swift; sourceTree = "<group>"; };
 		038CF7038B25EB81259DCF69 /* WearSuccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearSuccessView.swift; sourceTree = "<group>"; };
+		0407C7B2C02967489F6C2A5E /* StorageFailureCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFailureCopy.swift; sourceTree = "<group>"; };
 		04B95AF0FBD205A6341A8A06 /* DeviceTokenEnrollment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTokenEnrollment.swift; sourceTree = "<group>"; };
 		050CC91B7AD7D388B25669D9 /* PhotoReplacePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplacePresentation.swift; sourceTree = "<group>"; };
 		06910BA0D8478DCAF374FE75 /* OutfitEngineClientStubTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitEngineClientStubTests.swift; sourceTree = "<group>"; };
 		0A85BC10FA21547721674180 /* UserGarmentPhotoStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserGarmentPhotoStoreTests.swift; sourceTree = "<group>"; };
 		0D2201A53BF68BB37DFA94B7 /* FixtureWardrobeLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureWardrobeLoader.swift; sourceTree = "<group>"; };
 		102A80EFB3DBE3B71E6F1D7B /* TestLegacyStoreFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestLegacyStoreFixtures.swift; sourceTree = "<group>"; };
+		1142F4A814D4FB8E57D0D157 /* AppStorageLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageLaunch.swift; sourceTree = "<group>"; };
 		1143BB3F6714DFC707E71BE4 /* DeviceAccessSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceAccessSection.swift; sourceTree = "<group>"; };
 		11A066D71A51E43890E94E9B /* AssetLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetLibrary.swift; sourceTree = "<group>"; };
 		143C02D14EA41C5765BE96C5 /* InMemoryPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryPersistenceStore.swift; sourceTree = "<group>"; };
@@ -260,6 +268,7 @@
 		DF84A3D3364AE6B8366BA614 /* CostPerWearCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostPerWearCopy.swift; sourceTree = "<group>"; };
 		E5127E73881AACED4EB9779F /* FinishDetailsColorDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsColorDraftTests.swift; sourceTree = "<group>"; };
 		E59B66C77993ADFE3053998B /* GarmentEditCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarmentEditCopy.swift; sourceTree = "<group>"; };
+		E8522683F154877D596C9D66 /* AppStorageLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageLaunchTests.swift; sourceTree = "<group>"; };
 		EA2B41D488D744CE76E52914 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		EA3AA5523BB11219ED77714D /* TestModelContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestModelContainerTests.swift; sourceTree = "<group>"; };
 		EA3D7276A67287F741726619 /* AddPriceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPriceSheet.swift; sourceTree = "<group>"; };
@@ -273,6 +282,7 @@
 		F37FCA8FA13A32389E7E606A /* UserGarmentPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserGarmentPhotoStore.swift; sourceTree = "<group>"; };
 		F533BF8358E87F7EF56FA4FE /* FinishDetailsSaveBarHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsSaveBarHostedTests.swift; sourceTree = "<group>"; };
 		F78A772DDB24AF49A5DF1592 /* StubEntityMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubEntityMapper.swift; sourceTree = "<group>"; };
+		FEAC816BC619EE88E7038E23 /* StorageFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFailureView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -298,6 +308,8 @@
 		250E3397F7D52E4956A1B92C /* App */ = {
 			isa = PBXGroup;
 			children = (
+				1142F4A814D4FB8E57D0D157 /* AppStorageLaunch.swift */,
+				024A3AD0676DCE59BFA3E0B7 /* BaselineUpgradeProbe.swift */,
 				8F7327576F709295FF4B4CFB /* CameraAuthorization.swift */,
 				80E0F3AE097CF4024CAF5E58 /* CameraIntakePresentation.swift */,
 				D3B5AACF3C9487578830C5AD /* CameraIntakeServing.swift */,
@@ -315,6 +327,7 @@
 				A760F70F973DC989619008D1 /* OutfitEngineClient.swift */,
 				C396500A2030E3E78A5F126A /* PersonalStylistApp.swift */,
 				050CC91B7AD7D388B25669D9 /* PhotoReplacePresentation.swift */,
+				FEAC816BC619EE88E7038E23 /* StorageFailureView.swift */,
 				F37FCA8FA13A32389E7E606A /* UserGarmentPhotoStore.swift */,
 			);
 			path = App;
@@ -383,6 +396,7 @@
 				E59B66C77993ADFE3053998B /* GarmentEditCopy.swift */,
 				7F0D940B417D6CF5B8721DE1 /* PhotoReplaceCopy.swift */,
 				EC6CA22A6BBE8A8DB94342F7 /* ReadyBatchSupport.swift */,
+				0407C7B2C02967489F6C2A5E /* StorageFailureCopy.swift */,
 				A06DEC77599F2C0D1FE53AD3 /* WearHistoryCopy.swift */,
 			);
 			path = Design;
@@ -404,6 +418,7 @@
 		5EDEC1FBC953D150EA491035 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				E8522683F154877D596C9D66 /* AppStorageLaunchTests.swift */,
 				4E9AC9B2D45AED8B5FED2719 /* AssetLibraryTests.swift */,
 				A4A9E681A6F0DAD2A3FF4247 /* BaselineCleanStartTests.swift */,
 				679368002C6729F0D50FCEF1 /* CameraIntakeCopyTests.swift */,
@@ -719,9 +734,11 @@
 				8D5EAE6F0AFBCA214CE0B246 /* AddPriceSheet.swift in Sources */,
 				6C5E162B58597CD11CB1B63B /* AppIdentity.swift in Sources */,
 				C1A5EFF29E6E2E294A267EF3 /* AppModelContainer.swift in Sources */,
+				482513DD09365B73350C0467 /* AppStorageLaunch.swift in Sources */,
 				82B217D2277CC685582CABD2 /* AssetLibrary.swift in Sources */,
 				226779F0C6F6489E0E8A5C15 /* AvailabilityToken.swift in Sources */,
 				B924C69E0449B7493CAFB6ED /* BaselineCleanStart.swift in Sources */,
+				95B0D51E06BFEA2D5EC3A28C /* BaselineUpgradeProbe.swift in Sources */,
 				A2C51D0F7445C04AFC477D49 /* CameraAuthorization.swift in Sources */,
 				B95C7CD1DC843070B99A83E5 /* CameraIntakeCopy.swift in Sources */,
 				1416118F0EF559736458BF50 /* CameraIntakeHost.swift in Sources */,
@@ -770,6 +787,8 @@
 				6DF742E3B66B6D7DCFEE4E2A /* ReviewCardView.swift in Sources */,
 				F60CEAB9474F4B01A3CCA5B5 /* SchemaVersions.swift in Sources */,
 				CD28C64563399FE6A741803D /* SeedSuppression.swift in Sources */,
+				DABA3A658F1E8F50E576C5C2 /* StorageFailureCopy.swift in Sources */,
+				7D65717475ABA558A4CDF9CF /* StorageFailureView.swift in Sources */,
 				13948025C86BC117FFCC0091 /* StubEntityMapper.swift in Sources */,
 				AFA5BC9677326EE68E654AE8 /* StubModels.swift in Sources */,
 				D1E400D4C7130BEE92D272FD /* SwapSheetView.swift in Sources */,
@@ -792,6 +811,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BFBB1BD86830FDCD55A7032F /* AppStorageLaunchTests.swift in Sources */,
 				FC2934AC8846269C2EF6898F /* AssetLibraryTests.swift in Sources */,
 				0E4C830C59EEC3B78AC0EED7 /* BaselineCleanStartTests.swift in Sources */,
 				4F28B91D410FCC2284F1AEF2 /* CameraIntakeCopyTests.swift in Sources */,

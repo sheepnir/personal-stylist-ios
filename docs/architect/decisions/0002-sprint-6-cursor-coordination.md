@@ -36,6 +36,7 @@ ADR-0001 and the acceptance criteria on the open Sprint 6 issues. Closing an iss
 |---|---|
 | 2026-09-26 | Initial record. |
 | 2026-09-26 | Founder exception for one stale review. See the amendment below. |
+| 2026-09-26 | Daily-use baseline and DevFlow v2.0 exceptions. See the amendment below. |
 
 ## Amendment 2026-09-26 — one stale review
 
@@ -44,3 +45,16 @@ The decision text above still says this decision does not dismiss a blocking rev
 The founder later instructed a one-time dismissal of GitHub review 5327380966 on pull request #64. That review was changes-requested on commit `23de1e4`. It was dismissed only after commit `1f486de` had an independent Cursor Composer review approval and a separate Cursor Grok QA pass. The public record is the comment on that pull request.
 
 That dismissal is not an approval from `shpdev-reviewer`. Review in this window is still only Cursor Grok and Cursor Composer, alternating by role. That is not a cross-family review. This exception does not authorize dismissing any later blocking review, an admin merge, or treating a future changes-requested review as cleared.
+
+## Amendment 2026-09-26 — daily-use baseline and DevFlow v2.0
+
+The founder adopted DevFlow v2.0 and approved the Daily-use baseline scope. The exceptions below are product-specific. They do not supersede ADR-0001, and they do not edit the frozen decision text above the amendment log.
+
+- Cursor is the sole coordinator. The founder stated that GrokBot is no longer involved. This record does not claim that GrokBot routines were inspected.
+- Development, review, and QA stay separate. Those agents use only Cursor Grok and Cursor Composer. That split is not a cross-family review. A third model family is not available; say so instead of implying one was used.
+- The one-time dismissal recorded above is not a general permission to dismiss a later blocking review.
+- Build 2026092602 may perform one clean start. The completed key stays `baseline.2026092602.cleanStartCompleted`. A later build keeps that key and must not add another reset.
+- If that clean start does not finish, or if the on-disk wardrobe cannot be opened, the app tells the user and accepts no new saves. It must not copy the wardrobe into an editable in-memory store, and it must not delete the store to get past a migration failure.
+- Deterministic styling rules and weights stay as they are. Production AI stays off. The application makes no provider calls and uploads no provider photos. Application provider spending stays at zero. This amendment sets no cap amount.
+- TestFlight upload and a production deploy each need a separate founder approval that names the concrete candidate. This amendment is not that approval.
+- Sprint 6 closes as a partial delivery. Unfinished acceptance criteria stay open on the persistent v2.0 queue. Merged work that has not been deployed or accepted on a device is not marked complete. Deferred AI foundations do not hold the historical milestone open.
