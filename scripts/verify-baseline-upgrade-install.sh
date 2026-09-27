@@ -11,7 +11,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SIM_ID="${SIM_ID:-B004F777-2202-4258-9DF1-35A72E22F7E8}"
+SIM_ID="${SIM_ID:?Set SIM_ID explicitly to a dedicated simulator without an existing app install}"
+BUNDLE="${BUNDLE:-com.example.PersonalStylist}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 BASE_VERSION="2026092602"
 NEXT_VERSION="2026092603"
@@ -57,16 +58,27 @@ wait_for_result() {
   return 1
 }
 
+# Refuse even an apparently empty existing install: it may contain Keychain or
+# other evidence. This proof owns only a previously uninstalled app destination.
+refuse_existing_install() {
+if xcrun simctl get_app_container "$SIM_ID" "$BUNDLE" data >/dev/null 2>&1 \
+  || xcrun simctl get_app_container "$SIM_ID" "$BUNDLE" app >/dev/null 2>&1; then
+  echo "Refusing existing app/data for $BUNDLE on $SIM_ID. Preserve it; choose a dedicated simulator." >&2
+  exit 1
+fi
+}
+refuse_existing_install
+
 xcrun simctl boot "$SIM_ID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$SIM_ID" -b >/dev/null
 
 echo "building ${BASE_VERSION}"
 build_app "$BASE_VERSION"
 BASE_APP="$(app_path)"
-BUNDLE="$(plist_get "$BASE_APP" CFBundleIdentifier)"
+[[ "$(plist_get "$BASE_APP" CFBundleIdentifier)" == "$BUNDLE" ]]
 [[ "$(plist_get "$BASE_APP" CFBundleVersion)" == "$BASE_VERSION" ]]
 
-xcrun simctl uninstall "$SIM_ID" "$BUNDLE" >/dev/null 2>&1 || true
+refuse_existing_install
 xcrun simctl install "$SIM_ID" "$BASE_APP"
 xcrun simctl launch "$SIM_ID" "$BUNDLE" -BaselineUpgradeWrite >/dev/null
 CONTAINER="$(xcrun simctl get_app_container "$SIM_ID" "$BUNDLE" data)"
