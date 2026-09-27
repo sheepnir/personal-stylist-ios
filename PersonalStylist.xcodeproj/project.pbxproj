@@ -26,6 +26,7 @@
 		1A4240B3D96EF291D6E06969 /* GarmentEditPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EC205279C5B2A2554C77DF /* GarmentEditPersistenceTests.swift */; };
 		1C0326DAB374C2167474EB02 /* LoopDemoModel+Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAB1CA12C858AF7AD24ED8B /* LoopDemoModel+Feedback.swift */; };
 		206A311FA04871EA7B427550 /* CameraIntakePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF8F5C191E89B7226725E87 /* CameraIntakePresentationTests.swift */; };
+		2089464CA1E48B12B759D181 /* CoreControlsA11yHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262257290C18C6DF432BA439 /* CoreControlsA11yHostedTests.swift */; };
 		226779F0C6F6489E0E8A5C15 /* AvailabilityToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3722A10F384BCCAF79AA34D3 /* AvailabilityToken.swift */; };
 		2594FD9940E5E04C50455E84 /* DressingCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD7BC29B207F317F67654343 /* DressingCopy.swift */; };
 		287FDCE076FF7955E07226A0 /* UserGarmentPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37FCA8FA13A32389E7E606A /* UserGarmentPhotoStore.swift */; };
@@ -183,6 +184,7 @@
 		1F6E79862578B084C43EA2EC /* DestructivePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestructivePersistenceTests.swift; sourceTree = "<group>"; };
 		236B9CF6F7849E76F572821F /* FileOperating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperating.swift; sourceTree = "<group>"; };
 		2403922423F68A48B3450864 /* PhotoReplaceHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplaceHostedTests.swift; sourceTree = "<group>"; };
+		262257290C18C6DF432BA439 /* CoreControlsA11yHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreControlsA11yHostedTests.swift; sourceTree = "<group>"; };
 		2740CB93DA93BD3E32E97951 /* WardrobeOrderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WardrobeOrderingTests.swift; sourceTree = "<group>"; };
 		28B4532174894BF12256FA0F /* DataControlsCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataControlsCopy.swift; sourceTree = "<group>"; };
 		29474C1185A69E1DAD5160BE /* DataControlsCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataControlsCopyTests.swift; sourceTree = "<group>"; };
@@ -449,6 +451,7 @@
 				727E00F746895D5DFC46B9DE /* CameraIntakeHostedTests.swift */,
 				5DF8F5C191E89B7226725E87 /* CameraIntakePresentationTests.swift */,
 				853974C0862128374BEE223E /* CameraPersistTests.swift */,
+				262257290C18C6DF432BA439 /* CoreControlsA11yHostedTests.swift */,
 				D649132F60D93F897822E3FC /* DailyWearA11yContractTests.swift */,
 				DD52DE2B947CD778383EDD18 /* DailyWearA11yHostedTests.swift */,
 				1CFBD13A24A3C40A281C803E /* DailyWearBoardTests.swift */,
@@ -852,6 +855,7 @@
 				51FBAA5C4C4D9F0C9D3200CD /* CameraIntakeHostedTests.swift in Sources */,
 				206A311FA04871EA7B427550 /* CameraIntakePresentationTests.swift in Sources */,
 				D57AFF29FB45B831D9A65106 /* CameraPersistTests.swift in Sources */,
+				2089464CA1E48B12B759D181 /* CoreControlsA11yHostedTests.swift in Sources */,
 				A373EC01C039FA16814D982E /* DailyWearA11yContractTests.swift in Sources */,
 				9BA0594A6A9268E864533549 /* DailyWearA11yHostedTests.swift in Sources */,
 				7085EDBBEB9FC72E51ADCB13 /* DailyWearBoardTests.swift in Sources */,

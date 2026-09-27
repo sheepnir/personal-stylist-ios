@@ -12,6 +12,7 @@ struct DailyWearA11yButton<Content: View>: UIViewRepresentable {
     var isSelected: Bool = false
     var isEnabled: Bool = true
     var minHeight: CGFloat = 44
+    var fitsContentWidth: Bool = false
     var action: () -> Void
     @ViewBuilder var content: () -> Content
 
@@ -33,7 +34,7 @@ struct DailyWearA11yButton<Content: View>: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: HostedDailyWearA11yButton, context: Context) -> CGSize {
-        let width = proposal.width ?? 375
+        let width = fitsContentWidth ? uiView.preferredContentWidth : (proposal.width ?? 375)
         let size = CGSize(width: width, height: uiView.preferredHeight(forWidth: width))
         uiView.bounds.size = size
         return size
@@ -41,6 +42,7 @@ struct DailyWearA11yButton<Content: View>: UIViewRepresentable {
 
     private func apply(_ button: HostedDailyWearA11yButton, coordinator: Coordinator) {
         button.minHeight = minHeight
+        button.fitsContentWidth = fitsContentWidth
         button.accessibilityIdentifier = identifier
         button.accessibilityLabel = label
         button.accessibilityHint = hint
@@ -66,6 +68,7 @@ struct DailyWearA11yButton<Content: View>: UIViewRepresentable {
 
 final class HostedDailyWearA11yButton: UIButton {
     var minHeight: CGFloat = 44
+    var fitsContentWidth = false
     var onTap: (() -> Void)?
     /// Own flag — SwiftUI writes `UIControl.isEnabled` back to `true` after `updateUIView`.
     var allowsActivation = true
@@ -110,7 +113,11 @@ final class HostedDailyWearA11yButton: UIButton {
     }
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight(forWidth: bounds.width))
+        CGSize(width: fitsContentWidth ? preferredContentWidth : UIView.noIntrinsicMetric, height: preferredHeight(forWidth: fitsContentWidth ? preferredContentWidth : bounds.width))
+    }
+
+    var preferredContentWidth: CGFloat {
+        max(44, host?.sizeThatFits(in: CGSize(width: 10000, height: 10000)).width ?? 44)
     }
 
     func preferredHeight(forWidth width: CGFloat) -> CGFloat {
