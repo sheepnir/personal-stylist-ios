@@ -111,6 +111,9 @@ struct DeviceAccessSection: View {
                         Text(mode == .enrollmentSecret
                              ? "Enroll with enrollment secret"
                              : "Save pasted token")
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .disabled(isBusy)
