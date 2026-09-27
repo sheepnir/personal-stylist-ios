@@ -76,10 +76,12 @@ enum BaselineUpgradeProbe {
             let photoURL = try photoFileURL()
             let photoCount = try Data(contentsOf: photoURL).count
             let build = bundleVersion()
-            try writeText(
-                "build=\(build)\nphotoBytes=\(photoCount)\n",
-                name: expectedFileName
-            )
+            let selected = await store.fetchStyleProfile()
+            var expected = "build=\(build)\nphotoBytes=\(photoCount)\n"
+            if let selected {
+                expected += "currentProfileId=\(selected.id.uuidString)\ncurrentProfileVersion=\(selected.version)\n"
+            }
+            try writeText(expected, name: expectedFileName)
             try writeText("wrote\n", name: resultFileName)
         } catch {
             try? writeText("write-failed\n", name: resultFileName)
@@ -119,17 +121,72 @@ enum BaselineUpgradeProbe {
         } else {
             problems.append("photo")
         }
-        let profile = await store.fetchStyleProfile()
-        if profile?.id != profileID || profile?.profession != profession || profile?.goals != ["fewer repeats"]
-            || profile?.constraintsNotes != "No logos" {
+        let rows = await (store as? BaselineUpgradeProfileListing)?.fetchAllStyleProfiles() ?? []
+        if (store as? BaselineUpgradeProfileListing) == nil {
             problems.append("profile")
         }
+        let selected = await store.fetchStyleProfile()
+        let recordedID = fields["currentProfileId"].flatMap(UUID.init(uuidString:))
+        let recordedVersion = fields["currentProfileVersion"].flatMap(Int.init)
+        if fields["currentProfileId"] != nil && recordedID == nil {
+            problems.append("profile-current")
+        }
+        problems.append(contentsOf: profilePreservationProblems(
+            rows: rows,
+            selected: selected,
+            recordedCurrentID: recordedID,
+            recordedCurrentVersion: recordedVersion
+        ))
         let wears = await store.fetchWearEvents()
         if wears.contains(where: { $0.id == wearID && $0.garmentIds == [garmentID] && $0.voidedAt == nil }) == false {
             problems.append("wear")
         }
-        let line = problems.isEmpty ? "ok \(build)\n" : problems.joined(separator: ",") + "\n"
+        if fields["currentProfileVersion"] != nil && recordedVersion == nil {
+            problems.append("profile-current")
+        }
+        let line = problems.isEmpty ? "ok \(build)\n" : uniqueTokens(problems).joined(separator: ",") + "\n"
         try? writeText(line, name: resultFileName)
+    }
+
+    /// Probe row by fixed id, and the selected row as the highest version. Does not add, change, or delete rows.
+    static func profilePreservationProblems(
+        rows: [StubStyleProfile],
+        selected: StubStyleProfile?,
+        recordedCurrentID: UUID?,
+        recordedCurrentVersion: Int?
+    ) -> [String] {
+        var problems: [String] = []
+        let probe = rows.first { $0.id == profileID }
+        if probe?.profession != profession
+            || probe?.goals != ["fewer repeats"]
+            || probe?.constraintsNotes != "No logos" {
+            problems.append("profile")
+        }
+        let maxVersion = rows.map(\.version).max()
+        let selectedIsCurrent = selected.map { chosen in
+            chosen.version == maxVersion && rows.contains { $0.id == chosen.id && $0.version == chosen.version }
+        } ?? false
+        if !selectedIsCurrent {
+            problems.append("profile-current")
+        }
+        if let recordedCurrentID {
+            if let recorded = rows.first(where: { $0.id == recordedCurrentID }) {
+                if let recordedCurrentVersion, recorded.version != recordedCurrentVersion {
+                    problems.append("profile-current")
+                }
+                if let selected, selected.id != recorded.id, selected.version <= recorded.version {
+                    problems.append("profile-current")
+                }
+            } else {
+                problems.append("profile-current")
+            }
+        }
+        return uniqueTokens(problems)
+    }
+
+    private static func uniqueTokens(_ tokens: [String]) -> [String] {
+        var seen = Set<String>()
+        return tokens.filter { seen.insert($0).inserted }
     }
 
     private static func bundleVersion() -> String {
@@ -167,4 +224,11 @@ enum BaselineUpgradeProbe {
         try String(contentsOf: try documents().appendingPathComponent(name), encoding: .utf8)
     }
 }
+
+protocol BaselineUpgradeProfileListing: AnyObject {
+    func fetchAllStyleProfiles() async -> [StubStyleProfile]
+}
+
+extension InMemoryPersistenceStore: BaselineUpgradeProfileListing {}
+extension SwiftDataPersistenceStore: BaselineUpgradeProfileListing {}
 #endif
