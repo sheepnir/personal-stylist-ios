@@ -10,6 +10,7 @@ final class DeviceTokenStoreTests: XCTestCase {
         DeviceTokenStore.resetTestHooks()
         DeviceTokenStore.useTestMemory()
         DeviceTokenEnrollment.resetTestHooks()
+        EngineConfig.resetTestHooks()
         RecordingURLProtocol.reset()
     }
 
@@ -20,6 +21,7 @@ final class DeviceTokenStoreTests: XCTestCase {
         keychainServices = []
         RecordingURLProtocol.reset()
         DeviceTokenEnrollment.resetTestHooks()
+        EngineConfig.resetTestHooks()
         DeviceTokenStore.resetTestHooks()
         super.tearDown()
     }
@@ -476,6 +478,7 @@ final class DeviceTokenStoreTests: XCTestCase {
             #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
                 .data(using: .utf8)
         )
+        EngineConfig.baseURLOverride = URL(string: "https://example.test")!
         RecordingURLProtocol.install { _ in
             .http(status: 201, body: body)
         }
@@ -531,8 +534,8 @@ final class DeviceTokenStoreTests: XCTestCase {
         XCTAssertFalse(DeviceTokenFormat.isIssuedShape("enrollment-secret-not-a-token"))
         XCTAssertFalse(
             DeviceTokenFormat.isIssuedShape(
-                "00000000-0000-4000-8000-000000000001".uppercased()
-                    + ".\(DeviceAccessTestFixtures.secret43)"
+                "00000000-0000-4000-8000-00000000a001.\(DeviceAccessTestFixtures.secret43)"
+                    .uppercased()
             )
         )
         XCTAssertFalse(

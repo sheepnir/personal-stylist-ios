@@ -13,12 +13,14 @@ final class OutfitEngineClientStubTests: XCTestCase {
         DeviceTokenStore.resetTestHooks()
         DeviceTokenStore.useTestMemory()
         DeviceTokenEnrollment.resetTestHooks()
+        EngineConfig.resetTestHooks()
     }
 
     override func tearDown() {
         EngineURLSessionStub.tearDownClientHooks()
         OutfitEngineClient.resetTestHooks()
         DeviceTokenEnrollment.resetTestHooks()
+        EngineConfig.resetTestHooks()
         DeviceTokenStore.resetTestHooks()
         UserDefaults.standard.removePersistentDomain(forName: defaultsSuiteName)
         isolatedDefaults = nil
@@ -326,6 +328,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
             #"{"deviceToken":"\(DeviceAccessTestFixtures.validIssuedToken)","issuedAt":"2026-09-20T00:00:00Z"}"#
                 .data(using: .utf8)
         )
+        EngineConfig.baseURLOverride = URL(string: "https://example.test")!
         RecordingURLProtocol.install { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/v1/auth/device")
@@ -469,7 +472,10 @@ final class OutfitEngineClientStubTests: XCTestCase {
         )
         let model = LoopDemoModel(store: store, preferences: isolatedDefaults)
         await model.load()
-        model.confirmProfileForDemoIfNeeded()
+        await model.ensureEditableStyleProfile()
+        if model.styleProfile?.confirmedAt == nil {
+            model.confirmProfile()
+        }
         model.select(garments[0])
         return model
     }
