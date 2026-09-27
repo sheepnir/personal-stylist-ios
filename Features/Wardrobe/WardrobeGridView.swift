@@ -787,6 +787,12 @@ struct WardrobeGridView: View {
                     .foregroundStyle(token.color)
                 Text(token.accessibilityName)
                     .font(.subheadline.weight(selected ? .medium : .regular))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -801,13 +807,20 @@ struct WardrobeGridView: View {
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(selected ? .medium : .regular))
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
-                .foregroundStyle(.primary)
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(selected ? .medium : .regular))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
+            .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
