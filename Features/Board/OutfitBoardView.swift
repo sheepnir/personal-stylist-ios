@@ -286,6 +286,9 @@ struct OutfitBoardView: View {
                 Text(primary.title)
                     .fontWeight(.semibold)
                     .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(
                         (wearDisabled ? Color.accentColor.opacity(0.4) : Color.accentColor),
