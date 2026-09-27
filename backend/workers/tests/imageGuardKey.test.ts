@@ -9,6 +9,7 @@ import {
   normalizedKeyContainsForbiddenImageToken,
   objectKeyFailsPrintableAsciiRule,
 } from '../src/imageGuardKey.js';
+import { rejectImagePayload } from '../src/validation.js';
 
 describe('imageGuardKey printable ASCII rule', () => {
   it('rejects keys outside printable ASCII', () => {
@@ -17,6 +18,14 @@ describe('imageGuardKey printable ASCII rule', () => {
     expect(normalizedKeyContainsForbiddenImageToken('im\u200bage')).toBe(true);
     expect(normalizedKeyContainsForbiddenImageToken('\u0438mage')).toBe(true);
     expect(normalizedKeyContainsForbiddenImageToken('\uFF49mage')).toBe(true);
+  });
+
+  it('rejects the Unicode lookalike image keys from #51 without any normalization', () => {
+    for (const key of ['ｉｍａｇｅ', 'ima​ge', 'İmage']) {
+      expect(objectKeyFailsPrintableAsciiRule(key)).toBe(true);
+      expect(normalizedKeyContainsForbiddenImageToken(key)).toBe(true);
+      expect(rejectImagePayload({ wardrobe: [{ id: '1', [key]: 'x' }] })?.status).toBe(415);
+    }
   });
 
   it('rejects keys containing a lone UTF-16 surrogate (not in shared corpus — invalid JSON for Foundation)', () => {

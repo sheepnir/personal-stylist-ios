@@ -3,8 +3,10 @@
 
 Compares forbidden-token lists, consent path segments, RFC 3339 consent regex,
 printable-ASCII key bounds, key-separator and ECMAScript-whitespace code points,
-image-value regex and prefix lists (Worker vs App/OutfitEngineClient.swift), runs
-a legitimate-key sweep (OpenAPI + fixtures + corpus), then runs
+image-value regex and prefix lists (Worker vs App/OutfitEngineClient.swift), checks
+that every property name in docs/openapi.yaml is printable ASCII (#51: the guard
+rejects any other key, so a non-ASCII contract key would be unsendable), runs a
+legitimate-key sweep (OpenAPI + fixtures + corpus), then runs
 fixtures/image-guard/corpus.json through the Worker's vitest harness. Swift corpus
 coverage is in Tests/OutfitEngineImagePayloadTests (Xcode CI).
 """
@@ -200,12 +202,57 @@ def schema_property_names(schema: dict[str, Any], components: dict[str, Any], se
     return keys
 
 
-def openapi_guarded_request_keys() -> set[str]:
+def load_openapi() -> dict[str, Any]:
     try:
         import yaml
     except ImportError:
         sys.exit("check-image-guard-parity: need PyYAML (`pip install pyyaml`)")
-    doc = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
+    return yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
+
+
+def openapi_property_names(node: Any, path: str, names: dict[str, str]) -> None:
+    """Every schema property name (and `required` entry) anywhere in the document."""
+    if isinstance(node, dict):
+        props = node.get("properties")
+        if isinstance(props, dict):
+            for name in props:
+                names.setdefault(str(name), f"{path}/properties")
+        required = node.get("required")
+        if isinstance(required, list):
+            for name in required:
+                if isinstance(name, str):
+                    names.setdefault(name, f"{path}/required")
+        for key, child in node.items():
+            openapi_property_names(child, f"{path}/{key}", names)
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            openapi_property_names(item, f"{path}/{index}", names)
+
+
+def check_openapi_property_names_ascii(ascii_min: int, ascii_max: int) -> bool:
+    names: dict[str, str] = {}
+    openapi_property_names(load_openapi(), "#", names)
+    if not names:
+        sys.exit(f"{OPENAPI.relative_to(ROOT)}: found no schema property names")
+    bad = {
+        name: where
+        for name, where in names.items()
+        if any(not ascii_min <= ord(ch) <= ascii_max for ch in name)
+    }
+    if bad:
+        print(
+            f"MISMATCH {OPENAPI.relative_to(ROOT)} property names must be printable ASCII "
+            f"({ascii_min:#x}..{ascii_max:#x}); the image guard rejects any other key:"
+        )
+        for name, where in sorted(bad.items()):
+            print(f"  {name!r} ({name.encode('unicode_escape').decode()}) at {where}")
+        return False
+    print(f"OK openapi property names are printable ASCII: {len(names)} names")
+    return True
+
+
+def openapi_guarded_request_keys() -> set[str]:
+    doc = load_openapi()
     components = doc["components"]
     keys: set[str] = set()
     for root_name in GUARDED_REQUEST_ROOTS:
@@ -350,6 +397,9 @@ def main() -> int:
         )
         return 1
     print(f"OK printable ASCII key bounds: {worker_min:#x}..{worker_max:#x}")
+
+    if not check_openapi_property_names_ascii(worker_min, worker_max):
+        return 1
 
     corpus = load_corpus()
     print(

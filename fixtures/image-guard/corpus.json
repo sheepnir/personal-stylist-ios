@@ -1,5 +1,5 @@
 {
-  "description": "Shared image-guard corpus (#36). Keys must be printable ASCII (U+0020–U+007E) or the payload is rejected; allowed ASCII keys are normalized and token-matched. JSON must be Foundation-parseable (no unpaired UTF-16 surrogates in keys — that case lives in backend/workers/tests/imageGuardKey.test.ts). Evaluated by backend/workers vitest and Tests/OutfitEngineImagePayloadTests.swift.",
+  "description": "Shared image-guard corpus (#36, #51). Keys must be printable ASCII (U+0020–U+007E) or the payload is rejected — every docs/openapi.yaml property name is ASCII, so this fails closed on Unicode lookalikes without NFKC; allowed ASCII keys are normalized and token-matched. JSON must be Foundation-parseable (no unpaired UTF-16 surrogates in keys — that case lives in backend/workers/tests/imageGuardKey.test.ts). Evaluated by backend/workers vitest and Tests/OutfitEngineImagePayloadTests.swift.",
   "keySegments": [
     { "key": "image", "imageBearing": true },
     { "key": "thumbnails", "imageBearing": true },
@@ -59,7 +59,10 @@
     { "key": "unit\u001Fseparator", "imageBearing": true },
     { "key": "del\u007Fkey", "imageBearing": true },
     { "key": "line\u2028sep", "imageBearing": true },
-    { "key": "para\u2029graph", "imageBearing": true }
+    { "key": "para\u2029graph", "imageBearing": true },
+    { "key": "\uFF49\uFF4D\uFF41\uFF47\uFF45", "imageBearing": true },
+    { "key": "ima\u200Bge", "imageBearing": true },
+    { "key": "\u0130mage", "imageBearing": true }
   ],
   "imageValueStrings": [
     { "value": "data:image/png;base64,AAAA", "imageBearing": true },
@@ -154,7 +157,10 @@
     { "label": "hangul filler prefix key", "body": { "\u3164notes": "x" } },
     { "label": "fullwidth homoglyph key", "body": { "\uFF49d": 1 } },
     { "label": "nested arrays with image key", "body": { "layers": [[{ "image": 1 }]] } },
-    { "label": "deep nesting with ascii image key", "body": { "l0": { "l1": { "l2": { "image": 1 } } } } }
+    { "label": "deep nesting with ascii image key", "body": { "l0": { "l1": { "l2": { "image": 1 } } } } },
+    { "label": "#51 full-width image key", "body": { "wardrobe": [{ "id": "1", "\uFF49\uFF4D\uFF41\uFF47\uFF45": "x" }] } },
+    { "label": "#51 zero-width space inside image key", "body": { "context": { "ima\u200Bge": "x" } } },
+    { "label": "#51 dotted capital I image key", "body": { "\u0130mage": "x" } }
   ],
   "allowBodies": [
     {

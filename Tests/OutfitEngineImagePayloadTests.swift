@@ -480,6 +480,20 @@ final class OutfitEngineImagePayloadTests: XCTestCase {
         XCTAssertNotNil(Self.workerImageFinding(in: [replacementCharKey: 1]))
     }
 
+    /// #51: full-width, zero-width-space, and dotted-capital-I spellings of `image`.
+    func testUnicodeLookalikeImageKeysAreRejectedAndStripped() {
+        for key in ["\u{FF49}\u{FF4D}\u{FF41}\u{FF47}\u{FF45}", "ima\u{200B}ge", "\u{0130}mage"] {
+            XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
+            let body: [String: Any] = ["wardrobe": [["id": "1", key: "x"]]]
+            XCTAssertNotNil(Self.workerImageFinding(in: body), key)
+            let stripped = OutfitEngineClient.strippingImagePayload(body)
+            XCTAssertNil(Self.workerImageFinding(in: stripped), key)
+            let row = (stripped["wardrobe"] as? [[String: Any]])?.first
+            XCTAssertEqual(row?["id"] as? String, "1", key)
+            XCTAssertNil(row?[key], key)
+        }
+    }
+
     func testWordSeparatorsFoldBeforeTokenMatch() {
         for key in ["pixel data", "pixel.data", "pixel_data", "bit map", "pho.to", "thu.mb"] {
             XCTAssertTrue(OutfitEngineClient.isImageBearingKey(key), key)
