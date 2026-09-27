@@ -336,8 +336,14 @@ final class OutfitEngineClientStubTests: XCTestCase {
         }
         DeviceTokenEnrollment.urlSession = EngineURLSessionStub.makeSession()
 
-        let ok = await model.enrollDeviceAccessFromProfile(enrollmentSecret: "enroll-secret")
+        let ok = await DeviceTokenEnrollment.enrollAndSave(
+            baseURL: EngineConfig.baseURL,
+            enrollmentSecret: "enroll-secret"
+        )
         XCTAssertTrue(ok)
+        if ok {
+            model.noteDeviceAccessCredentialStored()
+        }
         XCTAssertFalse(model.deviceAccessRejected)
         XCTAssertFalse(model.outfitEngineActionsDisabled)
     }
@@ -346,6 +352,7 @@ final class OutfitEngineClientStubTests: XCTestCase {
     func testFlagClearsOnSuccessfulGenerateAndSwap() async throws {
         let model = try await makeModelForDeviceAccessTests()
         model.markDeviceAccessRejected()
+        model.noteDeviceAccessCredentialStored()
         let garments = try DeviceAccessTestFixtures.readyGarments()
         let anchorId = model.selectedGarment!.id
         let bottomId = garments[1].id
