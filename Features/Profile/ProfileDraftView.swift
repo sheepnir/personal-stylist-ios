@@ -29,6 +29,7 @@ struct ProfileDraftView: View {
     var body: some View {
         ScrollViewReader { proxy in
         Form {
+            ProfilePhotoSection()
             if let profile = model.styleProfile {
                 Section {
                     Label(
