@@ -315,6 +315,7 @@ struct OutfitBoardView: View {
             .controlSize(.small)
             .frame(minHeight: 44)
             .disabled(disabled)
+            .accessibilityLabel(title)
     }
 
     private func keepTapped(slot: StubSlot, assignmentId: UUID) {
@@ -324,15 +325,6 @@ struct OutfitBoardView: View {
             showKeepTipBanner = true
         }
     }
-
-    private func filledTileLabel(_ a: StubOutfitAssignment, _ g: StubGarment) -> String {
-        var parts = [g.displayName]
-        if a.isAnchor { parts.append("Starting item") }
-        if a.isLocked { parts.append("Kept") }
-        parts.append(g.availabilityToken.accessibilityName)
-        return parts.joined(separator: ", ")
-    }
-
 
     private func noAlternativeBanner(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -544,16 +536,7 @@ struct OutfitBoardView: View {
                 }
                 compositionTileActionRow(a)
             }
-            .modifier(FilledTileAccess(
-                label: filledTileLabel(a, g),
-                isAnchor: a.isAnchor,
-                isLocked: a.isLocked,
-                suppressEngineActions: model.outfitEngineActionsDisabled,
-                onSwap: { onSwap(a.slot) },
-                onKeep: { keepTapped(slot: a.slot, assignmentId: a.id) },
-                onUnlock: { model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id) },
-                onChangeAnchor: onChangeAnchor
-            ))
+            .accessibilityElement(children: .contain)
         } else if let reason = a.gapReason {
             VStack(alignment: .leading, spacing: 8) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -583,14 +566,7 @@ struct OutfitBoardView: View {
             }
             .padding(10)
             .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .modifier(
-                GapTileVoiceOver(
-                    combinedLabel: "Empty \(a.slot.displayLabel). \(reason)",
-                    findActionName: "Find \(a.slot.displayLabel)",
-                    suppressEngineActions: model.outfitEngineActionsDisabled,
-                    onFind: { onSwap(a.slot) }
-                )
-            )
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -716,16 +692,7 @@ struct OutfitBoardView: View {
                 }
                 .frame(width: 88)
             }
-            .modifier(FilledTileAccess(
-                label: filledTileLabel(a, g),
-                isAnchor: false,
-                isLocked: a.isLocked,
-                suppressEngineActions: model.outfitEngineActionsDisabled,
-                onSwap: { onSwap(a.slot) },
-                onKeep: { keepTapped(slot: a.slot, assignmentId: a.id) },
-                onUnlock: { model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id) },
-                onChangeAnchor: onChangeAnchor
-            ))
+            .accessibilityElement(children: .contain)
         } else if a.gapReason != nil {
             VStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 10)
@@ -747,19 +714,13 @@ struct OutfitBoardView: View {
                 }
                 .frame(width: 88)
             }
-            .modifier(
-                GapTileVoiceOver(
-                    combinedLabel: "Empty accessory",
-                    findActionName: "Find accessory",
-                    suppressEngineActions: model.outfitEngineActionsDisabled,
-                    onFind: { onSwap(a.slot) }
-                )
-            )
+            .accessibilityElement(children: .contain)
         }
     }
 }
 
-/// When device access is rejected, omit Find custom actions (same policy as `FilledTileAccess`).
+/// When device access is rejected, Find and Swap stay disabled buttons.
+/// They are not custom actions that can fire while the button is disabled.
 enum OutfitBoardAccessibilityPolicy {
     static func exposesEngineBypassVoiceOverActions(suppressEngineActions: Bool) -> Bool {
         !suppressEngineActions
@@ -778,74 +739,3 @@ private struct BoardTileActionRow<Content: View>: View {
     }
 }
 
-/// Gap-tile VoiceOver — Find custom action omitted when engine actions are disabled (#34 R6).
-private struct GapTileVoiceOver: ViewModifier {
-    var combinedLabel: String
-    var findActionName: String
-    var suppressEngineActions: Bool
-    var onFind: () -> Void
-
-    func body(content: Content) -> some View {
-        if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-            suppressEngineActions: suppressEngineActions
-        ) {
-            content
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(combinedLabel)
-                .accessibilityAction(named: Text(findActionName), onFind)
-        } else {
-            content
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(combinedLabel)
-        }
-    }
-}
-
-/// Combined-tile VoiceOver: label + custom actions so Swap/Keep are never swallowed (#128).
-private struct FilledTileAccess: ViewModifier {
-    var label: String
-    var isAnchor: Bool
-    var isLocked: Bool
-    var suppressEngineActions: Bool
-    var onSwap: () -> Void
-    var onKeep: () -> Void
-    var onUnlock: () -> Void
-    var onChangeAnchor: () -> Void
-
-    func body(content: Content) -> some View {
-        Group {
-            if isAnchor {
-                if OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-                    suppressEngineActions: suppressEngineActions
-                ) {
-                    content
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(label)
-                        .accessibilityAction(named: "Change starting item", onChangeAnchor)
-                } else {
-                    content
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(label)
-                }
-            } else if isLocked {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Unlock", onUnlock)
-            } else if !OutfitBoardAccessibilityPolicy.exposesEngineBypassVoiceOverActions(
-                suppressEngineActions: suppressEngineActions
-            ) {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Keep", onKeep)
-            } else {
-                content
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(label)
-                    .accessibilityAction(named: "Swap", onSwap)
-                    .accessibilityAction(named: "Keep", onKeep)
-            }
-        }
-    }
-}
