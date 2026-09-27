@@ -8,7 +8,8 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 # Optional plain-text vars (sample values; see README "Spend cap"):
-# [vars]
+[vars]
+PROVIDER_GENERATION = "off"
 # DAILY_CAP_USD = "1.00"
 # SOFT_THRESHOLD_USD = "0.50"
 
@@ -54,7 +55,7 @@ class_name = "DeviceSpendLedger"
 
 [env.production]
 name = "example-stylist-backend-production"
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", PROVIDER_GENERATION = "off" }
 
 [[env.production.kv_namespaces]]
 binding = "USAGE_LEDGER"
@@ -75,7 +76,7 @@ class_name = "DeviceSpendLedger"
 
 [env.staging]
 name = "example-stylist-backend-staging"
-vars = { ENVIRONMENT = "staging" }
+vars = { ENVIRONMENT = "staging", PROVIDER_GENERATION = "off" }
 
 [[env.staging.kv_namespaces]]
 binding = "USAGE_LEDGER"
@@ -101,3 +102,9 @@ new_sqlite_classes = ["DeviceTokenRegistry"]
 [[migrations]]
 tag = "device-spend-ledger-v1"
 new_sqlite_classes = ["DeviceSpendLedger"]
+
+# Live-only private configuration (no defaults): PRIMARY_MODEL, DAILY_CAP_USD,
+# GLOBAL_DAILY_CAP_USD, EVALUATION_TOTAL_CAP_USD, PROVIDER_POLICY_VERIFIED_ON,
+# PROVIDER_KEY_LIMIT_VERIFIED and optional PROVIDER_GENERATION_DEVICES.
+# PROVIDER_CONTROL_SECRET is a separate secret for the runtime switch endpoint.
+# The application-spend-v1 object starts disabled, independent of the environment flag.

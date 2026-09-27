@@ -209,6 +209,12 @@ paths:
         '503': { $ref: '#/components/responses/UpstreamUnavailable' }
 
   /v1/outfit/generate:
+    parameters:
+      - name: X-Styling-Policy
+        in: header
+        required: false
+        description: Exact text-only styling policy accepted by this device. Missing or mismatched means deterministic only; never authorizes images.
+        schema: { type: string, maxLength: 64 }
     post:
       tags: [outfits]
       operationId: generateOutfit
@@ -317,6 +323,12 @@ paths:
         '503': { $ref: '#/components/responses/UpstreamUnavailable' }
 
   /v1/outfit/alternatives:
+    parameters:
+      - name: X-Styling-Policy
+        in: header
+        required: false
+        description: Exact text-only styling policy accepted by this device. Missing or mismatched means deterministic only; never authorizes images.
+        schema: { type: string, maxLength: 64 }
     post:
       tags: [outfits]
       operationId: rankAlternatives
@@ -929,6 +941,12 @@ components:
         outputTokens: { type: [integer, 'null'] }
         costUSD: { type: [number, 'null'], minimum: 0 }
         repairAttempts: { type: integer, minimum: 0, default: 0 }
+        fallbackReason:
+          type: string
+          description: |
+            Present only when an eligible Jev attempt fell back. Extensible values include
+            PROVIDER_ERROR, INVALID_OUTPUT and SPEND_CAP. Unknown values require a generic
+            fallback notice, never a decoding failure. Absent when no model was offered.
         fallbackLevel: { $ref: '#/components/schemas/FallbackLevel' }
         spendState:
           type: string
@@ -936,8 +954,7 @@ components:
           description: |
             Spend-cap posture for this attempt (distinct from `fallbackLevel`, which also
             covers repair and upstream failure). `OK` — under the soft threshold.
-            `SOFT_THRESHOLD` — soft threshold reached; secondary model used when a paid call
-            ran. `HARD_CAP_DETERMINISTIC` — hard cap reached; no paid call was made and the
+            `SOFT_THRESHOLD` — informational threshold reached; the same allowed model may run. `HARD_CAP_DETERMINISTIC` — hard cap reached; no paid call was made and the
             deterministic path answered (still HTTP 200 on generate / rationale / summarise).
 
     Relaxation:
@@ -1266,6 +1283,7 @@ components:
       additionalProperties: false
       required: [slot, alternatives]
       properties:
+        generation: { $ref: '#/components/schemas/GenerationMeta' }
         slot: { $ref: '#/components/schemas/Slot' }
         alternatives:
           type: array
@@ -1565,9 +1583,13 @@ components:
     ModelConfigResponse:
       type: object
       additionalProperties: false
-      required: [primary, promptVersion, dataPolicy]
+      required: [primary, promptVersion, policyVersion, dataPolicy]
       properties:
-        primary: { $ref: '#/components/schemas/ModelDescriptor' }
+        primary:
+          oneOf:
+            - { $ref: '#/components/schemas/ModelDescriptor' }
+            - { type: 'null' }
+        policyVersion: { type: [string, 'null'], minLength: 1, maxLength: 64 }
         secondary:
           oneOf:
             - { $ref: '#/components/schemas/ModelDescriptor' }

@@ -84,6 +84,9 @@ struct OutfitBoardView: View {
                             }
                         }
                     }
+                    if let notice = model.boardFallbackNotice {
+                        fallbackNotice(notice)
+                    }
                     if !outfit.rationaleSummary.isEmpty {
                         Text(outfit.rationaleSummary)
                             .font(.subheadline)
@@ -340,6 +343,30 @@ struct OutfitBoardView: View {
             boardKeepTipShown = true
             showKeepTipBanner = true
         }
+    }
+
+    /// #45 / #46 — inline, not dismissible or tappable; one combined VoiceOver element.
+    private func fallbackNotice(_ notice: FallbackNotice) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: AssetLibrary.Symbol.info)
+                .foregroundStyle(AssetLibrary.Palette.statusInfo)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(notice.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(notice.body)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AssetLibrary.Palette.surfaceBannerInfo, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(notice.accessibilityLabel)
+        .accessibilityIdentifier("board.fallbackNotice")
     }
 
     private func noAlternativeBanner(_ reason: String) -> some View {

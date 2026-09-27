@@ -133,14 +133,13 @@ describe('ledgerCore reserve / reconcile', () => {
     expect(state.days[DAY].spentMicro).toBe(MAX_ATTEMPT_USD * MICRO_USD);
   });
 
-  it('rejects reconcile at zero or negative zero USD without releasing the hold', () => {
+  it('releases a confirmed zero-cost hold; negative zero remains invalid', () => {
     const state = emptyLedgerState();
     reserveAttempt(state, 'z', 0.1, DAY, CONFIG);
-    const reservedBefore = state.days[DAY].reservedMicro;
-    expect(reconcileAttempt(state, DAY, 'z', 0)).toEqual({ ok: false, reason: 'invalid' });
     expect(reconcileAttempt(state, DAY, 'z', -0)).toEqual({ ok: false, reason: 'invalid' });
-    expect(state.days[DAY].reservedMicro).toBe(reservedBefore);
-    expect(state.days[DAY].attempts.z.state).toBe('reserved');
+    expect(reconcileAttempt(state, DAY, 'z', 0)).toEqual({ ok: true });
+    expect(summarizeDay(state, DAY, CONFIG).reservedUSD).toBe(0);
+    expect(summarizeDay(state, DAY, CONFIG).spentUSD).toBe(0);
   });
 
   it('rejects reconcile task override with unsafe task name', () => {

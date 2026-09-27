@@ -16,6 +16,7 @@ struct OutfitGenerationMetadata: Codable, Hashable, Sendable {
     var latencyMs: Int?
     var repairAttempts: Int?
     var costUSD: Double?
+    var lastSwap: SwapSelectionMetadata? = nil
 
     init(
         modelId: String? = nil,
@@ -67,4 +68,14 @@ enum OutfitGenerationEnvelope {
               header.schemaVersion == currentSchemaVersion else { return nil }
         return (try? JSONDecoder().decode(V1.self, from: data))?.generation
     }
+}
+
+/// Records the recommendation separately from the original outfit generation.
+struct SwapSelectionMetadata: Codable, Hashable, Sendable {
+    var modelId: String?
+    var promptVersion: String?
+    var fallbackLevel: String?
+    var fallbackReason: String?
+    var costUSD: Double?
+    var selectedSuggestedOption: Bool
 }

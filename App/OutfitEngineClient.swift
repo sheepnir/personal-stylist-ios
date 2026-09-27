@@ -236,6 +236,7 @@ enum OutfitEngineClient {
         var slot: String
         var alternatives: [AlternativeRow]
         var emptyReason: String?
+        var generation: EngineGeneration? = nil
     }
 
     struct ProblemBody: Decodable {
@@ -721,6 +722,7 @@ enum OutfitEngineClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         try applyAuth(to: &request)
+        request.setValue(StylingConsent.acceptedVersion(), forHTTPHeaderField: "X-Styling-Policy")
         request.timeoutInterval = 15
         request.httpBody = payload
 
@@ -856,6 +858,7 @@ enum OutfitEngineClient {
         var request = URLRequest(url: alternativesURL)
         request.httpMethod = "POST"
         try applyAuth(to: &request)
+        request.setValue(StylingConsent.acceptedVersion(), forHTTPHeaderField: "X-Styling-Policy")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
         request.httpBody = payload
@@ -896,7 +899,7 @@ enum OutfitEngineClient {
     ) -> (alts: [StubSwapAlternative], emptyReason: String?) {
         let byId = Dictionary(uniqueKeysWithValues: garments.map { ($0.id.uuidString.lowercased(), $0) })
         var out: [StubSwapAlternative] = []
-        for row in response.alternatives {
+        for (index, row) in response.alternatives.enumerated() {
             guard let g = byId[row.garmentId.lowercased()] else { continue }
             let partners = (row.setPartnerIds ?? []).compactMap { UUID(uuidString: $0) }
             out.append(
@@ -905,7 +908,12 @@ enum OutfitEngineClient {
                     garment: g,
                     reason: row.reason,
                     score: row.score,
-                    setPartnerIds: partners
+                    setPartnerIds: partners,
+                    selectionMetadata: response.generation.map { generation in
+                        SwapSelectionMetadata(modelId: generation.modelId, promptVersion: generation.promptVersion,
+                            fallbackLevel: generation.fallbackLevel, fallbackReason: generation.fallbackReason,
+                            costUSD: generation.costUSD, selectedSuggestedOption: index == 0)
+                    }
                 )
             )
         }
