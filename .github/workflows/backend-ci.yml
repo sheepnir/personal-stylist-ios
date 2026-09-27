@@ -5,6 +5,8 @@ on:
     paths:
       - 'backend/**'
       - 'fixtures/**'
+      - 'shared/**'
+      - 'scripts/check-styling-policy.py'
       - 'docs/openapi.yaml'
       - '.github/workflows/backend-ci.yml'
   push:
@@ -13,6 +15,8 @@ on:
     paths:
       - 'backend/**'
       - 'fixtures/**'
+      - 'shared/**'
+      - 'scripts/check-styling-policy.py'
       - 'docs/openapi.yaml'
       - '.github/workflows/backend-ci.yml'
   workflow_dispatch:
@@ -103,6 +107,13 @@ jobs:
       - name: Run tests
         working-directory: backend/workers
         run: npm test
+
+      - name: Styling policy and disabled configuration parity
+        run: python3 scripts/check-styling-policy.py
+
+      - name: Real Durable Object concurrency and restart tests
+        working-directory: backend/workers
+        run: npm run test:runtime
 
   openapi-lint:
     name: OpenAPI Lint

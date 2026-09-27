@@ -41,6 +41,15 @@ struct SwapSheetView: View {
 
     private var alternativesList: some View {
         List {
+            if let selection = model.swapAlternatives.first?.selectionMetadata {
+                Section {
+                    if selection.fallbackReason != nil {
+                        Text("Jev couldn’t choose a swap this time. These suggestions follow your wardrobe rules.")
+                    } else if selection.fallbackLevel == "NONE" {
+                        Text("Jev chose the first suggestion. You can choose any option below.")
+                    }
+                }
+            }
             Section {
                 currentPieceHeader
             }

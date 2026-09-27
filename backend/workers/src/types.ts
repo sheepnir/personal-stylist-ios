@@ -28,6 +28,15 @@ export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVI
    */
   DEVICE_TOKEN?: string;
   
+  PROVIDER_GENERATION?: string;
+  PRIMARY_MODEL?: string;
+  GLOBAL_DAILY_CAP_USD?: string;
+  EVALUATION_TOTAL_CAP_USD?: string;
+  PROVIDER_GENERATION_DEVICES?: string;
+  PROVIDER_POLICY_VERIFIED_ON?: string;
+  PROVIDER_KEY_LIMIT_VERIFIED?: string;
+  PROVIDER_CONTROL_SECRET?: string;
+
   /** Optional: environment name (staging/production). */
   ENVIRONMENT?: Cloudflare.Env["ENVIRONMENT"];
 

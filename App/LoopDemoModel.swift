@@ -57,6 +57,8 @@ final class LoopDemoModel: ObservableObject {
     /// Undo swap from toast (#109).
     @Published private(set) var toastUndoAvailable: Bool = false
     var swapUndoAssignmentsSnapshot: [StubOutfitAssignment]?
+    var swapUndoGenerationSnapshot: OutfitGenerationMetadata?
+    var swapUndoRationaleSnapshot: String?
     /// Swap sheet empty-state copy (inline, not global strip).
     @Published var swapSheetDetail: String?
 #if DEBUG
@@ -102,6 +104,10 @@ final class LoopDemoModel: ObservableObject {
     private var fixtureLastWornOn: [UUID: String] = [:]
     /// D-75 — one in-flight daily-wear persist at a time (rapid tap / retry).
     private var dailyWearWriteInFlight = false
+    /// #46 — VoiceOver announcement sink for the fallback notice; tests replace it.
+    var postAccessibilityAnnouncement: (String) -> Void = { message in
+        AccessibilityNotification.Announcement(message).post()
+    }
 
     init(
         store: PersistenceStore = InMemoryPersistenceStore.shared,
@@ -713,6 +719,7 @@ final class LoopDemoModel: ObservableObject {
                     outfit = built
                     outfitWearable = true
                     recordShown(built)
+                    announceFallbackNoticeIfPresent(for: built)
                 }
                 return true
             }
@@ -722,6 +729,7 @@ final class LoopDemoModel: ObservableObject {
             outfitWearable = true
             outfitSnapshotBeforeGenerate = nil
             recordShown(built)
+            announceFallbackNoticeIfPresent(for: built)
             if excludeShown {
                 boardUpdatedFlash = true
                 scheduleBoardUpdatedFlashDismiss()
@@ -911,6 +919,8 @@ final class LoopDemoModel: ObservableObject {
         clearWearFlash()
         guard var outfit, let slot = swapSlot else { return }
         let undoSnapshot = outfit.assignments
+        let undoGeneration = outfit.generation
+        let undoRationale = outfit.rationaleSummary
         if let idx = outfit.assignments.firstIndex(where: { $0.slot == slot }) {
             guard !outfit.assignments[idx].isLocked, !outfit.assignments[idx].isAnchor else {
                 recordDiagnostic("\(slot.displayLabel) is locked — unlock to swap")
@@ -932,9 +942,16 @@ final class LoopDemoModel: ObservableObject {
                 )
             }
         }
-        outfit.rationaleSummary = "Updated after swap."
+        if alt.selectionMetadata != nil {
+            if outfit.generation == nil { outfit.generation = OutfitGenerationMetadata() }
+        }
+        outfit.generation?.lastSwap = alt.selectionMetadata
+        outfit.rationaleSummary = alt.selectionMetadata?.fallbackLevel == "NONE" && alt.selectionMetadata?.selectedSuggestedOption == true
+            ? "Updated with Jev’s suggested swap." : "Updated after swap."
         self.outfit = outfit
         showSwapAppliedToast("Swapped to \(alt.garment.displayName)", undoSnapshot: undoSnapshot)
+        swapUndoGenerationSnapshot = undoGeneration
+        swapUndoRationaleSnapshot = undoRationale
         recordDiagnostic("Swapped \(slot.displayLabel) → \(alt.garment.displayName)")
     }
 

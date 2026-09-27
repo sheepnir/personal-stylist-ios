@@ -72,6 +72,10 @@ interface StoredAttempt {
   c: number;
   R?: number;
   O?: 1;
+  g?: string;
+  n?: number;
+  l?: number;
+  A?: 1;
 }
 
 /** Compact persisted day bucket JSON shape (under MAX_BUCKET_BYTES at 500 attempts). */
@@ -140,6 +144,10 @@ function validateStoredAttempt(id: string, raw: unknown): StoredAttempt | null {
   if (a.O !== undefined && a.O !== 1) {
     return null;
   }
+  if (a.g !== undefined && (typeof a.g !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(a.g))) return null;
+  if (a.n !== undefined && !isNonNegativeSafeInt(a.n)) return null;
+  if (a.l !== undefined && !isEpochMs(a.l)) return null;
+  if (a.A !== undefined && a.A !== 1) return null;
   return raw as StoredAttempt;
 }
 
@@ -208,6 +216,10 @@ function encodeAttempt(entry: AttemptEntry): StoredAttempt {
   if (entry.overReservation) {
     stored.O = 1;
   }
+  if (entry.generationId !== undefined) stored.g = entry.generationId;
+  if (entry.costLookupCount !== undefined) stored.n = entry.costLookupCount;
+  if (entry.lastCostLookupAt !== undefined) stored.l = Date.parse(entry.lastCostLookupAt);
+  if (entry.agedAtUpperBound) stored.A = 1;
   return stored;
 }
 
@@ -251,6 +263,10 @@ function decodeAttempt(id: string, stored: StoredAttempt): AttemptEntry {
   if (stored.O) {
     entry.overReservation = true;
   }
+  if (stored.g !== undefined) entry.generationId = stored.g;
+  if (stored.n !== undefined) entry.costLookupCount = stored.n;
+  if (stored.l !== undefined) entry.lastCostLookupAt = new Date(stored.l).toISOString();
+  if (stored.A) entry.agedAtUpperBound = true;
   return entry;
 }
 

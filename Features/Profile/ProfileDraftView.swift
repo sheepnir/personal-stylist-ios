@@ -173,6 +173,7 @@ struct ProfileDraftView: View {
             }
 
             // TestFlight / Release device-token seed (#89 / D-46). No default secrets.
+            StylingConsentSection()
             DeviceAccessSection(model: model)
         }
         .onChange(of: model.scrollToDeviceAccessRequested, initial: true) { _, requested in
