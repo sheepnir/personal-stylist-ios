@@ -779,9 +779,12 @@ struct WardrobeGridView: View {
 
     private func availabilityFilterChip(_ token: AvailabilityToken) -> some View {
         let selected = selectedAvailability.contains(token)
-        return Button {
+        return hostedFilterChip(
+            title: token.accessibilityName,
+            selected: selected
+        ) {
             toggle(token, in: &selectedAvailability)
-        } label: {
+        } content: {
             HStack(spacing: 4) {
                 Image(systemName: token.symbolName)
                     .foregroundStyle(token.color)
@@ -799,14 +802,27 @@ struct WardrobeGridView: View {
             .background(selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
             .foregroundStyle(.primary)
         }
-        .buttonStyle(.plain)
+    }
+
+    private func hostedFilterChip<Content: View>(
+        title: String,
+        selected: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        DailyWearA11yButton(
+            identifier: "wardrobe.chip.\(title)",
+            label: title,
+            isSelected: selected,
+            action: action
+        ) {
+            content()
+        }
         .frame(minHeight: 44)
-        .accessibilityLabel(token.accessibilityName)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        hostedFilterChip(title: title, selected: selected, action: action) {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.subheadline.weight(selected ? .medium : .regular))
@@ -822,10 +838,6 @@ struct WardrobeGridView: View {
             .background(selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
             .foregroundStyle(.primary)
         }
-        .buttonStyle(.plain)
-        .frame(minHeight: 44)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func toggle<T: Hashable>(_ value: T, in set: inout Set<T>) {
