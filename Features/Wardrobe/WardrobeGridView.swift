@@ -814,10 +814,12 @@ struct WardrobeGridView: View {
             identifier: "wardrobe.chip.\(title)",
             label: title,
             isSelected: selected,
+            fitsContentWidth: true,
             action: action
         ) {
             content()
         }
+        .fixedSize(horizontal: true, vertical: false)
         .frame(minHeight: 44)
     }
 
