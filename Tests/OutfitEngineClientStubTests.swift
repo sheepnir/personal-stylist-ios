@@ -212,7 +212,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let firstBuildOK = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(firstBuildOK)
         let prior = try XCTUnwrap(model.outfit)
         installRemoteEngineStub { request in
             if request.url?.path.hasSuffix("/v1/outfit/generate") == true {
@@ -220,7 +221,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertFalse(await model.tryAnotherOutfit())
+        let tryAnotherOK = await model.tryAnotherOutfit()
+        XCTAssertFalse(tryAnotherOK)
         XCTAssertTrue(model.deviceAccessRejected)
         XCTAssertEqual(model.outfit?.id, prior.id)
         XCTAssertEqual(model.generateFailureSubtitle, DressingCopy.deviceAccessRejectedWithOutfit)
@@ -241,7 +243,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let builtForAlternatives401 = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(builtForAlternatives401)
         installRemoteEngineStub { request in
             if request.url?.path.hasSuffix("/v1/outfit/alternatives") == true {
                 return .http(status: 401, body: Data())
@@ -267,7 +270,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertFalse(await model.buildDemoOutfit(intent: .firstBuild))
+        let authUnavailableBuild = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertFalse(authUnavailableBuild)
         XCTAssertFalse(model.deviceAccessRejected)
         XCTAssertEqual(model.generateFailureMessage, DressingCopy.generateServiceError)
     }
@@ -286,7 +290,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let builtForSwapTransport = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(builtForSwapTransport)
         installRemoteEngineStub { request in
             if request.url?.path.hasSuffix("/v1/outfit/alternatives") == true {
                 return .transportError(URLError(.notConnectedToInternet))
@@ -355,7 +360,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let builtAfterFlag = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(builtAfterFlag)
         XCTAssertFalse(model.deviceAccessRejected)
         model.markDeviceAccessRejected()
         await model.alternatives(for: .bottom)
@@ -376,7 +382,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let builtBeforeStaleAlt401 = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(builtBeforeStaleAlt401)
         model.markDeviceAccessRejected()
         RecordingURLProtocol.latencyNanoseconds = 300_000_000
         installRemoteEngineStub { request in
@@ -417,7 +424,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             XCTFail("unexpected request: \(request.url?.path ?? "")")
             return .http(status: 500, body: Data())
         }
-        XCTAssertFalse(await model.buildDemoOutfit(intent: .firstBuild))
+        let rejectedBuild = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertFalse(rejectedBuild)
         XCTAssertTrue(RecordingURLProtocol.recorded.isEmpty)
     }
 
@@ -432,7 +440,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertTrue(await model.buildDemoOutfit(intent: .firstBuild))
+        let builtBeforeAnchorChange = await model.buildDemoOutfit(intent: .firstBuild)
+        XCTAssertTrue(builtBeforeAnchorChange)
         let prior = try XCTUnwrap(model.outfit)
         let next = garments[1]
         installRemoteEngineStub { request in
@@ -441,7 +450,8 @@ final class OutfitEngineClientStubTests: XCTestCase {
             }
             return .http(status: 500, body: Data())
         }
-        XCTAssertFalse(await model.changeAnchor(to: next, priorOutfit: prior))
+        let anchorChangeOK = await model.changeAnchor(to: next, priorOutfit: prior)
+        XCTAssertFalse(anchorChangeOK)
         XCTAssertTrue(model.deviceAccessRejected)
         XCTAssertEqual(model.outfit?.id, prior.id)
         XCTAssertNotEqual(model.generateFailureMessage, "Couldn’t change starting item")
