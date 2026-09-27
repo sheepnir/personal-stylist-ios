@@ -307,15 +307,28 @@ struct OutfitBoardView: View {
     private func boardMiniAction(
         _ title: String,
         disabled: Bool = false,
+        hint: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(title, action: action)
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .frame(minHeight: 44)
-            .disabled(disabled)
-            .accessibilityLabel(title)
+        DailyWearA11yButton(
+            identifier: "board.action.\(title)",
+            label: title,
+            hint: hint,
+            isEnabled: !disabled,
+            action: action
+        ) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1)
+                )
+        }
     }
 
     private func keepTapped(slot: StubSlot, assignmentId: UUID) {
@@ -547,14 +560,11 @@ struct OutfitBoardView: View {
                 BoardTileActionRow {
                     boardMiniAction(
                         "Find \(a.slot.displayLabel.lowercased())",
-                        disabled: model.isOffline || model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
-                    .accessibilityLabel("Find \(a.slot.displayLabel.lowercased())")
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Gap · \(a.slot.displayLabel)")
@@ -576,32 +586,32 @@ struct OutfitBoardView: View {
             if a.isAnchor {
                 boardMiniAction(
                     "Change starting item",
-                    disabled: model.isOffline || model.outfitEngineActionsDisabled
-                ) { onChangeAnchor() }
-                .accessibilityHint(
-                    model.outfitEngineActionsDisabled
+                    disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                    hint: model.outfitEngineActionsDisabled
                         ? DressingCopy.deviceAccessRequiredHint
-                        : ""
-                )
+                        : nil
+                ) { onChangeAnchor() }
             } else if a.isLocked {
-                boardMiniAction("Unlock") {
+                boardMiniAction(
+                    "Unlock",
+                    hint: "Allows swapping this piece again"
+                ) {
                     model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id)
                 }
-                .accessibilityHint("Allows swapping this piece again")
             } else {
                 if !model.isOffline {
                     boardMiniAction(
                         "Swap",
-                        disabled: model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
-                boardMiniAction("Keep") { keepTapped(slot: a.slot, assignmentId: a.id) }
-                    .accessibilityHint("Kept pieces survive Try another")
+                boardMiniAction(
+                    "Keep",
+                    hint: "Kept pieces survive Try another"
+                ) { keepTapped(slot: a.slot, assignmentId: a.id) }
             }
         }
     }
@@ -672,22 +682,26 @@ struct OutfitBoardView: View {
                     .frame(width: 88)
                 BoardTileActionRow {
                     if a.isLocked {
-                        boardMiniAction("Unlock") {
+                        boardMiniAction(
+                            "Unlock",
+                            hint: "Allows swapping this piece again"
+                        ) {
                             model.setAssignmentLocked(slot: a.slot, locked: false, assignmentId: a.id)
                         }
                     } else {
                         if !model.isOffline {
                             boardMiniAction(
                                 "Swap",
-                                disabled: model.outfitEngineActionsDisabled
-                            ) { onSwap(a.slot) }
-                            .accessibilityHint(
-                                model.outfitEngineActionsDisabled
+                                disabled: model.outfitEngineActionsDisabled,
+                                hint: model.outfitEngineActionsDisabled
                                     ? DressingCopy.deviceAccessRequiredHint
-                                    : ""
-                            )
+                                    : nil
+                            ) { onSwap(a.slot) }
                         }
-                        boardMiniAction("Keep") { keepTapped(slot: a.slot, assignmentId: a.id) }
+                        boardMiniAction(
+                            "Keep",
+                            hint: "Kept pieces survive Try another"
+                        ) { keepTapped(slot: a.slot, assignmentId: a.id) }
                     }
                 }
                 .frame(width: 88)
@@ -704,13 +718,11 @@ struct OutfitBoardView: View {
                 BoardTileActionRow {
                     boardMiniAction(
                         "Find accessory",
-                        disabled: model.isOffline || model.outfitEngineActionsDisabled
-                    ) { onSwap(a.slot) }
-                    .accessibilityHint(
-                        model.outfitEngineActionsDisabled
+                        disabled: model.isOffline || model.outfitEngineActionsDisabled,
+                        hint: model.outfitEngineActionsDisabled
                             ? DressingCopy.deviceAccessRequiredHint
-                            : ""
-                    )
+                            : nil
+                    ) { onSwap(a.slot) }
                 }
                 .frame(width: 88)
             }
