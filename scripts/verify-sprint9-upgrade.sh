@@ -37,6 +37,8 @@ refuse_existing_install() {
 }
 
 build_app() { # <source dir> <derived dir> <build number>
+  # set -e is off inside $(...) on bash 3.2: start clean and fail explicitly.
+  rm -rf "$2"
   xcodebuild \
     -project "$1/PersonalStylist.xcodeproj" \
     -scheme PersonalStylist \
@@ -45,7 +47,7 @@ build_app() { # <source dir> <derived dir> <build number>
     -derivedDataPath "$2" \
     CURRENT_PROJECT_VERSION="$3" \
     CODE_SIGNING_ALLOWED=NO \
-    build > "$OUT/build-$3.log" 2>&1
+    build > "$OUT/build-$3.log" 2>&1 || return 1
   find "$2" -path '*Build/Products/Debug-iphonesimulator/PersonalStylist.app' -type d | head -1
 }
 
@@ -120,6 +122,12 @@ mkdir -p "$CONTAINER/Library/Application Support/ProfilePhoto"
 cp "$CONTAINER/Documents/GarmentPhotos/B1000001-0000-4000-8000-000000000001.jpg" \
    "$CONTAINER/Library/Application Support/ProfilePhoto/profile.jpg"
 snapshot "$CONTAINER" before
+# An empty "before" would make every later comparison pass trivially.
+if (( $(grep -c '^garment|' "$OUT/rows-before.txt") < 1 || $(grep -c '^wear|' "$OUT/rows-before.txt") < 1 \
+   || $(grep -c 'user-photo' "$OUT/rows-before.txt") < 1 || $(wc -l < "$OUT/photos-before.txt") < 2 )); then
+  echo "baseline store is not populated enough to prove anything" >&2
+  exit 1
+fi
 log "baseline populated: $(grep -c '^garment|' "$OUT/rows-before.txt") garments, $(grep -c '^wear|' "$OUT/rows-before.txt") wear events, $(wc -l < "$OUT/photos-before.txt" | tr -d ' ') photo files"
 
 NEXT_APP="$(build_app "$ROOT" "$WORK/derived-next" "$NEXT_BUILD")"

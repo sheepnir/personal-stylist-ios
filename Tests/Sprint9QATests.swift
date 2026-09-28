@@ -27,32 +27,45 @@ final class Sprint9QATests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    /// The body actually posted to the engine carries no gallery ids, photo paths or pixels.
-    func testEngineRequestBodyCarriesNoGalleryOrPhotoData() async throws {
-        var garment = garment(name: "Synthetic Boundary Shirt")
-        garment.imagePath = UserGarmentPhotoStore.userPhotoPath(for: garment.id)
-        let store = InMemoryPersistenceStore(garments: [garment], sets: [], defaults: defaults, wearingPhotoFiles: files)
+    /// Both bodies the client posts (generate and alternatives) carry no gallery ids, photo
+    /// paths or pixels.
+    func testEngineRequestBodiesCarryNoGalleryOrPhotoData() async throws {
+        var top = garment(name: "Synthetic Boundary Shirt")
+        top.imagePath = UserGarmentPhotoStore.userPhotoPath(for: top.id)
+        let wardrobe = [top, garment(name: "Synthetic Boundary Trousers", slot: .bottom),
+                        garment(name: "Synthetic Boundary Shoes", slot: .footwear)]
+        let store = InMemoryPersistenceStore(garments: wardrobe, sets: [], defaults: defaults, wearingPhotoFiles: files)
         let photo = try await store.addWearingPhoto(
             WearingPhotoAddRequest(
-                garmentId: garment.id,
+                garmentId: top.id,
                 displayJPEG: try Self.jpeg(),
                 sourceJPEG: try Self.jpeg(),
                 source: .camera
             )
         )
         let garments = await store.fetchGarments()
-        let body: [String: Any] = [
-            "wardrobe": OutfitEngineClient.wardrobeRows(from: garments),
-            "anchor": OutfitEngineClient.garmentSummary(from: garments[0]),
-        ]
-        let json = String(decoding: try OutfitEngineClient.encodeRequestBody(body), as: UTF8.self).lowercased()
-        XCTAssertTrue(json.contains(garment.id.uuidString.lowercased()), "sanity: the garment itself is sent")
-        for forbidden in [
-            "user-photo", "wearing", "/9j/", "imagepath",
-            photo.displayFileId.uuidString.lowercased(),
-            try XCTUnwrap(photo.sourceFileId).uuidString.lowercased(),
-        ] {
-            XCTAssertFalse(json.contains(forbidden), forbidden)
+        let generate = try OutfitEngineClient.makeRequestBody(garments: garments, sets: [], anchorId: top.id)
+        let outfit = StubOutfit(
+            id: UUID(),
+            assignments: garments.map {
+                StubOutfitAssignment(slot: $0.slot, garmentId: $0.id, gapReason: nil, isAnchor: $0.id == top.id)
+            },
+            rationaleSummary: "",
+            offlineCached: false
+        )
+        let alternatives = try OutfitEngineClient.makeAlternativesBody(
+            slot: .bottom, outfit: outfit, garments: garments, sets: []
+        )
+        let sourceFileId = try XCTUnwrap(photo.sourceFileId).uuidString.lowercased()
+        for (name, data) in [("generate", generate), ("alternatives", alternatives)] {
+            let json = String(decoding: data, as: UTF8.self).lowercased()
+            XCTAssertTrue(json.contains(top.id.uuidString.lowercased()), "\(name): sanity, the garment itself is sent")
+            for forbidden in [
+                "user-photo", "wearing", "/9j/", "imagepath",
+                photo.displayFileId.uuidString.lowercased(), sourceFileId,
+            ] {
+                XCTAssertFalse(json.contains(forbidden), "\(name): \(forbidden)")
+            }
         }
     }
 
@@ -100,6 +113,7 @@ final class Sprint9QATests: XCTestCase {
         window.makeKeyAndVisible()
         host.view.layoutIfNeeded()
         self.window = window
+        XCTAssertNotNil(host.view.window, "the calendar must actually be on screen for this check")
         try await Task.sleep(for: .milliseconds(500))
 
         let after = await store.fetchWearAggregates()

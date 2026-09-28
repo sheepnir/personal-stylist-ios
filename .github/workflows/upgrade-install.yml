@@ -15,6 +15,11 @@ on:
       - 'scripts/verify-sprint9-upgrade.sh'
       - '.github/workflows/upgrade-install.yml'
       - 'Persistence/SwiftData/**'
+      - 'Persistence/BaselineCleanStart.swift'
+      - 'App/BaselineUpgradeProbe.swift'
+      - 'App/PersonalStylistApp.swift'
+      - 'project.yml'
+      - 'Config/**'
 
 # Least privilege: jobs only read the repository.
 permissions:
