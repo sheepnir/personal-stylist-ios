@@ -6,6 +6,14 @@ struct ProfileDraftView: View {
     static let deviceAccessSectionID = "device-access-section"
 
     @ObservedObject var model: LoopDemoModel
+    /// Pushed editor: autosave on Back (D-45). As the Profile tab root (Sprint 9) this is
+    /// false — leaving the tab asks Save / Discard / Keep editing instead of saving silently.
+    var autosavesOnDisappear: Bool = true
+    /// Reports whether unsaved edits exist, for the tab shell's leave guard.
+    var onUnsavedChangesChange: (Bool) -> Void = { _ in }
+    /// Save or discard requested by the tab shell's leave guard.
+    var pendingCommand: ProfileEditorCommand? = nil
+    var onCommandHandled: (ProfileEditorCommand) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -206,9 +214,22 @@ struct ProfileDraftView: View {
         }
         .onChange(of: model.styleProfile?.id) { _, _ in hydrate() }
         .onDisappear {
-            if isDirty && !didConfirmThisVisit {
+            if autosavesOnDisappear && isDirty && !didConfirmThisVisit {
                 saveEdits(confirm: false)
             }
+        }
+        .onChange(of: isDirty, initial: true) { _, dirty in
+            onUnsavedChangesChange(dirty)
+        }
+        .onChange(of: pendingCommand) { _, command in
+            guard let command else { return }
+            switch command.action {
+            case .save:
+                saveEdits(confirm: false)
+            case .discard:
+                hydrate()
+            }
+            onCommandHandled(command)
         }
         .confirmationDialog(
             DataControlsCopy.resetProfileTitle,
@@ -331,6 +352,14 @@ struct ProfileDraftView: View {
             model.updateProfile(p)
         }
     }
+}
+
+/// Leave-guard decision from the tab shell. A fresh `id` per request so repeated
+/// choices are delivered even when the action is the same.
+struct ProfileEditorCommand: Equatable {
+    enum Action: Equatable { case save, discard }
+    let id = UUID()
+    let action: Action
 }
 
 private extension String {
