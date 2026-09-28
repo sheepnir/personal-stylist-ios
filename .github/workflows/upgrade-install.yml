@@ -89,7 +89,8 @@ jobs:
           status=0
           ./scripts/verify-sprint9-upgrade.sh || status=$?
           echo "---- evidence ----"
-          for f in "$WORK"/evidence/summary.txt "$WORK"/evidence/rows-diff-*.txt "$WORK"/evidence/photos-diff-*.txt; do
+          for f in "$WORK"/evidence/summary.txt "$WORK"/evidence/rows-diff-*.txt "$WORK"/evidence/photos-diff-*.txt \
+                   "$WORK"/evidence/settings-*.txt; do
             if [[ -s "$f" ]]; then echo "== $(basename "$f")"; cat "$f"; fi
           done
           echo "== rows-before (counts)"
