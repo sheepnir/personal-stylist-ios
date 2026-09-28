@@ -15,10 +15,14 @@ struct CropEditorView: View {
     @State private var aspect: CropGeometry.Aspect
     @State private var zoom: CGFloat = 1
     @State private var offset: CGSize = .zero
-    @State private var gestureZoom: CGFloat = 1
-    @State private var gestureTranslation: CGSize = .zero
+    /// Live gesture values reset automatically if the system cancels a gesture, so the
+    /// preview can never differ from what Save commits.
+    @GestureState private var gestureZoom: CGFloat = 1
+    @GestureState private var gestureTranslation: CGSize = .zero
     /// Frame size of the last layout; Save converts with the frame the user saw.
     @State private var lastFrame: CGSize = .zero
+    /// Untouched editors save nothing (callers keep the current framing).
+    @State private var hasInteracted = false
 
     init(
         image: CGImage,
@@ -48,8 +52,7 @@ struct CropEditorView: View {
                         ratio: aspect.ratio(for: imageSize),
                         fitting: CGSize(width: proxy.size.width - 32, height: proxy.size.height - 16)
                     )
-                    cropCanvas(frame: frame)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
+                    cropCanvas(frame: frame, container: proxy.size)
                         .onAppear { lastFrame = frame }
                         .onChange(of: frame) { _, newFrame in lastFrame = newFrame }
                 }
@@ -60,6 +63,7 @@ struct CropEditorView: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(CropEditorCopy.cancel, action: onCancel)
@@ -83,7 +87,7 @@ struct CropEditorView: View {
 
     // MARK: - Canvas
 
-    private func cropCanvas(frame: CGSize) -> some View {
+    private func cropCanvas(frame: CGSize, container: CGSize) -> some View {
         let liveZoom = CropGeometry.clampedZoom(zoom * gestureZoom)
         let liveOffset = CropGeometry.clampedOffset(
             CGSize(width: offset.width + gestureTranslation.width, height: offset.height + gestureTranslation.height),
@@ -114,37 +118,42 @@ struct CropEditorView: View {
                 .frame(width: frame.width, height: frame.height)
                 .allowsHitTesting(false)
         }
+        // Size to the canvas before clipping: a zoomed photo must not spill under controls
+        // or turn their surroundings into a drag area.
+        .frame(width: container.width, height: container.height)
         .clipped()
         .contentShape(Rectangle())
         .gesture(
             SimultaneousGesture(
                 DragGesture()
-                    .onChanged { gestureTranslation = $0.translation }
+                    .updating($gestureTranslation) { value, state, _ in state = value.translation }
+                    .onChanged { _ in hasInteracted = true }
                     .onEnded { value in
+                        let current = CropGeometry.clampedZoom(zoom * gestureZoom)
                         offset = CropGeometry.clampedOffset(
                             CGSize(width: offset.width + value.translation.width,
                                    height: offset.height + value.translation.height),
-                            imageSize: imageSize, frame: frame, zoom: zoom
+                            imageSize: imageSize, frame: frame, zoom: current
                         )
-                        gestureTranslation = .zero
                     },
                 MagnificationGesture()
-                    .onChanged { gestureZoom = $0 }
+                    .updating($gestureZoom) { value, state, _ in state = value }
+                    .onChanged { _ in hasInteracted = true }
                     .onEnded { value in
                         zoom = CropGeometry.clampedZoom(zoom * value)
-                        gestureZoom = 1
                         offset = CropGeometry.clampedOffset(offset, imageSize: imageSize, frame: frame, zoom: zoom)
                     }
             )
         )
-        .onChange(of: aspect) { _, _ in resetPosition() }
         .onChange(of: zoom) { _, newZoom in
             offset = CropGeometry.clampedOffset(offset, imageSize: imageSize, frame: frame, zoom: newZoom)
         }
         .accessibilityElement()
         .accessibilityLabel(CropEditorCopy.canvasLabel)
+        .accessibilityValue(CropEditorCopy.zoomValue(zoom))
         .accessibilityHint(CropEditorCopy.canvasHint)
         .accessibilityAdjustableAction { direction in
+            hasInteracted = true
             switch direction {
             case .increment: zoom = CropGeometry.clampedZoom(zoom + 0.25)
             case .decrement: zoom = CropGeometry.clampedZoom(zoom - 0.25)
@@ -165,41 +174,46 @@ struct CropEditorView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityLabel(CropEditorCopy.shape)
+                .onChange(of: aspect) { _, _ in
+                    hasInteracted = true
+                    offset = .zero
+                }
             }
             HStack(spacing: 12) {
                 Image(systemName: "minus.magnifyingglass")
                     .foregroundStyle(.white.opacity(0.8))
                     .accessibilityHidden(true)
-                Slider(value: $zoom, in: 1...CropGeometry.maxZoom)
-                    .accessibilityLabel(CropEditorCopy.zoom)
-                    .accessibilityValue(String(format: "%.1f×", Double(zoom)))
+                Slider(value: $zoom, in: 1...CropGeometry.maxZoom) { editing in
+                    if editing { hasInteracted = true }
+                }
+                .accessibilityLabel(CropEditorCopy.zoom)
+                .accessibilityValue(CropEditorCopy.zoomValue(zoom))
                 Image(systemName: "plus.magnifyingglass")
                     .foregroundStyle(.white.opacity(0.8))
                     .accessibilityHidden(true)
             }
-            Button(CropEditorCopy.reset) { resetPosition(); zoom = 1 }
-                .frame(minHeight: 44)
-                .foregroundStyle(.white)
-                .accessibilityIdentifier("crop.reset")
+            Button(CropEditorCopy.reset) {
+                hasInteracted = true
+                offset = .zero
+                zoom = 1
+            }
+            .frame(minHeight: 44)
+            .foregroundStyle(.white)
+            .accessibilityIdentifier("crop.reset")
         }
         .padding(.horizontal, 20)
         .disabled(isSaving)
         .environment(\.colorScheme, .dark)
     }
 
-    private func resetPosition() {
-        offset = .zero
-        gestureTranslation = .zero
-    }
-
     private func save() {
-        let frame = lastFrame
-        let rect = CropGeometry.pixelRect(imageSize: imageSize, frame: frame, zoom: zoom, offset: offset)
+        let rect = CropGeometry.pixelRect(imageSize: imageSize, frame: lastFrame, zoom: zoom, offset: offset)
         onSave(
             CropEditResult(
                 pixelRect: rect,
                 aspect: aspect,
-                isNoOp: CropGeometry.isFullImage(rect, imageSize: imageSize)
+                isFullImage: CropGeometry.isFullImage(rect, imageSize: imageSize),
+                isUntouched: !hasInteracted
             )
         )
     }

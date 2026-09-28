@@ -24,6 +24,10 @@ enum CropEditorCopy {
     static let lowStorageMessage = "Your iPhone is low on storage. Your previous photo is unchanged."
     static let loadFailedMessage = "Couldn’t open that photo for editing. Your photo is unchanged."
 
+    static func zoomValue(_ zoom: CGFloat) -> String {
+        String(format: "%.1f times", Double(zoom))
+    }
+
     static func label(for aspect: CropGeometry.Aspect) -> String {
         switch aspect {
         case .original: return "Original"

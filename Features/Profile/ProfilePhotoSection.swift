@@ -115,25 +115,31 @@ struct ProfilePhotoSection: View {
     private func save(_ result: CropEditResult, payload: CropEditorPayload) {
         guard !isSavingCrop else { return }
         let newSource = pendingNewSource
-        if result.isNoOp && newSource == nil {
-            // Editing the existing picture without changing it rewrites nothing.
+        if result.isUntouched && newSource == nil {
+            // Re-opening the current picture and saving unchanged rewrites nothing.
             crop = nil
             return
         }
         isSavingCrop = true
-        defer { isSavingCrop = false }
-        do {
-            guard let cropped = PhotoEditing.cropped(payload.image, to: result.pixelRect),
-                  let jpeg = PhotoEditing.jpegData(cropped, quality: 0.95) else {
-                throw ProfilePhotoStore.StoreError.invalidImage
+        let image = payload.image
+        let rect = result.pixelRect
+        let store = store
+        Task {
+            // Crop, encode and the durable write run off the main thread.
+            let saved = await Task.detached(priority: .userInitiated) { () -> Data? in
+                guard let cropped = PhotoEditing.cropped(image, to: rect),
+                      let jpeg = PhotoEditing.jpegData(cropped, quality: 0.95) else { return nil }
+                return try? store.replace(croppedDisplay: jpeg, newSource: newSource)
+            }.value
+            if let saved {
+                photo = UIImage(data: saved)
+                errorMessage = nil
+            } else {
+                errorMessage = "Couldn’t save that picture. Your existing picture is unchanged."
             }
-            let saved = try store.replace(croppedDisplay: jpeg, newSource: newSource)
-            photo = UIImage(data: saved)
-            errorMessage = nil
-        } catch {
-            errorMessage = "Couldn’t save that picture. Your existing picture is unchanged."
+            isSavingCrop = false
+            crop = nil
+            pendingNewSource = nil
         }
-        crop = nil
-        pendingNewSource = nil
     }
 }

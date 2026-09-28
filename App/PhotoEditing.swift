@@ -56,6 +56,9 @@ enum PhotoEditing {
 struct CropEditResult: Equatable {
     let pixelRect: CGRect
     let aspect: CropGeometry.Aspect
-    /// The whole image is kept: callers skip rewriting files and entities.
-    let isNoOp: Bool
+    /// The crop keeps the whole source image.
+    let isFullImage: Bool
+    /// Save was tapped without moving, zooming or changing shape: keep the current picture
+    /// and write nothing.
+    let isUntouched: Bool
 }

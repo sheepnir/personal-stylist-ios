@@ -54,7 +54,9 @@ final class PhotoCropTests: XCTestCase {
     }
 
     func testCropUsesNormalizedPixelSpaceAndBoundsOutput() throws {
-        let big = UIGraphicsImageRenderer(size: CGSize(width: 3200, height: 2400)).image { ctx in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let big = UIGraphicsImageRenderer(size: CGSize(width: 3200, height: 2400), format: format).image { ctx in
             UIColor.green.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: 3200, height: 2400))
         }
@@ -143,7 +145,10 @@ final class PhotoCropTests: XCTestCase {
             editSource: try XCTUnwrap(UserGarmentPhotoStore.editSourceData(forImagePath: firstPath))
         )
         let secondPath = try XCTUnwrap(second.imagePath)
+        addTeardownBlock { UserGarmentPhotoStore.removeFile(imagePath: secondPath) }
         XCTAssertEqual(UserGarmentPhotoStore.editSourceData(forImagePath: secondPath), source)
+        XCTAssertTrue(UserGarmentPhotoStore.hasSource(forImagePath: secondPath))
+        XCTAssertFalse(UserGarmentPhotoStore.hasSource(forImagePath: originalPath))
         XCTAssertNil(UserGarmentPhotoStore.resolvedFileURL(firstPath))
         let firstId = try XCTUnwrap(UUID(uuidString: String(firstPath.dropFirst(UserGarmentPhotoStore.pathPrefix.count))))
         XCTAssertFalse(FileManager.default.fileExists(atPath: try UserGarmentPhotoStore.sourceFileURL(forPhotoId: firstId).path),
@@ -244,12 +249,15 @@ final class PhotoCropTests: XCTestCase {
 
     private static func pixel(_ image: CGImage, x: Int, y: Int) -> (red: Int, blue: Int)? {
         var bytes = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(
-            data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
-        return (Int(bytes[0]), Int(bytes[2]))
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+            return true
+        }
+        return drawn ? (Int(bytes[0]), Int(bytes[2])) : nil
     }
 }

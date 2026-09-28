@@ -258,21 +258,26 @@ struct ReviewCardView: View {
 
     @MainActor
     private func saveGarmentCrop(_ result: CropEditResult, payload: CropEditorPayload) async {
-        guard let id = liveGarment?.id, let source = garmentCropSource, !isSavingGarmentCrop else { return }
-        if result.isNoOp {
-            // Nothing changed: no file or entity is rewritten.
+        guard let g = liveGarment, let source = garmentCropSource, !isSavingGarmentCrop else { return }
+        // Untouched, or back to the full picture that is already shown: nothing to write.
+        if result.isUntouched || (result.isFullImage && !UserGarmentPhotoStore.hasSource(forImagePath: g.imagePath)) {
             garmentCrop = nil
-            return
-        }
-        guard let cropped = PhotoEditing.cropped(payload.image, to: result.pixelRect),
-              let jpeg = PhotoEditing.jpegData(cropped, quality: 0.95) else {
-            garmentCropError = CropEditorCopy.saveFailedMessage
             return
         }
         isSavingGarmentCrop = true
         defer { isSavingGarmentCrop = false }
+        let image = payload.image
+        let rect = result.pixelRect
+        let jpeg = await Task.detached(priority: .userInitiated) { () -> Data? in
+            guard let cropped = PhotoEditing.cropped(image, to: rect) else { return nil }
+            return PhotoEditing.jpegData(cropped, quality: 0.95)
+        }.value
+        guard let jpeg else {
+            garmentCropError = CropEditorCopy.saveFailedMessage
+            return
+        }
         do {
-            try await model.cropGarmentPhoto(garmentId: id, croppedJPEG: jpeg, editSource: source)
+            try await model.cropGarmentPhoto(garmentId: g.id, croppedJPEG: jpeg, editSource: source)
             garmentCrop = nil
             garmentCropSource = nil
         } catch PhotoReplacePersistError.lowStorage {

@@ -192,8 +192,7 @@ enum UserGarmentPhotoStore {
 
     /// Pixels to re-edit for `imagePath`: the retained source, else the displayed file.
     static func editSourceData(forImagePath imagePath: String?) -> Data? {
-        if let imagePath, let id = photoID(from: imagePath),
-           let url = try? sourceFileURL(forPhotoId: id),
+        if let url = existingSourceURL(forImagePath: imagePath),
            let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
             return data
         }
@@ -214,8 +213,26 @@ enum UserGarmentPhotoStore {
     }
 
     static func removeSource(forPhotoId id: UUID) {
-        guard let url = try? sourceFileURL(forPhotoId: id) else { return }
+        guard let url = existingSourceURL(forPhotoId: id) else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Whether a crop source is retained behind `imagePath` (it was cropped in the app).
+    static func hasSource(forImagePath imagePath: String?) -> Bool {
+        existingSourceURL(forImagePath: imagePath) != nil
+    }
+
+    /// Looks up without creating `Sources/` as a side effect.
+    private static func existingSourceURL(forImagePath imagePath: String?) -> URL? {
+        guard let imagePath, let id = photoID(from: imagePath) else { return nil }
+        return existingSourceURL(forPhotoId: id)
+    }
+
+    private static func existingSourceURL(forPhotoId id: UUID) -> URL? {
+        guard let dir = try? directoryURL() else { return nil }
+        let url = dir.appendingPathComponent(sourcesDirectoryName, isDirectory: true)
+            .appendingPathComponent("\(id.uuidString).jpg")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// Launch cleanup: sources whose displayed photo no garment references any more.
@@ -227,7 +244,8 @@ enum UserGarmentPhotoStore {
         now: Date = Date()
     ) -> [UUID] {
         let referencedIds = Set(referencedImagePaths.compactMap(photoID(from:)))
-        guard !referencedImagePaths.isEmpty, let dir = try? sourcesDirectoryURL() else { return [] }
+        // No user photo referenced at all (e.g. rows lost and fixtures re-seeded): never sweep.
+        guard !referencedIds.isEmpty, let dir = try? sourcesDirectoryURL() else { return [] }
         let urls = (try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey],

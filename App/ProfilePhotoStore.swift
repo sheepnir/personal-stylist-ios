@@ -36,7 +36,9 @@ struct ProfilePhotoStore {
               let jpeg = UserGarmentPhotoStore.downscaledJPEGData(source, maxPixel: Self.displayMaxPixel) else {
             throw StoreError.invalidImage
         }
-        let kept = UserGarmentPhotoStore.downscaledJPEGData(source, maxPixel: PhotoEditing.sourceMaxPixel)
+        guard let kept = UserGarmentPhotoStore.downscaledJPEGData(source, maxPixel: PhotoEditing.sourceMaxPixel) else {
+            throw StoreError.invalidImage
+        }
         return try commit(display: jpeg, newSource: kept)
     }
 
@@ -91,6 +93,12 @@ struct ProfilePhotoStore {
         }
         defer { if let stagedSource { try? fm.removeItem(at: stagedSource) } }
 
+        // A new picture's source replaces the old one. Drop the old source first: if the app
+        // stops between the renames, re-editing falls back to the displayed picture instead
+        // of silently reverting to the previous photo.
+        if newSource != nil {
+            try? fm.removeItem(at: sourceURL)
+        }
         // Same-directory rename is atomic, including replacement of an existing file.
         guard rename(stagedDisplay.path, photoURL.path) == 0 else { throw StoreError.writeFailed }
         if let stagedSource, rename(stagedSource.path, sourceURL.path) != 0 {

@@ -28,8 +28,8 @@ extension LoopDemoModel {
             recordDiagnostic("Garment photo cropped")
             return garment
         } catch {
+            // Abandon removes the staged file and its source unless a garment references it.
             try? await store.abandonPhotoReplace(stagingId: stagingId)
-            UserGarmentPhotoStore.removeSource(forPhotoId: stagingId)
             throw PhotoReplacePersistError.map(error)
         }
     }
