@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { boundedLedger, selectPaid, GLOBAL_LEDGER_NAME } from '../src/paidSelection.js';
-import { JEV_MODEL, POLICY_VERSION, requestBody, validateDecision, costBound, fetchPrice, type Candidate } from '../src/jev.js';
+import { DecisionValidationError, JEV_MODEL, POLICY_VERSION, requestBody, validateDecision, costBound, fetchPrice, type Candidate } from '../src/jev.js';
 import type { Env } from '../src/types.js';
 import { emptyLedger } from './helpers.js';
 
@@ -96,4 +96,42 @@ it('bounds an unresponsive ledger without claiming cancellation', async () => {
 it('reports the soft threshold without blocking a valid model choice', async () => {
   const s = setup(); s.device.summary.mockResolvedValue({softThresholdReached: true});
   expect((await s.run()).provenance?.spendState).toBe('SOFT_THRESHOLD');
+});
+
+
+describe('private decision rejection diagnostics', () => {
+  it.each([
+    ['MODEL_MISMATCH', (a: any) => { a.model = 'PRIVATE MODEL'; }],
+    ['ANSWER_SHAPE', (a: any) => { a.answers.private = 'PRIVATE ANSWER'; }],
+    ['UNKNOWN_CHOICE', (a: any) => { a.answers.outfit.choice = 'PRIVATE CHOICE'; }],
+    ['INVALID_CONFIDENCE', (a: any) => { a.answers.outfit.confidence = -1; }],
+    ['LOW_CONFIDENCE', (a: any) => { a.answers.outfit.confidence = 0.25; }],
+    ['INVALID_PROBABILITIES', (a: any) => { a.answers.outfit.probabilities = {a: 0.1}; }],
+    ['INVALID_USAGE', (a: any) => { a.usage.input_tokens = 'PRIVATE USAGE'; }],
+  ] as const)('reports only %s while preserving fallback and accounting', async (reason, mutate) => {
+    const s = setup(); const raw = answer(); mutate(raw);
+    const original = s.fetcher.getMockImplementation()!;
+    s.fetcher.mockImplementation(async u => {
+      if (String(u).endsWith('/endpoints')) return original(u);
+      s.calls.push('provider');
+      return Response.json(raw);
+    });
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const result = await s.run();
+      expect(result.result).toBe('deterministic');
+      expect(result.provenance?.fallbackReason).toBe('INVALID_OUTPUT');
+      expect(s.calls).toEqual(['device','global','provider']);
+      expect(s.device.reconcile).toHaveBeenCalled();
+      expect(s.global.reconcile).toHaveBeenCalled();
+      const entry = JSON.parse(log.mock.calls.at(-1)![0]);
+      expect(entry).toEqual({modelId: JEV_MODEL, promptVersion: 'outfit-choice-v1', outcome:'INVALID_OUTPUT', validationReason:reason, latencyMs:expect.any(Number)});
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/PRIVATE|gen-synthetic|secret-id|probabilities|confidence/);
+      try { validateDecision(raw, candidates); throw Error('must reject'); }
+      catch (error) {
+        expect(error).toBeInstanceOf(DecisionValidationError);
+        expect((error as Error).message).toBe('INVALID_OUTPUT');
+      }
+    } finally { log.mockRestore(); }
+  });
 });
