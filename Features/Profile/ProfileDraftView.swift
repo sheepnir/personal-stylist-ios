@@ -50,6 +50,7 @@ struct ProfileDraftView: View {
     @State private var showResetConfirm = false
     @State private var showClearConfirm = false
     @State private var isDataControlBusy = false
+    @State private var isVisible = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -191,16 +192,17 @@ struct ProfileDraftView: View {
             DeviceAccessSection(model: model)
         }
         .onChange(of: model.scrollToDeviceAccessRequested, initial: true) { _, requested in
-            guard requested else { return }
-            if accessibilityReduceMotion {
-                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-            } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-                }
-            }
-            model.scrollToDeviceAccessRequested = false
+            // A kept-alive tab may be offscreen: leave the request for the next appearance.
+            guard requested, isVisible else { return }
+            scrollToDeviceAccess(proxy)
         }
+        .onAppear {
+            isVisible = true
+            if model.scrollToDeviceAccessRequested {
+                scrollToDeviceAccess(proxy)
+            }
+        }
+        .onDisappear { isVisible = false }
         }
         .navigationTitle("Style profile")
         .navigationBarTitleDisplayMode(.inline)
@@ -209,7 +211,11 @@ struct ProfileDraftView: View {
                 if model.styleProfile == nil {
                     await model.ensureEditableStyleProfile()
                 }
-                hydrate()
+                // As a tab root the editor can reappear with unsaved edits (Sprint 9):
+                // reload only when there is nothing unsaved to lose.
+                if savedFields == nil || !isDirty {
+                    hydrate()
+                }
             }
         }
         .onChange(of: model.styleProfile?.id) { _, _ in hydrate() }
@@ -272,6 +278,17 @@ struct ProfileDraftView: View {
         isDataControlBusy = true
         defer { isDataControlBusy = false }
         await model.clearWardrobeAndLooks()
+    }
+
+    private func scrollToDeviceAccess(_ proxy: ScrollViewProxy) {
+        if accessibilityReduceMotion {
+            proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+            }
+        }
+        model.scrollToDeviceAccessRequested = false
     }
 
     private func chipWrap(_ options: [String], selected: Binding<Set<String>>) -> some View {

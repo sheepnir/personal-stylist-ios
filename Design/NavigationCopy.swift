@@ -15,4 +15,5 @@ enum OutfitTabCopy {
     static let chooseStartingItem = "Choose a starting piece"
     static let chooseStartingItemHint = "Opens your wardrobe. Nothing is generated until you choose to build."
     static let openLoggedToday = "See what you wore today"
+    static let stillBuilding = "Still building your outfit"
 }

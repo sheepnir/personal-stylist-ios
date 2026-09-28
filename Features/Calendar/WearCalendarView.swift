@@ -21,8 +21,13 @@ struct WearCalendarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 monthHeader
-                weekdayHeader
-                dayGrid
+                // Seven columns must fit a small phone; very large sizes scale within the cell,
+                // and the selected day's details below keep full Dynamic Type.
+                Group {
+                    weekdayHeader
+                    dayGrid
+                }
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 Divider()
                 dayDetail
             }
@@ -108,6 +113,8 @@ struct WearCalendarView: View {
                 Text("\(day.day)")
                     .font(.body.monospacedDigit())
                     .fontWeight(isToday ? .bold : .regular)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .foregroundStyle(isSelected ? Color.white : Color.primary)
                 Circle()
                     .fill(hasRecord ? (isSelected ? Color.white : Color.accentColor) : Color.clear)

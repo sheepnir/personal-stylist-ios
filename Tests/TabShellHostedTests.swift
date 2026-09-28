@@ -20,26 +20,15 @@ final class TabShellHostedTests: XCTestCase {
     // MARK: - Outfit tab
 
     func testOutfitBoardUnderTabShellDoesNotGenerateOnAppear() async throws {
-        let (model, _) = try await makeModel(confirmedProfile: true)
+        let (model, _) = try await makeModel(confirmedProfile: true, withReadyGarment: true)
         XCTAssertNil(model.outfit)
+        XCTAssertNotNil(model.selectedGarment, "a buildable starting item exists, so only the flag prevents a build")
         let host = UIHostingController(rootView: NavigationStack {
             OutfitBoardView(model: model, onSwap: { _ in }, onWear: {}, autoBuildsOnAppear: false)
         })
         show(host)
         try await Task.sleep(for: .milliseconds(600))
         XCTAssertNil(model.outfit, "opening the Outfit tab must not build an outfit")
-        XCTAssertFalse(model.isGenerating)
-        XCTAssertNil(model.generateIntent)
-    }
-
-    func testEmptyOutfitTabRendersWithoutGenerating() async throws {
-        let (model, _) = try await makeModel(confirmedProfile: true)
-        let host = UIHostingController(rootView: NavigationStack {
-            OutfitEmptyStateView(hasLoggedToday: false, onChooseStartingItem: {}, onOpenLoggedToday: {})
-        })
-        show(host)
-        try await Task.sleep(for: .milliseconds(400))
-        XCTAssertNil(model.outfit)
         XCTAssertFalse(model.isGenerating)
         XCTAssertNil(model.generateIntent)
     }
@@ -129,11 +118,22 @@ final class TabShellHostedTests: XCTestCase {
         }
     }
 
-    private func makeModel(confirmedProfile: Bool) async throws -> (LoopDemoModel, InMemoryPersistenceStore) {
+    private func makeModel(
+        confirmedProfile: Bool,
+        withReadyGarment: Bool = false
+    ) async throws -> (LoopDemoModel, InMemoryPersistenceStore) {
         let suite = "TabShellHostedTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        let store = InMemoryPersistenceStore(garments: [], sets: [], defaults: defaults)
+        let garments = withReadyGarment ? [
+            StubGarment(
+                id: UUID(), displayName: "Synthetic Tab Shirt", slot: .top, readiness: .ready,
+                availability: "AVAILABLE", colorPrimary: StubColorPrimary(family: "navy", hex: "#1B2A4A", name: "Navy"),
+                pattern: "SOLID", surface: "SMOOTH", imagePath: nil, formality: 2, warmth: 2,
+                setId: nil, keepTogether: nil, lastWornOn: nil, daysSinceIntake: 0
+            ),
+        ] : []
+        let store = InMemoryPersistenceStore(garments: garments, sets: [], defaults: defaults)
         try await store.saveStyleProfile(
             StubStyleProfile(
                 id: UUID(), age: 34, profession: "Synthetic architect",

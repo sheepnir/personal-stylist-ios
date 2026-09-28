@@ -1,15 +1,7 @@
 import SwiftUI
 
-/// Sprint 9 (#124, ADR-0004) — bottom tabs: Wardrobe, Outfit, Calendar, Profile.
-/// One shared `LoopDemoModel` (one current outfit); one navigation stack per tab.
-enum AppTab: Hashable {
-    case wardrobe
-    case outfit
-    case calendar
-    case profile
-}
-
 /// Core-loop shell: Wardrobe → Detail, Outfit → Swap → Wear, Calendar, Profile.
+/// One shared `LoopDemoModel` (one current outfit); one navigation stack per tab (#124).
 struct ContentView: View {
     @StateObject private var model: LoopDemoModel
 
@@ -31,7 +23,11 @@ struct ContentView: View {
     @State private var pendingProfileForDeviceAccess = false
     /// Profile tab leave guard: unsaved edits are never saved or discarded silently.
     @State private var profileHasUnsavedChanges = false
+    /// Drives the Save / Discard / Keep editing dialog (cleared when it closes).
     @State private var tabAwaitingProfileDecision: AppTab?
+    /// Where to go once Save or Discard has been applied. Kept apart from the dialog
+    /// binding, which SwiftUI clears as the dialog closes.
+    @State private var pendingProfileDestination: AppTab?
     @State private var profileCommand: ProfileEditorCommand?
 
     private enum WardrobeRoute: Hashable {
@@ -52,19 +48,15 @@ struct ContentView: View {
             wardrobeTab
                 .tabItem { Label("Wardrobe", systemImage: "tshirt") }
                 .tag(AppTab.wardrobe)
-                .accessibilityIdentifier("tab.wardrobe")
             outfitTab
                 .tabItem { Label("Outfit", systemImage: "square.stack.3d.up") }
                 .tag(AppTab.outfit)
-                .accessibilityIdentifier("tab.outfit")
             calendarTab
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(AppTab.calendar)
-                .accessibilityIdentifier("tab.calendar")
             profileTab
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
-                .accessibilityIdentifier("tab.profile")
         }
         .task {
             await model.load()
@@ -110,6 +102,7 @@ struct ContentView: View {
             }
             Button(ProfileLeaveCopy.keepEditing, role: .cancel) {
                 tabAwaitingProfileDecision = nil
+                pendingProfileDestination = nil
             }
         } message: {
             Text(ProfileLeaveCopy.message)
@@ -267,10 +260,10 @@ struct ContentView: View {
                 onCommandHandled: { _ in
                     profileCommand = nil
                     profileHasUnsavedChanges = false
-                    if let next = tabAwaitingProfileDecision {
-                        tabAwaitingProfileDecision = nil
-                        selectedTab = next
-                    }
+                    tabAwaitingProfileDecision = nil
+                    let next = pendingProfileDestination
+                    pendingProfileDestination = nil
+                    if let next { requestTab(next) }
                 }
             )
         }
@@ -287,17 +280,22 @@ struct ContentView: View {
 
     /// Every tab change goes through here so Profile edits are never saved or dropped silently.
     private func requestTab(_ tab: AppTab) {
-        guard tab != selectedTab else { return }
-        if selectedTab == .profile && profileHasUnsavedChanges {
-            tabAwaitingProfileDecision = tab
-            return
-        }
-        if tab == .outfit && changingAnchor {
-            // Leaving the starting-item picker by opening Outfit is "Return to outfit".
+        switch TabNavigation.decide(
+            from: selectedTab,
+            to: tab,
+            profileHasUnsavedChanges: profileHasUnsavedChanges,
+            isPickingStartingItem: changingAnchor
+        ) {
+        case .none:
+            break
+        case .askToSaveProfile(let next):
+            pendingProfileDestination = next
+            tabAwaitingProfileDecision = next
+        case .returnToOutfit:
             cancelAnchorPick()
-            return
+        case .select(let next):
+            selectedTab = next
         }
-        selectedTab = tab
     }
 
     private func openDeviceAccess() {
@@ -327,6 +325,8 @@ struct ContentView: View {
     }
 
     private func cancelAnchorPick() {
+        // A starting-item build still in flight must not replace the restored outfit.
+        model.cancelGeneration()
         if let snap = outfitBeforeAnchorPick {
             model.outfit = snap
         }
@@ -346,6 +346,7 @@ struct ContentView: View {
 
     private func openLoggedToday() {
         guard model.hasLoggedToday else { return }
+        if changingAnchor { cancelAnchorPick() }
         outfitPath = NavigationPath()
         outfitPath.append(OutfitRoute.wearSuccess)
         requestTab(.outfit)
@@ -354,8 +355,18 @@ struct ContentView: View {
     @MainActor
     private func buildFromWardrobe(_ g: StubGarment) async {
         if model.deviceAccessRejected { return }
+        // One build at a time: a second result could land on the wrong starting item.
+        guard !model.isGenerating else {
+            model.showToast(OutfitTabCopy.stillBuilding)
+            return
+        }
         if changingAnchor {
             let ok = await model.changeAnchor(to: g, priorOutfit: outfitBeforeAnchorPick)
+            guard changingAnchor else {
+                // The picker was left (Cancel / Outfit tab) while building: that restore wins.
+                if !ok { model.generateFailureMessage = nil }
+                return
+            }
             if ok {
                 changingAnchor = false
                 outfitBeforeAnchorPick = nil
