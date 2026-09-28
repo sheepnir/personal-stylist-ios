@@ -946,8 +946,7 @@ final class LoopDemoModel: ObservableObject {
             if outfit.generation == nil { outfit.generation = OutfitGenerationMetadata() }
         }
         outfit.generation?.lastSwap = alt.selectionMetadata
-        outfit.rationaleSummary = alt.selectionMetadata?.fallbackLevel == "NONE" && alt.selectionMetadata?.selectedSuggestedOption == true
-            ? "Updated with Jev’s suggested swap." : "Updated after swap."
+        outfit.rationaleSummary = StylingModel.swapSummary(alt.selectionMetadata)
         self.outfit = outfit
         showSwapAppliedToast("Swapped to \(alt.garment.displayName)", undoSnapshot: undoSnapshot)
         swapUndoGenerationSnapshot = undoGeneration

@@ -14,3 +14,7 @@ config = tomllib.loads((root / 'backend/workers/wrangler.toml').read_text())
 for block in [config, *config.get('env', {}).values()]:
     assert block.get('vars', {}).get('PROVIDER_GENERATION') == 'off'
 print('Committed provider flags are off')
+
+luna = json.loads((root / "shared/privacy-policy-version.json").read_text())["lunaPolicyVersion"]
+assert f'static let lunaPolicyVersion = "{luna}"' in (root / "App/StylingModel.swift").read_text()
+assert "policy.lunaPolicyVersion" in (root / "backend/workers/src/luna.ts").read_text()

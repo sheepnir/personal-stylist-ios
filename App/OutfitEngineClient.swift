@@ -722,7 +722,7 @@ enum OutfitEngineClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         try applyAuth(to: &request)
-        request.setValue(StylingConsent.acceptedVersion(), forHTTPHeaderField: "X-Styling-Policy")
+        StylingModel.applyHeaders(to: &request)
         request.timeoutInterval = 15
         request.httpBody = payload
 
@@ -858,7 +858,7 @@ enum OutfitEngineClient {
         var request = URLRequest(url: alternativesURL)
         request.httpMethod = "POST"
         try applyAuth(to: &request)
-        request.setValue(StylingConsent.acceptedVersion(), forHTTPHeaderField: "X-Styling-Policy")
+        StylingModel.applyHeaders(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
         request.httpBody = payload
