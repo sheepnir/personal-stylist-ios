@@ -188,10 +188,13 @@ final class PhotoCropTests: XCTestCase {
             try FileManager.default.setAttributes([.modificationDate: old],
                                                   ofItemAtPath: try UserGarmentPhotoStore.sourceFileURL(forPhotoId: id).path)
         }
-        XCTAssertTrue(UserGarmentPhotoStore.sweepOrphanSources(referencedImagePaths: []).isEmpty,
+        // Scoped to this test's files: the test host shares the app container.
+        let mine: Set<UUID> = [kept, orphan, fresh]
+        XCTAssertTrue(UserGarmentPhotoStore.sweepOrphanSources(referencedImagePaths: [], onlyAmong: mine).isEmpty,
                       "no references: never delete")
         let removed = UserGarmentPhotoStore.sweepOrphanSources(
-            referencedImagePaths: [UserGarmentPhotoStore.userPhotoPath(for: kept), "fixtures/sample.svg"]
+            referencedImagePaths: [UserGarmentPhotoStore.userPhotoPath(for: kept), "fixtures/sample.svg"],
+            onlyAmong: mine
         )
         XCTAssertTrue(removed.contains(orphan))
         XCTAssertFalse(removed.contains(kept))

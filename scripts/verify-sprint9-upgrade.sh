@@ -3,7 +3,8 @@
 #
 # Builds the accepted baseline from BASELINE_REF in a separate worktree, installs it on a
 # dedicated Simulator, lets it seed the synthetic fixture wardrobe and write the debug probe
-# data (garment with a user photo, price, profile, wear event), adds a synthetic profile
+# data (garment with a user photo, price, profile, wear event; the baseline's clean start
+# does not seed the fixture wardrobe), adds a synthetic profile
 # picture, then builds the current checkout and installs it OVER the baseline without
 # uninstalling. It compares store rows (ids, names, photo references, prices, currency,
 # sets, wear events, memberships, profile versions) and photo file hashes before and after,
@@ -84,6 +85,13 @@ SQL
       | sort -z | xargs -0 shasum -a 256 ) > "$OUT/photos-$label.txt" || true
   /usr/libexec/PlistBuddy -c "Print :${FROZEN_KEY}" "$container/Library/Preferences/${BUNDLE}.plist" \
     > "$OUT/clean-start-$label.txt" 2>/dev/null || echo "missing" > "$OUT/clean-start-$label.txt"
+  # Model choice and consent (absent in a fresh synthetic install; must not change either way).
+  local key
+  : > "$OUT/settings-$label.txt"
+  for key in styling.selectedModel styling.acceptedPolicyVersion styling.lunaAcceptedPolicyVersion "$FROZEN_KEY"; do
+    printf '%s=%s\n' "$key" "$(/usr/libexec/PlistBuddy -c "Print :${key}" "$container/Library/Preferences/${BUNDLE}.plist" 2>/dev/null || echo '<absent>')" \
+      >> "$OUT/settings-$label.txt"
+  done
 }
 
 refuse_existing_install
@@ -113,12 +121,15 @@ log "baseline populated: $(grep -c '^garment|' "$OUT/rows-before.txt") garments,
 NEXT_APP="$(build_app "$ROOT" "$WORK/derived-next" "$NEXT_BUILD")"
 [[ -d "$NEXT_APP" ]] || { echo "next build failed; see $OUT/build-$NEXT_BUILD.log" >&2; exit 1; }
 xcrun simctl install "$SIM_ID" "$NEXT_APP"   # in place: no uninstall, same bundle id
-xcrun simctl launch "$SIM_ID" "$BUNDLE" -BaselineUpgradeVerify >/dev/null
 CONTAINER="$(xcrun simctl get_app_container "$SIM_ID" "$BUNDLE" data)"
-VERIFY="$(wait_for_result "$CONTAINER" '^(ok |[a-z-]+)')"
+# The baseline left "wrote" in the result file; clear it so only the new verify is read.
+rm -f "$CONTAINER/Documents/baseline-upgrade-result.txt"
+xcrun simctl launch "$SIM_ID" "$BUNDLE" -BaselineUpgradeVerify >/dev/null
+VERIFY="$(wait_for_result "$CONTAINER" '^(ok [0-9]+|[a-z-]+(,[a-z-]+)*)$')"
 xcrun simctl terminate "$SIM_ID" "$BUNDLE" >/dev/null 2>&1 || true
 log "probe verify: ${VERIFY}"
-[[ "$VERIFY" == "ok ${NEXT_BUILD}" ]]
+# macOS /bin/bash 3.2 does not stop on a failing bare [[ ]], so every check exits explicitly.
+[[ "$VERIFY" == "ok ${NEXT_BUILD}" ]] || { log "probe verify failed: ${VERIFY}"; exit 1; }
 snapshot "$CONTAINER" after
 
 # Second relaunch of the new build, then compare again.
@@ -127,8 +138,8 @@ sleep 8
 xcrun simctl terminate "$SIM_ID" "$BUNDLE" >/dev/null 2>&1 || true
 snapshot "$CONTAINER" relaunch
 
-STORE_COPY="$(find "$WORK/store-after" -name 'PersonalStylistLocal.store' | head -1)"
-GALLERY_ROWS="$(sqlite3 -readonly "$STORE_COPY" 'SELECT COUNT(*) FROM ZWEARINGPHOTOENTITY;')"
+STORE_COPY="$(find "$WORK/store-relaunch" -name 'PersonalStylistLocal.store' | head -1)"
+GALLERY_ROWS="$(sqlite3 -readonly "$STORE_COPY" 'SELECT COUNT(*) FROM ZWEARINGPHOTOENTITY;' 2>&1 || true)"
 
 fail=0
 for label in after relaunch; do
@@ -143,6 +154,11 @@ for label in after relaunch; do
     log "PHOTOS CHANGED ($label): see photos-diff-$label.txt"; fail=1
   fi
   [[ "$(cat "$OUT/clean-start-$label.txt")" == "true" ]] || { log "clean-start key not preserved ($label)"; fail=1; }
+  if diff -u "$OUT/settings-before.txt" "$OUT/settings-$label.txt" > "$OUT/settings-diff-$label.txt"; then
+    log "model choice and consent unchanged ($label)"
+  else
+    log "SETTINGS CHANGED ($label): see settings-diff-$label.txt"; fail=1
+  fi
 done
 [[ "$GALLERY_ROWS" == "0" ]] || { log "unexpected gallery rows: $GALLERY_ROWS"; fail=1; }
 log "gallery table present, rows=${GALLERY_ROWS}; clean-start key $(cat "$OUT/clean-start-after.txt")"
