@@ -241,7 +241,8 @@ enum UserGarmentPhotoStore {
     static func sweepOrphanSources(
         referencedImagePaths: Set<String>,
         minimumAge: TimeInterval = 600,
-        now: Date = Date()
+        now: Date = Date(),
+        onlyAmong candidates: Set<UUID>? = nil
     ) -> [UUID] {
         let referencedIds = Set(referencedImagePaths.compactMap(photoID(from:)))
         // No user photo referenced at all (e.g. rows lost and fixtures re-seeded): never sweep.
@@ -254,7 +255,8 @@ enum UserGarmentPhotoStore {
         var removed: [UUID] = []
         for url in urls where url.pathExtension.lowercased() == "jpg" {
             guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
-                  !referencedIds.contains(id) else { continue }
+                  !referencedIds.contains(id),
+                  candidates.map({ $0.contains(id) }) ?? true else { continue }
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
             guard now.timeIntervalSince(modified) >= minimumAge else { continue }

@@ -373,7 +373,8 @@ struct ContentView: View {
                 // Clean stacks: board only (no leftover review cards).
                 wardrobePath = NavigationPath()
                 outfitPath = NavigationPath()
-                selectedTab = .outfit
+                // Through the policy: if Profile was opened and edited meanwhile, ask first.
+                requestTab(.outfit)
             }
             // failure: prior restored in model; stay in picker
             return

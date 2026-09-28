@@ -56,19 +56,6 @@ final class WearCalendarWearLoggingTests: XCTestCase {
         }
     }
 
-    func testLaterBoardChangesDoNotRewriteHistory() {
-        let worn = [UUID(), UUID()]
-        let event = StubWearEvent(id: UUID(), garmentIds: worn, wornOn: at(8), sourceOutfitId: UUID())
-        var board = StubOutfit(
-            id: event.sourceOutfitId!,
-            assignments: worn.map { StubOutfitAssignment(slot: .top, garmentId: $0, gapReason: nil, isAnchor: false) },
-            rationaleSummary: "",
-            offlineCached: false
-        )
-        board.assignments[0].garmentId = UUID() // a later swap on the same outfit
-        XCTAssertEqual(WearCalendar.records(on: day28, events: [event], calendar: cal).first?.garmentIds, worn)
-    }
-
     private func apply(_ updates: [StubWearEvent], to events: [StubWearEvent]) -> [StubWearEvent] {
         var byId = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
         for update in updates { byId[update.id] = update }
