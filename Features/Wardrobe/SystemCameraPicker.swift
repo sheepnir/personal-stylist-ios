@@ -15,6 +15,9 @@ enum SystemCameraPickerHooks {
 struct SystemCameraPicker: UIViewControllerRepresentable {
     var onImage: (UIImage) -> Void
     var onCancel: () -> Void
+    /// Sprint 9 selfies (#122): open on the front camera when there is one. The native
+    /// switch-camera control stays available. Garment intake keeps the default (rear).
+    var prefersFrontCamera: Bool = false
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(onImage: onImage, onCancel: onCancel)
@@ -32,6 +35,9 @@ struct SystemCameraPicker: UIViewControllerRepresentable {
             picker.mediaTypes = [UTType.image.identifier]
             picker.allowsEditing = false
             picker.cameraCaptureMode = .photo
+            if prefersFrontCamera && UIImagePickerController.isCameraDeviceAvailable(.front) {
+                picker.cameraDevice = .front
+            }
             picker.delegate = context.coordinator
             picker.view.accessibilityIdentifier = "camera.intake.capture"
             return picker
