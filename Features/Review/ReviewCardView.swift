@@ -58,6 +58,9 @@ struct ReviewCardView: View {
                     }
                     availabilityControl(g)
                     primaryCTA(g)
+                    // Sprint 9: separate from the reference photo above (#121).
+                    WearingGallerySection(garment: g, store: persistenceStore)
+                        .id(g.id)
                     attributes(g)
                     setMembership(g)
                     wearAndCPW(g)
@@ -212,6 +215,10 @@ struct ReviewCardView: View {
 
     private func hero(_ g: StubGarment) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text(WearingGalleryCopy.referenceLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             FixtureImageView(garment: g, presentation: .hero)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 12))

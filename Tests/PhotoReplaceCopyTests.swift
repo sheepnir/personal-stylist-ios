@@ -55,10 +55,12 @@ final class PhotoReplaceCopyTests: XCTestCase {
         }
     }
 
-    func testInfoPlistHasNoPhotoLibraryUsageKeys() {
+    /// Sprint 9 (#122): add-only Photos access for the confirmed-selfie export; the app
+    /// never asks to read the library (imports use the system picker).
+    func testInfoPlistRequestsOnlyAddOnlyPhotoLibraryAccess() {
         let info = Bundle(for: LoopDemoModel.self).infoDictionary ?? [:]
         XCTAssertNil(info["NSPhotoLibraryUsageDescription"])
-        XCTAssertNil(info["NSPhotoLibraryAddUsageDescription"])
+        XCTAssertNotNil(info["NSPhotoLibraryAddUsageDescription"])
         XCTAssertNotNil(info["NSCameraUsageDescription"])
     }
 }

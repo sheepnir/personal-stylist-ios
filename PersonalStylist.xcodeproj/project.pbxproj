@@ -27,6 +27,7 @@
 		17D9A765D9E5482FB6A0F7B3 /* TabShellHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE93C33B34F9B46B0ADF800 /* TabShellHostedTests.swift */; };
 		19411D145D692D07DC1F06E2 /* FinishDetailsColorDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5127E73881AACED4EB9779F /* FinishDetailsColorDraftTests.swift */; };
 		1A4240B3D96EF291D6E06969 /* GarmentEditPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EC205279C5B2A2554C77DF /* GarmentEditPersistenceTests.swift */; };
+		1A74717E3258E9180228F3A6 /* WearingGalleryCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5312603A59C86821398EED /* WearingGalleryCopy.swift */; };
 		1C0326DAB374C2167474EB02 /* LoopDemoModel+Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAB1CA12C858AF7AD24ED8B /* LoopDemoModel+Feedback.swift */; };
 		206A311FA04871EA7B427550 /* CameraIntakePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF8F5C191E89B7226725E87 /* CameraIntakePresentationTests.swift */; };
 		2089464CA1E48B12B759D181 /* CoreControlsA11yHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262257290C18C6DF432BA439 /* CoreControlsA11yHostedTests.swift */; };
@@ -40,6 +41,7 @@
 		29D05C7842EB85297D782713 /* BoardPhotoHitTestingHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C904169B4B228E3F763C596B /* BoardPhotoHitTestingHostedTests.swift */; };
 		2B4A1ADEF26105148D4D72E7 /* InMemoryPersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143C02D14EA41C5765BE96C5 /* InMemoryPersistenceStore.swift */; };
 		2E8B53E0A79C486CE1714A5C /* FallbackNoticeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A0D5096A8A4164B8142281 /* FallbackNoticeTests.swift */; };
+		32066F246D3FD424248F3396 /* WearingPhotoCaptureFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8189D74168C4BEA9290721AF /* WearingPhotoCaptureFlow.swift */; };
 		3597C7C9CBD8452C29562F0E /* FixtureImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9196F05FB4FC2C4C028B3EB5 /* FixtureImageView.swift */; };
 		36D9F97337F0E7997D6C0B1C /* DeviceTokenEnrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B95AF0FBD205A6341A8A06 /* DeviceTokenEnrollment.swift */; };
 		3991ADAB3C02D94B96D6775D /* ProfilePhotoSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B51ED8CF8E38F7481C8E78 /* ProfilePhotoSection.swift */; };
@@ -48,6 +50,7 @@
 		3FD612F3DB676D2A8A794E92 /* sets.json in Resources */ = {isa = PBXBuildFile; fileRef = 45C961347D5911BD5EFB2C63 /* sets.json */; };
 		40E553A0B43E79FEE9098916 /* GarmentEditCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C8C9DEF709FCF735F29B3FE /* GarmentEditCopyTests.swift */; };
 		410C58DEED005739A60210FC /* Sprint9SchemaMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 830A1E17EC1713537DDCE9EB /* Sprint9SchemaMigrationTests.swift */; };
+		45C98930BB1AD2683146FA7A /* WearingGallerySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0201D7A3C80D2C3634060C4 /* WearingGallerySession.swift */; };
 		45CDC495D0A29D87715BC5D8 /* LoopDemoModel+FallbackNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91572017202897EDDA4C233 /* LoopDemoModel+FallbackNotice.swift */; };
 		4823A8F8E2D4C187F5DDCD12 /* StylingModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF798ECE2F20D9C78BE6F82E /* StylingModelTests.swift */; };
 		482513DD09365B73350C0467 /* AppStorageLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1142F4A814D4FB8E57D0D157 /* AppStorageLaunch.swift */; };
@@ -68,6 +71,7 @@
 		61634E1F2EA7F4D40F7A0836 /* FinishDetailsA11yContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412A99002480B6EA0F738762 /* FinishDetailsA11yContractTests.swift */; };
 		639C4B032FEF6750845E4792 /* RecordingURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A263C71035BF231DEFCB480 /* RecordingURLProtocol.swift */; };
 		6709E454634B37112DE69391 /* WearHistoryCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A803B39266358C824B2839E /* WearHistoryCopyTests.swift */; };
+		67BC02F23ACA7DAE1A2F19A0 /* WearingPhotoViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137371854FADB4CBA5D5E98C /* WearingPhotoViewer.swift */; };
 		6862651E5A384A4327F80905 /* SwiftDataPersistenceStore+PhotoReplace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4940764DA056EEF2D8B849E2 /* SwiftDataPersistenceStore+PhotoReplace.swift */; };
 		68FD69E4E86C18B2480F00F5 /* CostPerWearCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF84A3D3364AE6B8366BA614 /* CostPerWearCopy.swift */; };
 		6997D751B7CFF55AB0A592DF /* TabNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF24E8DD414EC939154E8F7 /* TabNavigationTests.swift */; };
@@ -115,6 +119,7 @@
 		A373EC01C039FA16814D982E /* DailyWearA11yContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649132F60D93F897822E3FC /* DailyWearA11yContractTests.swift */; };
 		A3CDAD7604A6C5E1893B7358 /* TabNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9590DF9A2331D54D5E437399 /* TabNavigation.swift */; };
 		A428765A3EF42F76D272391D /* DemoToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3771BAD42B0F24F90DBAAD83 /* DemoToast.swift */; };
+		A53DF14D6107942EA7144321 /* PhotoLibraryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BA47DB28A36DA1FC695E9E /* PhotoLibraryExporter.swift */; };
 		A74CC815B3AA24B0BD811E0B /* PersonalStylistApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C396500A2030E3E78A5F126A /* PersonalStylistApp.swift */; };
 		A8C547AA235DBD4AF87F6FC7 /* WearSuccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 038CF7038B25EB81259DCF69 /* WearSuccessView.swift */; };
 		AB70DBB3E1F7EC7283436A21 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8738C66DE63B926C41BC63B8 /* ContentView.swift */; };
@@ -130,6 +135,7 @@
 		BB7E4B108DEE47A444562543 /* OutfitBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925BA06440A547B1DDD21056 /* OutfitBoardView.swift */; };
 		BD0C5F3492DA394873158F41 /* CropGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 838541CCA53219C5687569DB /* CropGeometryTests.swift */; };
 		BFBB1BD86830FDCD55A7032F /* AppStorageLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8522683F154877D596C9D66 /* AppStorageLaunchTests.swift */; };
+		C02E1F1F11ECF5BB47F8ACCE /* WearingGallerySessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A467A8EA8B340138B7FAB81 /* WearingGallerySessionTests.swift */; };
 		C14776A64764DD0C0DA60864 /* CameraIntakeServing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3B5AACF3C9487578830C5AD /* CameraIntakeServing.swift */; };
 		C1A5EFF29E6E2E294A267EF3 /* AppModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 304EA2B6267D9A8CE591A4A6 /* AppModelContainer.swift */; };
 		C1DB6DE19610CA8E01631B2A /* DailyWearModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE8E6C410C0DF9F3A799423 /* DailyWearModelTests.swift */; };
@@ -148,6 +154,7 @@
 		D3F5125FBA4AAD36670D5576 /* UserGarmentPhotoStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A85BC10FA21547721674180 /* UserGarmentPhotoStoreTests.swift */; };
 		D4CEF7845D12231786D83287 /* LegacyStoreFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDE04AC8A0253033811B151 /* LegacyStoreFixtures.swift */; };
 		D57AFF29FB45B831D9A65106 /* CameraPersistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853974C0862128374BEE223E /* CameraPersistTests.swift */; };
+		D8169E4432DF6C43AC66F270 /* WearingGallerySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD61A037B12179306A51F9C /* WearingGallerySection.swift */; };
 		D93617F0BDC816C24127558E /* WearCalendarWearLoggingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB8A8342CAF6DC6400E04CF9 /* WearCalendarWearLoggingTests.swift */; };
 		DA2765B0F2A6D6E68123051F /* CameraPersistError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30844C11C90DF2A80B725A /* CameraPersistError.swift */; };
 		DABA3A658F1E8F50E576C5C2 /* StorageFailureCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0407C7B2C02967489F6C2A5E /* StorageFailureCopy.swift */; };
@@ -210,6 +217,7 @@
 		1143BB3F6714DFC707E71BE4 /* DeviceAccessSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceAccessSection.swift; sourceTree = "<group>"; };
 		1145B189B398158F8864A8C8 /* WearingPhotoFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingPhotoFileStore.swift; sourceTree = "<group>"; };
 		11A066D71A51E43890E94E9B /* AssetLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetLibrary.swift; sourceTree = "<group>"; };
+		137371854FADB4CBA5D5E98C /* WearingPhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingPhotoViewer.swift; sourceTree = "<group>"; };
 		13E78C054F403BB731E8E882 /* WearCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearCalendar.swift; sourceTree = "<group>"; };
 		143C02D14EA41C5765BE96C5 /* InMemoryPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryPersistenceStore.swift; sourceTree = "<group>"; };
 		14C28283AA5169DD205E0FB6 /* SchemaVersions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaVersions.swift; sourceTree = "<group>"; };
@@ -239,6 +247,7 @@
 		39132F781D5BB32FA6C9BF8E /* DomainModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModels.swift; sourceTree = "<group>"; };
 		3AF24E8DD414EC939154E8F7 /* TabNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabNavigationTests.swift; sourceTree = "<group>"; };
 		3CD67D1EACD80790EAD7B17D /* PersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceStore.swift; sourceTree = "<group>"; };
+		3DD61A037B12179306A51F9C /* WearingGallerySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingGallerySection.swift; sourceTree = "<group>"; };
 		3F4F6E24CF385477C6838D7A /* PhotoEditingCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoEditingCopy.swift; sourceTree = "<group>"; };
 		40ED3AC7AD942FC8BF540899 /* DailyWearCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyWearCopyTests.swift; sourceTree = "<group>"; };
 		412A99002480B6EA0F738762 /* FinishDetailsA11yContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsA11yContractTests.swift; sourceTree = "<group>"; };
@@ -281,6 +290,7 @@
 		7F0D940B417D6CF5B8721DE1 /* PhotoReplaceCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReplaceCopy.swift; sourceTree = "<group>"; };
 		7FE436FB2938ECC2475C39EB /* ProfilePhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoStore.swift; sourceTree = "<group>"; };
 		80E0F3AE097CF4024CAF5E58 /* CameraIntakePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraIntakePresentation.swift; sourceTree = "<group>"; };
+		8189D74168C4BEA9290721AF /* WearingPhotoCaptureFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingPhotoCaptureFlow.swift; sourceTree = "<group>"; };
 		82A344CC53700F1B78A2B0A3 /* BaselineCleanStart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaselineCleanStart.swift; sourceTree = "<group>"; };
 		830A1E17EC1713537DDCE9EB /* Sprint9SchemaMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sprint9SchemaMigrationTests.swift; sourceTree = "<group>"; };
 		838541CCA53219C5687569DB /* CropGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropGeometryTests.swift; sourceTree = "<group>"; };
@@ -289,6 +299,7 @@
 		8738C66DE63B926C41BC63B8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		88EA54602B7D101953EFCCF1 /* FinishDetailsSaveBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsSaveBar.swift; sourceTree = "<group>"; };
 		899184226E1FB5377E6490E9 /* EngineConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineConfigTests.swift; sourceTree = "<group>"; };
+		8A467A8EA8B340138B7FAB81 /* WearingGallerySessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingGallerySessionTests.swift; sourceTree = "<group>"; };
 		8B1F1C64A346567FBE377FC1 /* SwiftDataPersistenceStore+Destructive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftDataPersistenceStore+Destructive.swift"; sourceTree = "<group>"; };
 		8CA73EF6D8AC351700F6FB6A /* founder-seed.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "founder-seed.json"; sourceTree = "<group>"; };
 		8DAB1F4A84C72FEFE8B597D8 /* CropEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropEditorView.swift; sourceTree = "<group>"; };
@@ -347,13 +358,16 @@
 		DA4FA83C7D3E85E4F0A82608 /* SystemCameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCameraPicker.swift; sourceTree = "<group>"; };
 		DD12F5C7B31CC5EBE8A9F7F4 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		DD52DE2B947CD778383EDD18 /* DailyWearA11yHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyWearA11yHostedTests.swift; sourceTree = "<group>"; };
+		DF5312603A59C86821398EED /* WearingGalleryCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingGalleryCopy.swift; sourceTree = "<group>"; };
 		DF798ECE2F20D9C78BE6F82E /* StylingModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StylingModelTests.swift; sourceTree = "<group>"; };
 		DF84A3D3364AE6B8366BA614 /* CostPerWearCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostPerWearCopy.swift; sourceTree = "<group>"; };
+		E0201D7A3C80D2C3634060C4 /* WearingGallerySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearingGallerySession.swift; sourceTree = "<group>"; };
 		E5127E73881AACED4EB9779F /* FinishDetailsColorDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishDetailsColorDraftTests.swift; sourceTree = "<group>"; };
 		E59B66C77993ADFE3053998B /* GarmentEditCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarmentEditCopy.swift; sourceTree = "<group>"; };
 		E8522683F154877D596C9D66 /* AppStorageLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageLaunchTests.swift; sourceTree = "<group>"; };
 		E8B1E001CE438E7ED4CB93C7 /* WearCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearCalendarView.swift; sourceTree = "<group>"; };
 		E8B51ED8CF8E38F7481C8E78 /* ProfilePhotoSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoSection.swift; sourceTree = "<group>"; };
+		E9BA47DB28A36DA1FC695E9E /* PhotoLibraryExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryExporter.swift; sourceTree = "<group>"; };
 		EA2B41D488D744CE76E52914 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		EA3AA5523BB11219ED77714D /* TestModelContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestModelContainerTests.swift; sourceTree = "<group>"; };
 		EA3D7276A67287F741726619 /* AddPriceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPriceSheet.swift; sourceTree = "<group>"; };
@@ -419,6 +433,7 @@
 				A760F70F973DC989619008D1 /* OutfitEngineClient.swift */,
 				C396500A2030E3E78A5F126A /* PersonalStylistApp.swift */,
 				1BED0F4D7E8EAFD4BA35043E /* PhotoEditing.swift */,
+				E9BA47DB28A36DA1FC695E9E /* PhotoLibraryExporter.swift */,
 				050CC91B7AD7D388B25669D9 /* PhotoReplacePresentation.swift */,
 				7FE436FB2938ECC2475C39EB /* ProfilePhotoStore.swift */,
 				FEAC816BC619EE88E7038E23 /* StorageFailureView.swift */,
@@ -427,6 +442,7 @@
 				9590DF9A2331D54D5E437399 /* TabNavigation.swift */,
 				F37FCA8FA13A32389E7E606A /* UserGarmentPhotoStore.swift */,
 				13E78C054F403BB731E8E882 /* WearCalendar.swift */,
+				E0201D7A3C80D2C3634060C4 /* WearingGallerySession.swift */,
 				1145B189B398158F8864A8C8 /* WearingPhotoFileStore.swift */,
 			);
 			path = App;
@@ -490,6 +506,16 @@
 			path = Photos;
 			sourceTree = "<group>";
 		};
+		4F882BB978EBA2AA0D5816C1 /* Gallery */ = {
+			isa = PBXGroup;
+			children = (
+				3DD61A037B12179306A51F9C /* WearingGallerySection.swift */,
+				8189D74168C4BEA9290721AF /* WearingPhotoCaptureFlow.swift */,
+				137371854FADB4CBA5D5E98C /* WearingPhotoViewer.swift */,
+			);
+			path = Gallery;
+			sourceTree = "<group>";
+		};
 		55B1BB84D95B2EE2614A26A5 /* Design */ = {
 			isa = PBXGroup;
 			children = (
@@ -512,6 +538,7 @@
 				0407C7B2C02967489F6C2A5E /* StorageFailureCopy.swift */,
 				F3F4CB92E656A7AB74A406D1 /* WearCalendarCopy.swift */,
 				A06DEC77599F2C0D1FE53AD3 /* WearHistoryCopy.swift */,
+				DF5312603A59C86821398EED /* WearingGalleryCopy.swift */,
 			);
 			path = Design;
 			sourceTree = "<group>";
@@ -593,6 +620,7 @@
 				6AA503BB95D9BA211903B145 /* WearCalendarTests.swift */,
 				AB8A8342CAF6DC6400E04CF9 /* WearCalendarWearLoggingTests.swift */,
 				6A803B39266358C824B2839E /* WearHistoryCopyTests.swift */,
+				8A467A8EA8B340138B7FAB81 /* WearingGallerySessionTests.swift */,
 				90844FCFC3286B8771AC7CF5 /* WearingPhotoPersistTests.swift */,
 				6AF413B6E668D14F34381BF9 /* Fixtures */,
 				2BAAB19B18EA1E8C06B6CF9A /* Support */,
@@ -648,6 +676,7 @@
 			children = (
 				265D0ABCDD40397540584E56 /* Board */,
 				62935CD07B7EDE5899F2541F /* Calendar */,
+				4F882BB978EBA2AA0D5816C1 /* Gallery */,
 				400A6D82BEECADEF8D50ED1A /* Photos */,
 				3BF71D379ADC0228AE405ED5 /* Profile */,
 				5786DAC709BE52BA7FD008F5 /* Review */,
@@ -932,6 +961,7 @@
 				A74CC815B3AA24B0BD811E0B /* PersonalStylistApp.swift in Sources */,
 				5EDF92C5CCA8FF69C16B6682 /* PhotoEditing.swift in Sources */,
 				77D44BFAFA0C882C82563871 /* PhotoEditingCopy.swift in Sources */,
+				A53DF14D6107942EA7144321 /* PhotoLibraryExporter.swift in Sources */,
 				FF9051827DD2C3392C2E6D37 /* PhotoReplaceCopy.swift in Sources */,
 				D2A77B0C8A4694038B404531 /* PhotoReplaceHost.swift in Sources */,
 				C1EDD1B7C267613441083D29 /* PhotoReplacePersistError.swift in Sources */,
@@ -969,9 +999,14 @@
 				0B0238D5F12C4B1469873ECD /* WearHistoryCopy.swift in Sources */,
 				0013F98AEE4FCB803D930E2C /* WearHistoryViews.swift in Sources */,
 				A8C547AA235DBD4AF87F6FC7 /* WearSuccessView.swift in Sources */,
+				1A74717E3258E9180228F3A6 /* WearingGalleryCopy.swift in Sources */,
+				D8169E4432DF6C43AC66F270 /* WearingGallerySection.swift in Sources */,
+				45C98930BB1AD2683146FA7A /* WearingGallerySession.swift in Sources */,
+				32066F246D3FD424248F3396 /* WearingPhotoCaptureFlow.swift in Sources */,
 				86D635761678EBA2588CE870 /* WearingPhotoEntity.swift in Sources */,
 				77A92E4882952C5491054C07 /* WearingPhotoFileStore.swift in Sources */,
 				22F2C751E0D4C11DB1BE4E93 /* WearingPhotoModels.swift in Sources */,
+				67BC02F23ACA7DAE1A2F19A0 /* WearingPhotoViewer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1044,6 +1079,7 @@
 				2961E18360C3E2474908A16B /* WearCalendarTests.swift in Sources */,
 				D93617F0BDC816C24127558E /* WearCalendarWearLoggingTests.swift in Sources */,
 				6709E454634B37112DE69391 /* WearHistoryCopyTests.swift in Sources */,
+				C02E1F1F11ECF5BB47F8ACCE /* WearingGallerySessionTests.swift in Sources */,
 				87A1AA06221BA2B16BCA9F56 /* WearingPhotoPersistTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1132,7 +1168,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Personal Stylist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "To photograph a garment. The photo stays on this iPhone for your wardrobe.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "To photograph a garment, or yourself wearing one. Photos stay on this iPhone unless you choose Save to Photos.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "To save a selfie you confirm to your Photos library when you choose Save to Photos. Personal Stylist doesn’t read your library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
@@ -1275,7 +1312,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Personal Stylist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "To photograph a garment. The photo stays on this iPhone for your wardrobe.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "To photograph a garment, or yourself wearing one. Photos stay on this iPhone unless you choose Save to Photos.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "To save a selfie you confirm to your Photos library when you choose Save to Photos. Personal Stylist doesn’t read your library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;

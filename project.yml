@@ -20,7 +20,8 @@ settings:
     MARKETING_VERSION: "0.1.0"
     # HTTPS via Apple TLS / URLSession only — skip the export-compliance prompt.
     INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-    INFOPLIST_KEY_NSCameraUsageDescription: "To photograph a garment. The photo stays on this iPhone for your wardrobe."
+    INFOPLIST_KEY_NSCameraUsageDescription: "To photograph a garment, or yourself wearing one. Photos stay on this iPhone unless you choose Save to Photos."
+    INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "To save a selfie you confirm to your Photos library when you choose Save to Photos. Personal Stylist doesn’t read your library."
 targets:
   PersonalStylist:
     type: application
@@ -37,7 +38,8 @@ targets:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
         ITSAppUsesNonExemptEncryption: false
-        NSCameraUsageDescription: "To photograph a garment. The photo stays on this iPhone for your wardrobe."
+        NSCameraUsageDescription: "To photograph a garment, or yourself wearing one. Photos stay on this iPhone unless you choose Save to Photos."
+        NSPhotoLibraryAddUsageDescription: "To save a selfie you confirm to your Photos library when you choose Save to Photos. Personal Stylist doesn’t read your library."
     sources:
       - path: App
       - path: Assets.xcassets
