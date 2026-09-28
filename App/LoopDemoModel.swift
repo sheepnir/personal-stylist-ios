@@ -88,6 +88,8 @@ final class LoopDemoModel: ObservableObject {
     private var shownSetsAnchorId: UUID?
     private let preferences: UserDefaults
     private let store: PersistenceStore
+    /// Read-only access for feature extensions in other files (Sprint 9 photo flows).
+    var persistence: PersistenceStore { store }
     /// Board + wear state before an in-flight generate (#112 Cancel / failure restore).
     private var outfitSnapshotBeforeGenerate: StubOutfit?
     private var wearableSnapshotBeforeGenerate: Bool = false
