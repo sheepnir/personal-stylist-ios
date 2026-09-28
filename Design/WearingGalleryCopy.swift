@@ -40,10 +40,9 @@ enum WearingGalleryCopy {
 
     // Outcomes
     static let saved = "Photo added"
-    static let savedToPhotos = "Photo added and saved to Photos"
-    static let exportDenied = "Photo added here. Photos access is off, so it wasn’t saved to Photos."
-    static let exportRestricted = "Photo added here. Saving to Photos isn’t allowed on this iPhone."
-    static let exportFailed = "Photo added here, but it couldn’t be saved to Photos."
+    static let exportDenied = "The photo is in the app. Photos access is off, so it wasn’t saved to Photos."
+    static let exportRestricted = "The photo is in the app. Saving to Photos isn’t allowed on this iPhone."
+    static let exportFailed = "The photo is in the app, but it couldn’t be saved to Photos."
     static let retrySaveToPhotos = "Try Save to Photos again"
     static let openSettings = "Open Settings"
     static let notSavedToPhotos = "Not saved to Photos"

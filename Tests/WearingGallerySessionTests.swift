@@ -69,6 +69,7 @@ final class WearingGallerySessionTests: XCTestCase {
         XCTAssertEqual(session.photos.count, 1, "local save survives a denied export")
         XCTAssertEqual(session.photos.first?.exportState, .failed)
         XCTAssertNotEqual(session.message, WearingGalleryCopy.exportMessage(.saved), "never claims Saved to Photos")
+        XCTAssertEqual(session.exportOutcomes[photo.id], .denied, "Settings is offered only for a known denial")
 
         let result4 = await session.exportToPhotos(photo)
         XCTAssertEqual(result4, .failed)
@@ -77,6 +78,20 @@ final class WearingGallerySessionTests: XCTestCase {
         XCTAssertEqual(session.photos.count, 1, "export retries never add a gallery item")
         XCTAssertEqual(session.photos.first?.exportState, .saved)
         XCTAssertEqual(exporter.saved.count, 3)
+        XCTAssertEqual(session.exportOutcomes[photo.id], .saved)
+    }
+
+    func testMissingDisplayFileRecordsAFailedExportWithoutCallingPhotos() async throws {
+        let exporter = FakeExporter(outcomes: [.saved])
+        let (session, _, garment) = try await makeSession(exporter: exporter)
+        let added = await session.add(request(garment.id, source: .camera))
+        let photo = try XCTUnwrap(added)
+        try FileManager.default.removeItem(at: fileStore.fileURL(for: photo.displayFileId))
+        let outcome = await session.exportToPhotos(photo)
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertTrue(exporter.saved.isEmpty)
+        XCTAssertEqual(session.photos.first?.exportState, .failed, "recorded, so the viewer offers Retry")
+        XCTAssertNotEqual(session.message, WearingGalleryCopy.exportMessage(.saved))
     }
 
     func testConcurrentExportTapsExportOnce() async throws {
@@ -121,7 +136,7 @@ final class WearingGallerySessionTests: XCTestCase {
         let aggregatesAfter = await store.fetchWearAggregates()
         XCTAssertEqual(aggregatesAfter, aggregatesBefore, "gallery actions never change wear counts")
         let garments = await store.fetchGarments()
-        XCTAssertEqual(garments.first?.imagePath, garment.imagePath)
+        XCTAssertEqual(garments.first?.imagePath, "fixtures/synthetic-reference.svg", "reference photo untouched")
         XCTAssertNotNil(session.editSourceImage(for: try XCTUnwrap(session.photos.first)))
     }
 
@@ -166,7 +181,7 @@ final class WearingGallerySessionTests: XCTestCase {
         let garment = StubGarment(
             id: UUID(), displayName: "Synthetic Gallery Jacket", slot: .jacket, readiness: .ready,
             availability: "AVAILABLE", colorPrimary: nil, pattern: "SOLID", surface: "SMOOTH",
-            imagePath: nil, formality: 2, warmth: 3, setId: nil, keepTogether: nil,
+            imagePath: "fixtures/synthetic-reference.svg", formality: 2, warmth: 3, setId: nil, keepTogether: nil,
             lastWornOn: nil, daysSinceIntake: 0
         )
         let store = InMemoryPersistenceStore(garments: [garment], sets: [], defaults: defaults, wearingPhotoFiles: fileStore)

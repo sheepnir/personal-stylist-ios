@@ -10,6 +10,9 @@ struct WearingPhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var cropPayload: CropEditorPayload?
     @State private var confirmRemove = false
+    /// Viewer-local errors (crop load/save). Export outcomes come from the photo's state.
+    @State private var viewerError: String?
+    @State private var isSavingCrop = false
 
     private var photo: StubWearingPhoto? { session.photos.first { $0.id == photoId } }
 
@@ -46,8 +49,8 @@ struct WearingPhotoViewer: View {
                             .disabled(session.isSaving)
                             .accessibilityIdentifier("wearing.viewer.remove")
                         }
-                        if let message = session.message {
-                            Text(message).font(.footnote)
+                        if let viewerError, cropPayload == nil {
+                            Text(viewerError).font(.footnote)
                         }
                     }
                     .padding()
@@ -66,10 +69,9 @@ struct WearingPhotoViewer: View {
             .confirmationDialog(WearingGalleryCopy.removeTitle, isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button(WearingGalleryCopy.remove, role: .destructive) {
                     guard let photo else { return }
-                    Task {
-                        await session.remove(photo)
-                        dismiss()
-                    }
+                    // Close first so the viewer never flashes an unavailable state.
+                    dismiss()
+                    Task { await session.remove(photo) }
                 }
                 Button(WearingGalleryCopy.cancel, role: .cancel) {}
             } message: {
@@ -80,12 +82,20 @@ struct WearingPhotoViewer: View {
                     image: payload.image,
                     title: CropEditorCopy.wearingTitle,
                     aspects: [.original, .portrait4x5, .square],
-                    isSaving: session.isSaving,
+                    isSaving: isSavingCrop,
                     onCancel: { cropPayload = nil },
                     onSave: { result in
                         Task { await saveCrop(result, payload: payload) }
                     }
                 )
+                .alert(
+                    CropEditorCopy.saveFailedTitle,
+                    isPresented: Binding(get: { viewerError != nil }, set: { if !$0 { viewerError = nil } })
+                ) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(viewerError ?? "")
+                }
             }
         }
     }
@@ -107,12 +117,21 @@ struct WearingPhotoViewer: View {
                     .frame(minHeight: 44)
                     .disabled(session.exportingIds.contains(photo.id))
                     .accessibilityIdentifier("wearing.viewer.retryExport")
-                    Button(WearingGalleryCopy.openSettings) {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
+                    if session.exportOutcomes[photo.id] == .denied {
+                        Text(WearingGalleryCopy.exportDenied)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button(WearingGalleryCopy.openSettings) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
                         }
+                        .frame(minHeight: 44)
+                    } else if session.exportOutcomes[photo.id] == .restricted {
+                        Text(WearingGalleryCopy.exportRestricted)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(minHeight: 44)
                 }
             case nil:
                 EmptyView()
@@ -122,7 +141,7 @@ struct WearingPhotoViewer: View {
 
     private func beginCrop(_ photo: StubWearingPhoto) {
         guard let image = session.editSourceImage(for: photo) else {
-            session.message = WearingGalleryCopy.loadFailed
+            viewerError = WearingGalleryCopy.loadFailed
             return
         }
         cropPayload = CropEditorPayload(image: image)
@@ -144,11 +163,16 @@ struct WearingPhotoViewer: View {
             return PhotoEditing.jpegData(cropped, quality: 0.9)
         }.value
         guard let jpeg = encoded else {
-            session.message = WearingGalleryCopy.saveFailure(.saveFailed)
+            viewerError = WearingGalleryCopy.saveFailure(.saveFailed)
             return
         }
+        isSavingCrop = true
+        defer { isSavingCrop = false }
         if await session.updateCrop(of: photo, displayJPEG: jpeg) {
             cropPayload = nil
+        } else {
+            viewerError = session.message ?? WearingGalleryCopy.saveFailure(.saveFailed)
+            session.message = nil
         }
     }
 }

@@ -29,6 +29,7 @@ struct WearingGallerySection: View {
                 .accessibilityAddTraits(.isHeader)
             if let latest = session.latest {
                 Button {
+                    session.message = nil
                     viewing = latest
                 } label: {
                     WearingPhotoThumbnail(files: session.files, photo: latest, height: 260)
@@ -42,6 +43,7 @@ struct WearingGallerySection: View {
                         HStack(spacing: 8) {
                             ForEach(session.recentPreviews) { photo in
                                 Button {
+                                    session.message = nil
                                     viewing = photo
                                 } label: {
                                     WearingPhotoThumbnail(files: session.files, photo: photo, height: 72, width: 72)
@@ -69,6 +71,7 @@ struct WearingGallerySection: View {
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
             Button {
+                session.message = nil
                 showSourceChoice = true
             } label: {
                 Label(WearingGalleryCopy.addPhoto, systemImage: "person.crop.square.badge.camera")
@@ -94,12 +97,16 @@ struct WearingGallerySection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
         .task { await session.load() }
+        .onChange(of: session.message) { _, message in
+            // Outcomes land after a cover closes: announce them for VoiceOver.
+            if let message { AccessibilityNotification.Announcement(message).post() }
+        }
         .confirmationDialog(WearingGalleryCopy.addPhoto, isPresented: $showSourceChoice, titleVisibility: .visible) {
             Button(WearingGalleryCopy.takeSelfie) { takeSelfie() }
             Button(WearingGalleryCopy.chooseFromPhotos) { showLibraryPicker = true }
             Button(WearingGalleryCopy.cancel, role: .cancel) {}
         }
-        .photosPicker(isPresented: $showLibraryPicker, selection: $libraryItem, matching: .images, photoLibrary: .shared())
+        .photosPicker(isPresented: $showLibraryPicker, selection: $libraryItem, matching: .images)
         .onChange(of: libraryItem) { _, item in
             guard let item else { return }
             Task { await loadLibraryItem(item) }
@@ -155,8 +162,15 @@ struct WearingGallerySection: View {
             isLoadingLibrary = false
             libraryItem = nil
         }
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let image = PhotoEditing.normalizedImage(from: data) else {
+        guard let data = try? await item.loadTransferable(type: Data.self) else {
+            session.message = WearingGalleryCopy.loadFailed
+            return
+        }
+        // Decode (possibly HEIC, possibly large) off the main thread.
+        let image = await Task.detached(priority: .userInitiated) {
+            PhotoEditing.normalizedImage(from: data)
+        }.value
+        guard let image else {
             session.message = WearingGalleryCopy.loadFailed
             return
         }
@@ -199,28 +213,30 @@ struct WearingPhotoThumbnail: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            Color(.tertiarySystemFill)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: fitsWholePhoto ? .fit : .fill)
-            } else {
-                Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
+        // The frame is fixed first and the image fills it as an overlay, so a wide or tall
+        // photo can never widen the layout or take taps meant for neighbouring cells.
+        Color(.tertiarySystemFill)
+            .frame(maxWidth: width ?? .infinity)
+            .frame(width: width, height: height)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: fitsWholePhoto ? .fit : .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                }
             }
-        }
-        .frame(maxWidth: width ?? .infinity)
-        .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .task(id: photo.displayFileId) {
-            let pixel = Int(max(height, width ?? height) * displayScale * 1.5)
-            let files = self.files
-            let id = photo.displayFileId
-            image = await Task.detached(priority: .userInitiated) {
-                files.thumbnail(for: id, maxPixel: pixel)
-            }.value
-        }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .task(id: photo.displayFileId) {
+                let pixel = Int(max(height, width ?? height) * displayScale * 1.5)
+                let files = self.files
+                let id = photo.displayFileId
+                image = await Task.detached(priority: .userInitiated) {
+                    files.thumbnail(for: id, maxPixel: pixel)
+                }.value
+            }
     }
 }

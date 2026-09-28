@@ -58,7 +58,7 @@ struct WearingPhotoCaptureFlow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Image(decorative: displayed(image), scale: 1)
+                    Image(uiImage: UIImage(cgImage: displayed(image)))
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity, maxHeight: 460)
@@ -153,12 +153,19 @@ struct WearingPhotoCaptureFlow: View {
         guard !isFinishing else { return }
         isFinishing = true
         session.message = nil
-        guard let displayJPEG = PhotoEditing.jpegData(displayed(image), quality: 0.9),
-              let sourceJPEG = PhotoEditing.jpegData(image, quality: 0.95) else {
+        let shown = displayed(image)
+        // Two JPEG encodes of up to 1600 px run off the main thread.
+        let encoded = await Task.detached(priority: .userInitiated) { () -> (Data, Data)? in
+            guard let display = PhotoEditing.jpegData(shown, quality: 0.9),
+                  let source = PhotoEditing.jpegData(image, quality: 0.95) else { return nil }
+            return (display, source)
+        }.value
+        guard let encoded else {
             session.message = WearingGalleryCopy.saveFailure(.saveFailed)
             isFinishing = false
             return
         }
+        let (displayJPEG, sourceJPEG) = encoded
         let request = WearingPhotoAddRequest(
             id: requestId,
             garmentId: session.garmentId,

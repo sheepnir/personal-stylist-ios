@@ -11,6 +11,11 @@ final class WearingGallerySession: ObservableObject {
     @Published private(set) var photos: [StubWearingPhoto] = []
     @Published private(set) var isSaving = false
     @Published private(set) var exportingIds: Set<UUID> = []
+    /// Latest export outcome per photo in this session, so recovery (Settings) is offered
+    /// only when it can help. Persisted state is `StubWearingPhoto.exportState`.
+    @Published private(set) var exportOutcomes: [UUID: PhotoLibraryExportOutcome] = [:]
+    /// Section-level status line. Cleared whenever a flow or viewer opens so an outcome
+    /// about one photo is never shown next to another.
     @Published var message: String?
 
     let garmentId: UUID
@@ -55,12 +60,16 @@ final class WearingGallerySession: ObservableObject {
     func exportToPhotos(_ photo: StubWearingPhoto) async -> PhotoLibraryExportOutcome? {
         guard photo.source == .camera, !exportingIds.contains(photo.id) else { return nil }
         guard let data = files.data(for: photo.displayFileId) else {
-            message = WearingGalleryCopy.exportFailed
+            _ = try? await store.setWearingPhotoExportState(id: photo.id, state: .failed)
+            exportOutcomes[photo.id] = .failed
+            await load()
+            message = WearingGalleryCopy.exportMessage(.failed)
             return .failed
         }
         exportingIds.insert(photo.id)
         defer { exportingIds.remove(photo.id) }
         let outcome = await exporter.saveToPhotos(data)
+        exportOutcomes[photo.id] = outcome
         let state: WearingPhotoExportState = outcome == .saved ? .saved : .failed
         _ = try? await store.setWearingPhotoExportState(id: photo.id, state: state)
         await load()
