@@ -9,6 +9,9 @@ struct OutfitBoardView: View {
     /// D-75 — explicit same-day correction. Must not persist.
     var onChangeWhatIWore: () -> Void = {}
     var onSetUpDeviceAccess: () -> Void = {}
+    /// Sprint 9: false under the tab shell — opening the Outfit tab never starts a
+    /// generation (and never a paid request). Building stays an explicit user action.
+    var autoBuildsOnAppear: Bool = true
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("demo.boardKeepTipShown") private var boardKeepTipShown = false
@@ -147,8 +150,8 @@ struct OutfitBoardView: View {
         .navigationTitle("Outfit")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if model.outfit == nil, !model.isGenerating, model.generateFailureMessage == nil,
-               !model.deviceAccessRejected {
+            if autoBuildsOnAppear, model.outfit == nil, !model.isGenerating,
+               model.generateFailureMessage == nil, !model.deviceAccessRejected {
                 Task { await model.buildDemoOutfit(intent: .firstBuild) }
             }
         }

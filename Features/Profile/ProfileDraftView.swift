@@ -6,6 +6,14 @@ struct ProfileDraftView: View {
     static let deviceAccessSectionID = "device-access-section"
 
     @ObservedObject var model: LoopDemoModel
+    /// Pushed editor: autosave on Back (D-45). As the Profile tab root (Sprint 9) this is
+    /// false — leaving the tab asks Save / Discard / Keep editing instead of saving silently.
+    var autosavesOnDisappear: Bool = true
+    /// Reports whether unsaved edits exist, for the tab shell's leave guard.
+    var onUnsavedChangesChange: (Bool) -> Void = { _ in }
+    /// Save or discard requested by the tab shell's leave guard.
+    var pendingCommand: ProfileEditorCommand? = nil
+    var onCommandHandled: (ProfileEditorCommand) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -42,6 +50,7 @@ struct ProfileDraftView: View {
     @State private var showResetConfirm = false
     @State private var showClearConfirm = false
     @State private var isDataControlBusy = false
+    @State private var isVisible = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -183,16 +192,17 @@ struct ProfileDraftView: View {
             DeviceAccessSection(model: model)
         }
         .onChange(of: model.scrollToDeviceAccessRequested, initial: true) { _, requested in
-            guard requested else { return }
-            if accessibilityReduceMotion {
-                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-            } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-                }
-            }
-            model.scrollToDeviceAccessRequested = false
+            // A kept-alive tab may be offscreen: leave the request for the next appearance.
+            guard requested, isVisible else { return }
+            scrollToDeviceAccess(proxy)
         }
+        .onAppear {
+            isVisible = true
+            if model.scrollToDeviceAccessRequested {
+                scrollToDeviceAccess(proxy)
+            }
+        }
+        .onDisappear { isVisible = false }
         }
         .navigationTitle("Style profile")
         .navigationBarTitleDisplayMode(.inline)
@@ -201,14 +211,31 @@ struct ProfileDraftView: View {
                 if model.styleProfile == nil {
                     await model.ensureEditableStyleProfile()
                 }
-                hydrate()
+                // As a tab root the editor can reappear with unsaved edits (Sprint 9):
+                // reload only when there is nothing unsaved to lose.
+                if savedFields == nil || !isDirty {
+                    hydrate()
+                }
             }
         }
         .onChange(of: model.styleProfile?.id) { _, _ in hydrate() }
         .onDisappear {
-            if isDirty && !didConfirmThisVisit {
+            if autosavesOnDisappear && isDirty && !didConfirmThisVisit {
                 saveEdits(confirm: false)
             }
+        }
+        .onChange(of: isDirty, initial: true) { _, dirty in
+            onUnsavedChangesChange(dirty)
+        }
+        .onChange(of: pendingCommand) { _, command in
+            guard let command else { return }
+            switch command.action {
+            case .save:
+                saveEdits(confirm: false)
+            case .discard:
+                hydrate()
+            }
+            onCommandHandled(command)
         }
         .confirmationDialog(
             DataControlsCopy.resetProfileTitle,
@@ -251,6 +278,17 @@ struct ProfileDraftView: View {
         isDataControlBusy = true
         defer { isDataControlBusy = false }
         await model.clearWardrobeAndLooks()
+    }
+
+    private func scrollToDeviceAccess(_ proxy: ScrollViewProxy) {
+        if accessibilityReduceMotion {
+            proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+            }
+        }
+        model.scrollToDeviceAccessRequested = false
     }
 
     private func chipWrap(_ options: [String], selected: Binding<Set<String>>) -> some View {
@@ -331,6 +369,14 @@ struct ProfileDraftView: View {
             model.updateProfile(p)
         }
     }
+}
+
+/// Leave-guard decision from the tab shell. A fresh `id` per request so repeated
+/// choices are delivered even when the action is the same.
+struct ProfileEditorCommand: Equatable {
+    enum Action: Equatable { case save, discard }
+    let id = UUID()
+    let action: Action
 }
 
 private extension String {
