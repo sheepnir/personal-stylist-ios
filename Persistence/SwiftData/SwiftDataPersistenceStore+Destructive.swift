@@ -5,6 +5,9 @@ struct PhotoCleanup: Sendable {
     var garmentIds: [UUID]
     var imagePaths: [String]
     var referencedByOthers: Set<String>
+    /// Sprint 9 — wearing-gallery files of deleted rows. Removed by the store that owns
+    /// `WearingPhotoFileStore`, never by `UserGarmentPhotoStore`.
+    var wearingFileIds: [UUID] = []
 
     static let empty = PhotoCleanup(garmentIds: [], imagePaths: [], referencedByOthers: [])
 
@@ -119,12 +122,24 @@ extension SwiftDataPersistenceStore {
             context.delete(row)
         }
 
+        // Sprint 9: a garment's wearing photos go with it; other garments' photos stay.
+        var wearingFileIds: [UUID] = []
+        let galleryFD = FetchDescriptor<WearingPhotoEntity>(
+            predicate: #Predicate { $0.userId == uid && $0.garmentId == deletedId }
+        )
+        for row in try context.fetch(galleryFD) {
+            wearingFileIds.append(row.displayFileId)
+            if let source = row.sourceFileId { wearingFileIds.append(source) }
+            context.delete(row)
+        }
+
         context.delete(garment)
 
         return PhotoCleanup(
             garmentIds: [deletedId],
             imagePaths: imagePaths,
-            referencedByOthers: referencedByOthers
+            referencedByOthers: referencedByOthers,
+            wearingFileIds: wearingFileIds
         )
     }
 
@@ -209,10 +224,22 @@ extension SwiftDataPersistenceStore {
             context.delete(rule)
         }
 
+        // Sprint 9: every garment is gone, so every wearing photo row goes too.
+        var wearingFileIds: [UUID] = []
+        let gallery = try context.fetch(FetchDescriptor<WearingPhotoEntity>(
+            predicate: #Predicate { $0.userId == uid }
+        ))
+        for row in gallery {
+            wearingFileIds.append(row.displayFileId)
+            if let source = row.sourceFileId { wearingFileIds.append(source) }
+            context.delete(row)
+        }
+
         return PhotoCleanup(
             garmentIds: garmentIds,
             imagePaths: imagePaths,
-            referencedByOthers: []
+            referencedByOthers: [],
+            wearingFileIds: wearingFileIds
         )
     }
 

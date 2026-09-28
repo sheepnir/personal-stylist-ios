@@ -25,6 +25,12 @@ struct PersonalStylistApp: App {
         self.modelContainer = opened.container
         self.store = opened.store
         self.blockedMessage = launch.blockedMessage
+        if let opened = opened.store {
+            // ADR-0004: remove wearing-photo files left by a termination between write and commit.
+            Task(priority: .utility) {
+                await opened.sweepOrphanWearingPhotoFiles()
+            }
+        }
         #if DEBUG
         if let sd = opened.store {
             Task {

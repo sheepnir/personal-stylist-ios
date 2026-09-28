@@ -4,8 +4,8 @@ import SwiftData
 enum AppModelContainer {
     static let storeName = "PersonalStylistLocal"
 
-    /// Current (V2) schema.
-    static let schema = Schema(versionedSchema: PersonalStylistSchemaV2.self)
+    /// Current (V3) schema — V2 + WearingPhotoEntity (Sprint 9, ADR-0004).
+    static let schema = Schema(versionedSchema: PersonalStylistSchemaV3.self)
 
     static func make(inMemory: Bool = false) throws -> ModelContainer {
         let config = ModelConfiguration(
@@ -16,7 +16,7 @@ enum AppModelContainer {
         return try openCurrent(configurations: [config], runUnversionedPostOpen: !inMemory)
     }
 
-    /// Open a disk store at `url` with the V2 schema + migration plan (#215 / #220 helper).
+    /// Open a disk store at `url` with the current schema + migration plan (#215 / #220 helper).
     static func make(at url: URL) throws -> ModelContainer {
         let config = ModelConfiguration(schema: schema, url: url)
         return try openCurrent(configurations: [config], runUnversionedPostOpen: true)
