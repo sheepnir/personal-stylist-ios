@@ -73,6 +73,34 @@ final class Sprint9SchemaMigrationTests: XCTestCase {
         }
     }
 
+    /// A store written without any VersionedSchema stamp (pre-#215 shape) still opens with
+    /// the V3 schema through the existing fallback, keeping its rows.
+    @MainActor
+    func testUnversionedStoreOpensAsV3WithoutLoss() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PSUnversioned-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent(LegacyStoreFixtures.storeFileName)
+        let garmentId = UUID()
+        do {
+            let plain = Schema(PersonalStylistSchemaV1_1.models)
+            let writer = try ModelContainer(for: plain, configurations: [ModelConfiguration(schema: plain, url: url)])
+            let context = ModelContext(writer)
+            context.insert(UserEntity(id: IDs.user))
+            let stub = try XCTUnwrap(FixtureWardrobeLoader.loadGarments().first)
+            let entity = StubEntityMapper.makeEntity(from: stub, userId: IDs.user)
+            entity.id = garmentId
+            context.insert(entity)
+            try context.save()
+        }
+        let container = try LegacyStoreFixtures.openMigratedContainer(at: url)
+        let context = ModelContext(container)
+        let garments = try context.fetch(FetchDescriptor<GarmentEntity>())
+        XCTAssertEqual(garments.map(\.id), [garmentId])
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<WearingPhotoEntity>()), 0)
+    }
+
     /// Order-independent semantic view of the rows the upgrade must preserve.
     private struct Snapshot: Equatable {
         struct Garment: Equatable {

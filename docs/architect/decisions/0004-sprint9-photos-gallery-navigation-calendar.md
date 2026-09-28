@@ -71,7 +71,8 @@ New entity `WearingPhotoEntity`. It adds no relationship, and every existing `@M
 - **Edit sequence:** the store writes a new displayed file and updates `displayFileId` and `updatedAt` in one save. It removes the previous displayed file only after that save succeeds. If the save fails, the new file is removed and the old one keeps being shown.
 - **Remove sequence:** the user confirms first. The store deletes the row and saves, then removes that row's two files. Garment data, the reference photo, the profile picture, wear history and any exported Photos copy are untouched.
 - **Garment deletion:** deleting a garment also deletes its gallery rows in the same save. Their files are removed afterwards. "Clear wardrobe and looks" does the same for every garment.
-- **Termination between file write and commit:** after launch, a sweep removes files in `WearingPhotos/` and `GarmentPhotos/Sources/` that no row or reference points to. The sweep only looks inside those two directories, runs after the store opens, and skips files modified in the last ten minutes.
+- **Termination between file write and commit:** after launch, a sweep removes files in `WearingPhotos/` and `GarmentPhotos/Sources/` that no row or reference points to. The sweep only looks inside those two directories, runs after the store opens, and skips files modified in the last ten minutes. When the store has no gallery rows at all, the sweep does nothing, so lost rows never turn into lost photos.
+- **Retries and export:** a retried add must name the same garment; a mismatch is rejected. Export state can be recorded only for camera captures.
 
 ### Migration
 
@@ -81,6 +82,7 @@ New entity `WearingPhotoEntity`. It adds no relationship, and every existing `@M
 - Existing garments, photo references, profile values, prices, currency, dates, sets, wear events, memberships and outfit provenance are not rewritten. No photo is re-encoded during migration.
 - `baseline.2026092602.cleanStartCompleted` is unchanged.
 - If the store fails to open, the existing blocked-launch screen still applies: nothing falls back to an empty or in-memory wardrobe.
+- Downgrading to a pre-V3 build is not supported. An older build may not keep gallery rows; the empty-table sweep guard keeps their files on disk.
 
 ## Selfie capture and Photos export
 

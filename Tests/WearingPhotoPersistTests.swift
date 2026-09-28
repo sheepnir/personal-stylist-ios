@@ -293,6 +293,14 @@ final class WearingPhotoPersistTests: XCTestCase {
             let fetched = await store.fetchWearingPhotos(garmentId: garment.id)
             XCTAssertEqual(fetched.count, 1, store.backendName)
             XCTAssertEqual(fetched.first?.source, .camera)
+
+            let imported = try await store.addWearingPhoto(request(garment.id))
+            do {
+                _ = try await store.setWearingPhotoExportState(id: imported.id, state: .saved)
+                XCTFail("library imports are never exported")
+            } catch {
+                XCTAssertEqual(error as? WearingPhotoPersistError, .photoUnavailable)
+            }
         }
     }
 
@@ -300,19 +308,68 @@ final class WearingPhotoPersistTests: XCTestCase {
 
     @MainActor
     func testGalleryRowsAndFilesSurviveRelaunch() async throws {
-        let (directory, storeURL, first) = try TestModelContainers.makeOnDiskTemp()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PSTestStore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("PersonalStylistLocal.store")
         let files = trackedFileStore()
-        let store = SwiftDataPersistenceStore(container: first, defaults: defaults, wearingPhotoFiles: files)
-        let garment = try await seedGarment(in: store)
-        let photo = try await store.addWearingPhoto(request(garment.id))
 
-        let reopened = try TestModelContainers.restart(storeURL: storeURL, releasing: first)
-        let relaunched = SwiftDataPersistenceStore(container: reopened, defaults: defaults, wearingPhotoFiles: files)
+        let garment: StubGarment
+        let photo: StubWearingPhoto
+        do {
+            // First launch: every reference to the container ends with this scope.
+            let store = SwiftDataPersistenceStore(
+                container: try TestModelContainers.makeOnDisk(storeURL: storeURL),
+                defaults: defaults,
+                wearingPhotoFiles: files
+            )
+            garment = try await seedGarment(in: store)
+            photo = try await store.addWearingPhoto(request(garment.id))
+        }
+
+        let relaunched = SwiftDataPersistenceStore(
+            container: try TestModelContainers.makeOnDisk(storeURL: storeURL),
+            defaults: defaults,
+            wearingPhotoFiles: files
+        )
         let fetched = await relaunched.fetchWearingPhotos(garmentId: garment.id)
         XCTAssertEqual(fetched, [photo])
         await relaunched.sweepOrphanWearingPhotoFiles()
         XCTAssertTrue(files.exists(photo.displayFileId), "sweep keeps referenced files")
+    }
+
+    @MainActor
+    func testSweepWithNoRowsNeverDeletesFiles() async throws {
+        for store in try makeStores() {
+            let files = store.wearingPhotoFiles
+            let file = try files.write(try Self.jpeg(.gray))
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-86_400)],
+                ofItemAtPath: files.fileURL(for: file).path
+            )
+            await store.sweepOrphanWearingPhotoFiles()
+            XCTAssertTrue(files.exists(file), "\(store.backendName): lost rows must not become lost photos")
+        }
+    }
+
+    @MainActor
+    func testRetryWithSameIdForAnotherGarmentIsRejected() async throws {
+        for store in try makeStores() {
+            let garment = try await seedGarment(in: store)
+            let other = try await seedGarment(in: store, name: "Synthetic Cord Trousers")
+            var req = request(garment.id)
+            _ = try await store.addWearingPhoto(req)
+            req.garmentId = other.id
+            do {
+                _ = try await store.addWearingPhoto(req)
+                XCTFail("expected saveFailed")
+            } catch {
+                XCTAssertEqual(error as? WearingPhotoPersistError, .saveFailed)
+            }
+            let otherPhotos = await store.fetchWearingPhotos(garmentId: other.id)
+            XCTAssertTrue(otherPhotos.isEmpty, store.backendName)
+        }
     }
 
     @MainActor

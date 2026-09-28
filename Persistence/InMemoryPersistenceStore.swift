@@ -472,7 +472,8 @@ extension InMemoryPersistenceStore {
 
     func setWearingPhotoExportState(id: UUID, state: WearingPhotoExportState) async throws -> StubWearingPhoto {
         lock.lock(); defer { lock.unlock() }
-        guard let idx = wearingPhotos.firstIndex(where: { $0.id == id }) else {
+        guard let idx = wearingPhotos.firstIndex(where: { $0.id == id }),
+              wearingPhotos[idx].source == .camera else {
             throw WearingPhotoPersistError.photoUnavailable
         }
         wearingPhotos[idx].exportState = state
@@ -483,6 +484,7 @@ extension InMemoryPersistenceStore {
         lock.lock()
         let referenced = Set(Self.fileIds(of: wearingPhotos))
         lock.unlock()
+        guard !referenced.isEmpty else { return }
         wearingPhotoFiles.sweepOrphans(referenced: referenced)
     }
 
@@ -490,7 +492,12 @@ extension InMemoryPersistenceStore {
         lock.lock()
         let existing = wearingPhotos.first { $0.id == request.id }
         lock.unlock()
-        if let existing { return existing }
+        if let existing {
+            guard existing.garmentId == request.garmentId else {
+                throw WearingPhotoPersistError.saveFailed
+            }
+            return existing
+        }
 
         let displayId = try wearingPhotoFiles.write(request.displayJPEG)
         var sourceId: UUID?

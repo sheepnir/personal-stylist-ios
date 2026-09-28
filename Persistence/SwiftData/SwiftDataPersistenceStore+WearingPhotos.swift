@@ -48,7 +48,9 @@ extension SwiftDataPersistenceStore {
             let fd = FetchDescriptor<WearingPhotoEntity>(
                 predicate: #Predicate { $0.userId == uid && $0.id == photoId }
             )
-            guard let row = try context.fetch(fd).first else {
+            guard let row = try context.fetch(fd).first,
+                  row.sourceRaw == WearingPhotoSource.camera.rawValue else {
+                // Export applies only to in-app camera captures (ADR-0004).
                 throw WearingPhotoPersistError.photoUnavailable
             }
             if row.photosExportRaw != state.rawValue {
@@ -73,6 +75,9 @@ extension SwiftDataPersistenceStore {
             }
             return ids
         }) else { return }
+        // No rows at all while files exist can mean rows were lost (for example an
+        // unsupported downgrade dropped the table). Never turn that into file loss.
+        guard !referenced.isEmpty else { return }
         wearingPhotoFiles.sweepOrphans(referenced: referenced)
     }
 
@@ -81,12 +86,22 @@ extension SwiftDataPersistenceStore {
     private func addWearingPhotoUnlocked(_ request: WearingPhotoAddRequest) async throws -> StubWearingPhoto {
         let uid = userId
         let photoId = request.id
-        let existing = try? await performThrowingValue { context -> StubWearingPhoto? in
-            let fd = FetchDescriptor<WearingPhotoEntity>(predicate: #Predicate { $0.id == photoId })
-            return try context.fetch(fd).first.map(StubEntityMapper.stub(from:))
+        let existing: StubWearingPhoto?
+        do {
+            existing = try await performThrowingValue { context -> StubWearingPhoto? in
+                let fd = FetchDescriptor<WearingPhotoEntity>(
+                    predicate: #Predicate { $0.userId == uid && $0.id == photoId }
+                )
+                return try context.fetch(fd).first.map(StubEntityMapper.stub(from:))
+            }
+        } catch {
+            throw WearingPhotoPersistError.map(error)
         }
         if let existing {
             // Retried save of the same add flow: no second association, no new files.
+            guard existing.garmentId == request.garmentId else {
+                throw WearingPhotoPersistError.saveFailed
+            }
             return existing
         }
 
