@@ -12,6 +12,7 @@ struct OutfitBoardView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("demo.boardKeepTipShown") private var boardKeepTipShown = false
+    @AppStorage(StylingModel.defaultsKey) private var selectedStylingModel = StylingModel.jev.rawValue
     @State private var showKeepTipBanner = false
 
     /// Main column: non-accessories + accessory Starting item (GH #61).
@@ -33,6 +34,21 @@ struct OutfitBoardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 contextBar
+                Picker("Stylist for next request", selection: $selectedStylingModel) {
+                    ForEach(StylingModel.allCases) { option in Text(option.title).tag(option.rawValue) }
+                }
+                .pickerStyle(.menu)
+                .disabled(model.isGenerating || model.isLoadingAlternatives)
+                .accessibilityHint("Select a model, then update the outfit to compare with the same weather and occasion.")
+                .onChange(of: selectedStylingModel) { _, _ in model.markContextChanged() }
+                Text("Enable each model’s suggestions in Profile before using it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let current = model.outfit {
+                    Text("Generated with: \(StylingModel.resultTitle(current.generation?.modelId))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if model.deviceAccessRejected {
                     deviceAccessFailureBanner()
                 } else if let fail = model.generateFailureMessage {
@@ -497,9 +513,9 @@ struct OutfitBoardView: View {
 
             if model.contextDirty, !(model.isGenerating && model.generateIntent == .updateContext) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Out of date for this weather/occasion")
+                    Text("Settings changed")
                         .font(.subheadline.weight(.semibold))
-                    Text("Your outfit still shows the previous context. Update when you’re ready.")
+                    Text("Your outfit still uses the previous settings. Update when you’re ready.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Update outfit") {

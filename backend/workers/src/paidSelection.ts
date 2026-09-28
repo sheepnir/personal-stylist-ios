@@ -1,3 +1,4 @@
+import { LUNA_MODEL, LUNA_POLICY, LUNA_PROMPT_VERSION, fetchLunaPrice, lunaRequestBody, validateLuna } from './luna.js';
 import type { Env, SpendConfig } from './types.js';
 import type { AuthContext } from './auth.js';
 import type { ContextSnapshot } from '@personal-stylist/outfit-engine';
@@ -22,10 +23,10 @@ export type Provenance = { modelId: string; promptVersion: string; fallbackLevel
   inputTokens?: unknown; outputTokens?: unknown; spendState?: string; latencyMs: number };
 export type Selection<T> = { result: T; provenance?: Provenance };
 
-export function eligible(env: Env, auth: AuthContext, accepted: unknown): boolean {
+export function eligible(env: Env, auth: AuthContext, accepted: unknown, model: unknown = JEV_MODEL): boolean {
   const locator = deviceLocatorFromToken(auth.deviceToken);
   return env.PROVIDER_GENERATION === 'live' && ['production', 'staging'].includes(env.ENVIRONMENT ?? '') &&
-    !auth.legacyShared && locator !== null && accepted === POLICY_VERSION &&
+    !auth.legacyShared && locator !== null && ((model === JEV_MODEL && accepted === POLICY_VERSION) || (model === LUNA_MODEL && accepted === LUNA_POLICY && env.LUNA_COMPARISON === 'enabled')) &&
     env.PROVIDER_POLICY_VERIFIED_ON !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(env.PROVIDER_POLICY_VERIFIED_ON) &&
     env.PROVIDER_KEY_LIMIT_VERIFIED === 'true' &&
     (env.PROVIDER_GENERATION_DEVICES === undefined || env.PROVIDER_GENERATION_DEVICES.split(',').includes(locator));
@@ -33,25 +34,29 @@ export function eligible(env: Env, auth: AuthContext, accepted: unknown): boolea
 /** Same selection/reservation path for generate and swap. No provider retry. */
 export async function selectPaid<T>(args: {
   candidates: Candidate<T>[]; fallback: T; context: ContextSnapshot; acceptedPolicy: unknown;
-  env: Env; auth: AuthContext; task: 'jev-generate' | 'jev-swap'; fetcher?: typeof fetch;
+  env: Env; auth: AuthContext; task: 'jev-generate' | 'jev-swap'; fetcher?: typeof fetch; selectedModel?: unknown;
 }): Promise<Selection<T>> {
-  const { candidates, fallback, context, acceptedPolicy, env, auth, task } = args;
-  if (!eligible(env, auth, acceptedPolicy) || candidates.length < 2) return { result: fallback };
+  const { candidates, fallback, context, acceptedPolicy, env, auth } = args;
+  const task = args.selectedModel === LUNA_MODEL ? args.task.replace('jev-', 'luna-') : args.task;
+  const model = args.selectedModel ?? JEV_MODEL;
+  const luna = model === LUNA_MODEL;
+  const promptVersion = luna ? LUNA_PROMPT_VERSION : JEV_PROMPT_VERSION;
+  if (!eligible(env, auth, acceptedPolicy, model) || candidates.length < 2) return { result: fallback };
   const started = Date.now();
   const fail = (reason: NonNullable<Provenance['fallbackReason']>): Selection<T> => ({ result: fallback, provenance: {
     modelId: 'deterministic-v0', promptVersion: 'none', fallbackLevel: 'DETERMINISTIC', fallbackReason: reason,
     costUSD: null, latencyMs: Date.now() - started,
     ...(reason === 'SPEND_CAP' ? { spendState: 'HARD_CAP_DETERMINISTIC' } : {}),
   } });
-  const log = (outcome: string, rejection?: DecisionValidationError) => console.info(JSON.stringify({ modelId: JEV_MODEL, promptVersion: JEV_PROMPT_VERSION, outcome, ...(rejection ? { validationReason: rejection.reason } : {}), latencyMs: Date.now() - started }));
+  const log = (outcome: string, rejection?: DecisionValidationError) => console.info(JSON.stringify({ modelId: model, promptVersion, outcome, ...(rejection ? { validationReason: rejection.reason } : {}), latencyMs: Date.now() - started }));
   const fetcher = args.fetcher ?? fetch;
   if (env.PRIMARY_MODEL !== JEV_MODEL || !env.OPENROUTER_API_KEY) { log('MODEL_NOT_ALLOWED'); return fail('PROVIDER_ERROR'); }
   let price, body: string, ceiling: number;
   try {
-    price = await fetchPrice(fetcher);
+    price = await (luna ? fetchLunaPrice(fetcher) : fetchPrice(fetcher));
     ceiling = Math.max(0.000001, costBound(price));
     if (!Number.isFinite(ceiling) || ceiling <= 0 || ceiling > 1) throw new Error('COST_BOUND');
-    body = requestBody(candidates, context, price);
+    body = luna ? lunaRequestBody(candidates, context, price) : requestBody(candidates, context, price);
   } catch { log('MODEL_UNAVAILABLE'); return fail('PROVIDER_ERROR'); }
   const cap = strictCap(env.GLOBAL_DAILY_CAP_USD), total = strictCap(env.EVALUATION_TOTAL_CAP_USD);
   if (strictCap(env.DAILY_CAP_USD) === null || cap === null || total === null || !env.SPEND_LEDGER) { log('CAP_CONFIGURATION'); return fail('SPEND_CAP'); }
@@ -79,7 +84,7 @@ export async function selectPaid<T>(args: {
   // Once both reservations are acknowledged, failures retain conservative holds.
   let raw: unknown;
   try {
-    const response = await fetcher('https://openrouter.ai/api/alpha/decisions', {
+    const response = await fetcher(luna ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://openrouter.ai/api/alpha/decisions', {
       method: 'POST', headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
       body, signal: AbortSignal.timeout(8000),
     });
@@ -106,9 +111,9 @@ export async function selectPaid<T>(args: {
     log('COST_OVER_RESERVATION'); return fail('PROVIDER_ERROR');
   }
   try {
-    const decision = validateDecision(raw, candidates);
+    const decision = (luna ? validateLuna(raw, candidates) : validateDecision(raw, candidates));
     log('MODEL_SELECTED');
-    return { result: decision.result, provenance: { modelId: decision.model, promptVersion: JEV_PROMPT_VERSION,
+    return { result: decision.result, provenance: { modelId: decision.model, promptVersion,
       fallbackLevel: 'NONE', costUSD: cost, inputTokens: decision.inputTokens, outputTokens: decision.outputTokens,
       spendState: softThresholdReached ? 'SOFT_THRESHOLD' : 'OK', latencyMs: Date.now() - started } };
   } catch (error) { log('INVALID_OUTPUT', error instanceof DecisionValidationError ? error : undefined); return fail('INVALID_OUTPUT'); }

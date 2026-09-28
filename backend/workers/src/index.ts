@@ -185,7 +185,7 @@ export default {
 function buildCorsHeaders(request: Request, env: Env): Record<string, string> {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Styling-Policy',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Styling-Policy, X-Styling-Model',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };

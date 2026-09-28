@@ -111,3 +111,14 @@ Committed configurations keep `PROVIDER_GENERATION=off`. Private deployment conf
 `X-Styling-Policy` must match `shared/privacy-policy-version.json`. Consent covers only the documented allowlisted text attributes. `GET /v1/models` reports the policy and model metadata; it does not grant consent. Withdrawn or outdated consent takes the deterministic path.
 
 Run `npm run test:runtime` in addition to unit tests. These tests use Miniflare/workerd with synthetic credentials, local disk persistence and isolated test objects; they do not call OpenRouter. See `tests/runtime/README.md` and `docs/qa/sprint8-bounded-selection.md` at the repository root for coverage and limits.
+
+### Optional Luna comparison
+
+`X-Styling-Model` may select `typesafe/jev-1.13` (default) or
+`openai/gpt-5.6-luna`. Luna additionally requires private deployment setting
+`LUNA_COMPARISON=enabled` and exact `X-Styling-Policy: luna-text-v1` consent.
+Existing Jev consent remains `jev-text-v1`; it cannot authorize Luna. Keep
+`PRIMARY_MODEL=typesafe/jev-1.13` as the base configuration pin for this comparison.
+Both choices use the same device/global ledger, runtime switch, device allowlist
+and total evaluation cap. No separate budget is introduced. Model-specific
+activation still requires provider policy verification and release approval.

@@ -30,6 +30,7 @@ export interface Env extends Omit<Cloudflare.Env, "REQUEST_RATE_LIMITER" | "DEVI
   
   PROVIDER_GENERATION?: string;
   PRIMARY_MODEL?: string;
+  LUNA_COMPARISON?: string;
   GLOBAL_DAILY_CAP_USD?: string;
   EVALUATION_TOTAL_CAP_USD?: string;
   PROVIDER_GENERATION_DEVICES?: string;

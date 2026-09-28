@@ -1,3 +1,4 @@
+import { LUNA_MODEL } from './luna.js';
 import { generateCandidates, swapCandidates, JEV_MODEL, JEV_PROMPT_VERSION, POLICY_VERSION } from './jev.js';
 import { eligible, selectPaid } from './paidSelection.js';
 /**
@@ -107,8 +108,10 @@ export async function handleAlternatives(
     }
     
     const accepted = request.headers.get('X-Styling-Policy');
-    const selected = await selectPaid({ candidates: eligible(env, auth, accepted) ? swapCandidates(input, result) : [],
-      fallback: result, context: input.context, acceptedPolicy: accepted, env, auth, task: 'jev-swap' });
+    const selectedModel = request.headers.get('X-Styling-Model') ?? JEV_MODEL;
+    if (![JEV_MODEL, LUNA_MODEL].includes(selectedModel)) return badRequest('Unsupported styling model');
+    const selected = await selectPaid({ candidates: eligible(env, auth, accepted, selectedModel) ? swapCandidates(input, result) : [],
+      fallback: result, context: input.context, acceptedPolicy: accepted, selectedModel, env, auth, task: 'jev-swap' });
     const output = selected.provenance ? { ...selected.result, generation: selected.provenance } : selected.result;
     return new Response(JSON.stringify(output), {
       status: 200,
@@ -172,10 +175,12 @@ export async function handleGenerate(
     }
     
     const accepted = request.headers.get('X-Styling-Policy');
-    const selected = await selectPaid({ candidates: eligible(env, auth, accepted) ? generateCandidates(input, result) : [],
-      fallback: result, context: input.context, acceptedPolicy: accepted, env, auth, task: 'jev-generate' });
+    const selectedModel = request.headers.get('X-Styling-Model') ?? JEV_MODEL;
+    if (![JEV_MODEL, LUNA_MODEL].includes(selectedModel)) return badRequest('Unsupported styling model');
+    const selected = await selectPaid({ candidates: eligible(env, auth, accepted, selectedModel) ? generateCandidates(input, result) : [],
+      fallback: result, context: input.context, acceptedPolicy: accepted, selectedModel, env, auth, task: 'jev-generate' });
     const output = selected.provenance ? { ...selected.result,
-      rationale: { ...selected.result.rationale, ...(selected.provenance.fallbackLevel === 'NONE' ? { summary: 'Jev selected this outfit. Pairing notes follow your wardrobe rules.' } : {}) },
+      rationale: { ...selected.result.rationale, ...(selected.provenance.fallbackLevel === 'NONE' ? { summary: `${selectedModel === LUNA_MODEL ? 'GPT-5.6 Luna' : 'Jev'} selected this outfit. Pairing notes follow your wardrobe rules.` } : {}) },
       generation: { ...selected.result.generation, ...selected.provenance } } : selected.result;
     // Success: deterministic outfit (200)
     // Note: generation.spendState is HARD_CAP_DETERMINISTIC

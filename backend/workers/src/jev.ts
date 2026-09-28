@@ -26,7 +26,7 @@ export function safeGarment(g: GarmentSummary) {
     formality: degree(g.formality), warmth: degree(g.warmth),
   };
 }
-function safeContext(c: ContextSnapshot) {
+export function safeContext(c: ContextSnapshot) {
   return { occasion: OCCASIONS.has(c.occasion) ? c.occasion : undefined,
     occasionFormality: degree(c.occasionFormality),
     temperatureBand: TEMPERATURES.has(c.temperatureBand) ? c.temperatureBand : undefined,

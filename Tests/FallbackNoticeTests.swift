@@ -162,7 +162,7 @@ final class FallbackNoticeTests: XCTestCase {
         h.model.swapSlot = .bottom
         h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
         XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
-        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev’s suggested swap.")
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev 1.13’s suggested swap.")
         h.model.performSwapUndo()
         XCTAssertEqual(h.model.outfit?.rationaleSummary, originalSummary)
         XCTAssertEqual(h.model.outfit?.generation, originalGeneration)
@@ -176,7 +176,36 @@ final class FallbackNoticeTests: XCTestCase {
         XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated after swap.")
         h.model.performSwapUndo()
         XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
-        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev’s suggested swap.")
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev 1.13’s suggested swap.")
+    }
+
+    @MainActor
+    func testLunaSwapAttributionAndUndoRestoreActualModel() async throws {
+        let h = try await Harness.make(defaults: defaults)
+        h.serve(generationJSON: ADR0001GenerateFixtures.generationJSON(fallbackReasonJSON: nil))
+        _ = await h.model.buildDemoOutfit(intent: .firstBuild)
+        let originalSummary = h.model.outfit?.rationaleSummary
+        let originalGeneration = h.model.outfit?.generation
+        let other = try XCTUnwrap(h.spareBottom)
+        let jev = SwapSelectionMetadata(modelId: "openai/gpt-5.6-luna", promptVersion: "outfit-choice-luna-v1", fallbackLevel: "NONE", fallbackReason: nil, costUSD: 0.00001, selectedSuggestedOption: true)
+        h.model.swapSlot = .bottom
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with GPT-5.6 Luna’s suggested swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, originalSummary)
+        XCTAssertEqual(h.model.outfit?.generation, originalGeneration)
+
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        defaults.removeObject(forKey: StylingConsent.defaultsKey)
+        XCTAssertNil(StylingConsent.acceptedVersion(in: defaults))
+        h.model.setAssignmentLocked(slot: .bottom, locked: false)
+        h.model.applySwap(StubSwapAlternative(id: h.bottom.id, garment: h.bottom, reason: "local", score: nil, setPartnerIds: []))
+        XCTAssertNil(h.model.outfit?.generation?.lastSwap)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated after swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with GPT-5.6 Luna’s suggested swap.")
     }
 
     @MainActor
