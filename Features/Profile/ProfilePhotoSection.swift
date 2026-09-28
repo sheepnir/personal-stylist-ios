@@ -112,6 +112,7 @@ struct ProfilePhotoSection: View {
         crop = CropEditorPayload(image: image)
     }
 
+    @MainActor
     private func save(_ result: CropEditResult, payload: CropEditorPayload) {
         guard !isSavingCrop else { return }
         let newSource = pendingNewSource
@@ -123,7 +124,7 @@ struct ProfilePhotoSection: View {
         isSavingCrop = true
         let image = payload.image
         let rect = result.pixelRect
-        let store = store
+        let store = self.store
         Task {
             // Crop, encode and the durable write run off the main thread.
             let saved = await Task.detached(priority: .userInitiated) { () -> Data? in

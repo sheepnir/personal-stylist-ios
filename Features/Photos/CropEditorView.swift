@@ -146,6 +146,8 @@ struct CropEditorView: View {
             )
         )
         .onChange(of: zoom) { _, newZoom in
+            // Any zoom change counts, including VoiceOver adjustments of the slider.
+            hasInteracted = true
             offset = CropGeometry.clampedOffset(offset, imageSize: imageSize, frame: frame, zoom: newZoom)
         }
         .accessibilityElement()
