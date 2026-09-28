@@ -118,18 +118,28 @@ export async function fetchPrice(fetcher: typeof fetch = fetch): Promise<Price> 
   if (![prompt, completion].every(n => Number.isFinite(n) && n >= 0) || typeof maxOutput !== 'number' || !Number.isSafeInteger(maxOutput) || maxOutput < 0 || maxOutput > 32000) throw new Error('MODEL_UNPRICED');
   return { prompt, completion, context: 32000, maxOutput };
 }
+export type DecisionRejection = 'MODEL_MISMATCH' | 'ANSWER_SHAPE' | 'UNKNOWN_CHOICE' |
+  'INVALID_CONFIDENCE' | 'LOW_CONFIDENCE' | 'INVALID_PROBABILITIES' | 'INVALID_USAGE';
+/** Fixed diagnostic codes only; never retain provider content in an error. */
+export class DecisionValidationError extends Error {
+  constructor(readonly reason: DecisionRejection) { super('INVALID_OUTPUT'); }
+}
 export function validateDecision<T>(raw: unknown, candidates: Candidate<T>[]) {
   const response = object(raw), answers = object(response.answers), answer = object(answers.outfit), usage = object(response.usage);
   const validModel = response.model === JEV_MODEL || (typeof response.model === 'string' && /^typesafe\/jev-1\.13-\d{8}$/.test(response.model));
-  const probabilities = object(answer.probabilities);
+  const reject = (reason: DecisionRejection): never => { throw new DecisionValidationError(reason); };
+  if (!validModel) reject('MODEL_MISMATCH');
+  if (Object.keys(answers).join() !== 'outfit' || answer.type !== 'choice') reject('ANSWER_SHAPE');
   const candidate = candidates.find(c => c.token === answer.choice);
+  if (!candidate) return reject('UNKNOWN_CHOICE');
+  if (typeof answer.confidence !== 'number' || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) reject('INVALID_CONFIDENCE');
+  if ((answer.confidence as number) < MIN_CONFIDENCE) reject('LOW_CONFIDENCE');
+  const probabilities = object(answer.probabilities);
   const probs = Object.values(probabilities);
-  if (!validModel || Object.keys(answers).join() !== 'outfit' || answer.type !== 'choice' || !candidate ||
-    typeof answer.confidence !== 'number' || !Number.isFinite(answer.confidence) || answer.confidence < MIN_CONFIDENCE || answer.confidence > 1 ||
-    Object.keys(probabilities).length !== candidates.length || !candidates.every(c => Object.hasOwn(probabilities, c.token)) ||
+  if (Object.keys(probabilities).length !== candidates.length || !candidates.every(c => Object.hasOwn(probabilities, c.token)) ||
     !probs.every(p => typeof p === 'number' && Number.isFinite(p) && p >= 0 && p <= 1) ||
-    Math.abs((probs as number[]).reduce((a, b) => a + b, 0) - 1) > 0.02 ||
-    ![usage.input_tokens, usage.output_tokens].every(n => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0)) throw new Error('INVALID_OUTPUT');
+    Math.abs((probs as number[]).reduce((a, b) => a + b, 0) - 1) > 0.02) reject('INVALID_PROBABILITIES');
+  if (![usage.input_tokens, usage.output_tokens].every(n => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0)) reject('INVALID_USAGE');
   return { result: candidate.result, model: response.model as string, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens };
 }
 export const promptHash = createHash('sha256').update(JEV_INSTRUCTION).digest('hex');

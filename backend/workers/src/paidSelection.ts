@@ -4,7 +4,7 @@ import type { ContextSnapshot } from '@personal-stylist/outfit-engine';
 import { deviceLocatorFromToken } from './tokens.js';
 import { spendConfigFromEnv } from './spendConfig.js';
 import { capUsdToMicro } from './ledgerCore.js';
-import { boundedJSON, costBound, fetchPrice, JEV_MODEL, JEV_PROMPT_VERSION, object, POLICY_VERSION, requestBody, validateDecision, type Candidate } from './jev.js';
+import { DecisionValidationError, boundedJSON, costBound, fetchPrice, JEV_MODEL, JEV_PROMPT_VERSION, object, POLICY_VERSION, requestBody, validateDecision, type Candidate } from './jev.js';
 
 export async function boundedLedger<T>(promise: Promise<T>, milliseconds = 600): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -43,7 +43,7 @@ export async function selectPaid<T>(args: {
     costUSD: null, latencyMs: Date.now() - started,
     ...(reason === 'SPEND_CAP' ? { spendState: 'HARD_CAP_DETERMINISTIC' } : {}),
   } });
-  const log = (outcome: string) => console.info(JSON.stringify({ modelId: JEV_MODEL, promptVersion: JEV_PROMPT_VERSION, outcome, latencyMs: Date.now() - started }));
+  const log = (outcome: string, rejection?: DecisionValidationError) => console.info(JSON.stringify({ modelId: JEV_MODEL, promptVersion: JEV_PROMPT_VERSION, outcome, ...(rejection ? { validationReason: rejection.reason } : {}), latencyMs: Date.now() - started }));
   const fetcher = args.fetcher ?? fetch;
   if (env.PRIMARY_MODEL !== JEV_MODEL || !env.OPENROUTER_API_KEY) { log('MODEL_NOT_ALLOWED'); return fail('PROVIDER_ERROR'); }
   let price, body: string, ceiling: number;
@@ -111,5 +111,5 @@ export async function selectPaid<T>(args: {
     return { result: decision.result, provenance: { modelId: decision.model, promptVersion: JEV_PROMPT_VERSION,
       fallbackLevel: 'NONE', costUSD: cost, inputTokens: decision.inputTokens, outputTokens: decision.outputTokens,
       spendState: softThresholdReached ? 'SOFT_THRESHOLD' : 'OK', latencyMs: Date.now() - started } };
-  } catch { log('INVALID_OUTPUT'); return fail('INVALID_OUTPUT'); }
+  } catch (error) { log('INVALID_OUTPUT', error instanceof DecisionValidationError ? error : undefined); return fail('INVALID_OUTPUT'); }
 }
