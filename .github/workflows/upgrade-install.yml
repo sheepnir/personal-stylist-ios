@@ -1,0 +1,97 @@
+name: Upgrade install (Simulator)
+
+# Installed-app upgrade proof: builds the accepted baseline, populates it with synthetic
+# data on a fresh Simulator, installs the checked-out build over it in place, and compares
+# rows and photo hashes (scripts/verify-sprint9-upgrade.sh). Synthetic evidence only.
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline commit to upgrade from
+        required: false
+        default: bf20abe9c958539a90a19566ebdce5a2aaa24f65
+  pull_request:
+    paths:
+      - 'scripts/verify-sprint9-upgrade.sh'
+      - '.github/workflows/upgrade-install.yml'
+      - 'Persistence/SwiftData/**'
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  upgrade-install:
+    name: Baseline → current in-place upgrade
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Select Xcode with iPhone 17 Simulator
+        run: |
+          set -euo pipefail
+          for candidate in \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode_26.2.app \
+            /Applications/Xcode_26.1.app \
+            /Applications/Xcode_26.0.1.app \
+            /Applications/Xcode_26.app \
+            /Applications/Xcode.app
+          do
+            if [[ -d "$candidate" ]]; then
+              echo "Selecting $candidate"
+              sudo xcode-select -s "$candidate/Contents/Developer"
+              break
+            fi
+          done
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      - name: Install XcodeGen (pinned, checksum-verified)
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen-${XCODEGEN_VERSION}.zip"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  ${archive}" | shasum -a 256 -c -
+          install_dir="$RUNNER_TEMP/xcodegen-${XCODEGEN_VERSION}"
+          unzip -q "$archive" -d "$install_dir"
+          echo "$install_dir/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Create a dedicated Simulator
+        run: |
+          set -euo pipefail
+          sim_id="$(xcrun simctl create "PS Sprint 9 Upgrade" "iPhone 17")"
+          echo "SIM_ID=$sim_id" >> "$GITHUB_ENV"
+
+      - name: Run the upgrade proof
+        env:
+          BASELINE_REF: ${{ github.event.inputs.baseline_ref || 'bf20abe9c958539a90a19566ebdce5a2aaa24f65' }}
+          WORK: ${{ runner.temp }}/ps-upgrade
+        run: |
+          set -euo pipefail
+          status=0
+          ./scripts/verify-sprint9-upgrade.sh || status=$?
+          echo "---- evidence ----"
+          for f in "$WORK"/evidence/summary.txt "$WORK"/evidence/rows-diff-*.txt "$WORK"/evidence/photos-diff-*.txt; do
+            if [[ -s "$f" ]]; then echo "== $(basename "$f")"; cat "$f"; fi
+          done
+          echo "== rows-before (counts)"
+          cut -d'|' -f1 "$WORK/evidence/rows-before.txt" | sort | uniq -c || true
+          exit $status
