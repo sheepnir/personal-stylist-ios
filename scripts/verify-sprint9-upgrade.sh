@@ -83,15 +83,19 @@ SELECT 'outfit', hex(ZID) FROM ZOUTFITENTITY ORDER BY 2;
 SQL
   ( cd "$container" && find Documents/GarmentPhotos "Library/Application Support/ProfilePhoto" -type f -name '*.jpg' -print0 2>/dev/null \
       | sort -z | xargs -0 shasum -a 256 ) > "$OUT/photos-$label.txt" || true
-  /usr/libexec/PlistBuddy -c "Print :${FROZEN_KEY}" "$container/Library/Preferences/${BUNDLE}.plist" \
-    > "$OUT/clean-start-$label.txt" 2>/dev/null || echo "missing" > "$OUT/clean-start-$label.txt"
-  # Model choice and consent (absent in a fresh synthetic install; must not change either way).
-  local key
+  # Preferences reach the plist asynchronously after the app exits. Every build here sets the
+  # clean-start key at launch, so wait (bounded) until it is on disk before reading.
+  local prefs="$container/Library/Preferences/${BUNDLE}.plist" key _i
+  for _i in $(seq 1 40); do
+    if /usr/libexec/PlistBuddy -c "Print :${FROZEN_KEY}" "$prefs" >/dev/null 2>&1; then break; fi
+    sleep 0.5
+  done
   : > "$OUT/settings-$label.txt"
-  for key in styling.selectedModel styling.acceptedPolicyVersion styling.lunaAcceptedPolicyVersion "$FROZEN_KEY"; do
-    printf '%s=%s\n' "$key" "$(/usr/libexec/PlistBuddy -c "Print :${key}" "$container/Library/Preferences/${BUNDLE}.plist" 2>/dev/null || echo '<absent>')" \
+  for key in "$FROZEN_KEY" styling.selectedModel styling.acceptedPolicyVersion styling.lunaAcceptedPolicyVersion; do
+    printf '%s=%s\n' "$key" "$(/usr/libexec/PlistBuddy -c "Print :${key}" "$prefs" 2>/dev/null || echo '<absent>')" \
       >> "$OUT/settings-$label.txt"
   done
+  grep "^${FROZEN_KEY}=" "$OUT/settings-$label.txt" | cut -d= -f2- > "$OUT/clean-start-$label.txt"
 }
 
 refuse_existing_install
