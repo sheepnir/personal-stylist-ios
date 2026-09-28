@@ -144,6 +144,7 @@ struct WearingPhotoViewer: View {
             viewerError = WearingGalleryCopy.loadFailed
             return
         }
+        viewerError = nil
         cropPayload = CropEditorPayload(image: image)
     }
 
@@ -156,6 +157,10 @@ struct WearingPhotoViewer: View {
             cropPayload = nil
             return
         }
+        guard !isSavingCrop else { return }
+        // Block a second Save for the whole encode + write, not just the write.
+        isSavingCrop = true
+        defer { isSavingCrop = false }
         let image = payload.image
         let rect = result.pixelRect
         let encoded = await Task.detached(priority: .userInitiated) { () -> Data? in
@@ -166,8 +171,6 @@ struct WearingPhotoViewer: View {
             viewerError = WearingGalleryCopy.saveFailure(.saveFailed)
             return
         }
-        isSavingCrop = true
-        defer { isSavingCrop = false }
         if await session.updateCrop(of: photo, displayJPEG: jpeg) {
             cropPayload = nil
         } else {
