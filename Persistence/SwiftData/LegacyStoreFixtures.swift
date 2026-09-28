@@ -23,6 +23,9 @@ enum LegacyStoreFixtureID: String, CaseIterable {
     case seededWardrobe = "seeded-wardrobe"
     /// Current-main-shaped V1.1 store (includes WearMembership + GarmentQueryIndex).
     case mainShapedV1_1 = "main-shaped-v1_1"
+    /// Sprint 8-shaped V2 store (the accepted baseline graph): populated wardrobe with a
+    /// user photo, prices, sets, a confirmed profile, an outfit, active + voided wears.
+    case sprint8PopulatedV2 = "sprint8-populated-v2"
 }
 
 enum LegacyStoreFixtures {
@@ -61,6 +64,11 @@ enum LegacyStoreFixtures {
         static let batch = UUID(uuidString: "b3000007-0007-4000-8000-000000000010")!
         static let pendingCapture = UUID(uuidString: "b3000007-0007-4000-8000-000000000011")!
         static let userPhotoPath = "user-photo:\(photoGarment.uuidString)"
+        static let sprint8Profile = UUID(uuidString: "b3000009-0009-4000-8000-000000000001")!
+        static let sprint8Outfit = UUID(uuidString: "b3000009-0009-4000-8000-000000000002")!
+        static let sprint8ActiveWear = UUID(uuidString: "b3000009-0009-4000-8000-000000000003")!
+        static let sprint8VoidedWear = UUID(uuidString: "b3000009-0009-4000-8000-000000000004")!
+        static let sprint8Price = Decimal(string: "129.5")!
     }
 
     // MARK: - Generators
@@ -78,6 +86,92 @@ enum LegacyStoreFixtures {
             try generateSeededWardrobe(at: packageDirectory)
         case .mainShapedV1_1:
             try generateMainShapedV1_1(at: packageDirectory)
+        case .sprint8PopulatedV2:
+            try generateSprint8PopulatedV2(at: packageDirectory)
+        }
+    }
+
+    /// Write a V2-stamped store shaped like the accepted Sprint 8 baseline (synthetic data).
+    @MainActor
+    static func generateSprint8PopulatedV2(at packageDirectory: URL) throws {
+        try writeLegacyStore(
+            versionedSchema: PersonalStylistSchemaV2.self,
+            at: packageDirectory
+        ) { context in
+            context.insert(UserEntity(id: FixedIDs.user))
+            context.insert(
+                StyleProfileEntity(
+                    id: FixedIDs.sprint8Profile,
+                    userId: FixedIDs.user,
+                    version: 3,
+                    profession: "Engineer",
+                    summaryText: "Confirmed summary",
+                    summaryUserOwned: true,
+                    confirmedAt: Date(timeIntervalSince1970: 1_758_000_000),
+                    seedSource: "founder-seed"
+                )
+            )
+            let fixtures = FixtureWardrobeLoader.loadGarments()
+            var anchor: GarmentEntity?
+            for stub in fixtures {
+                let entity = StubEntityMapper.makeEntity(from: stub, userId: FixedIDs.user)
+                if entity.id == FixedIDs.photoGarment {
+                    entity.imagePath = FixedIDs.userPhotoPath
+                    entity.purchasePrice = FixedIDs.sprint8Price
+                    entity.purchaseCurrency = "EUR"
+                    anchor = entity
+                }
+                context.insert(entity)
+                GarmentIndexSync.upsert(entity: entity, in: context)
+                if let path = entity.imagePath, !path.isEmpty {
+                    context.insert(
+                        GarmentImageEntity(
+                            userId: FixedIDs.user,
+                            originalURI: path,
+                            isPrimary: true,
+                            garment: entity
+                        )
+                    )
+                }
+            }
+            for s in FixtureWardrobeLoader.loadSets() {
+                context.insert(StubEntityMapper.makeSetEntity(from: s, userId: FixedIDs.user))
+            }
+            let anchorId = anchor?.id ?? FixedIDs.photoGarment
+            let partner = fixtures.first { $0.id != anchorId }?.id
+            let wornIds = [anchorId] + (partner.map { [$0] } ?? [])
+            context.insert(
+                StubEntityMapper.makeEntity(
+                    from: StubOutfit(
+                        id: FixedIDs.sprint8Outfit,
+                        assignments: [
+                            StubOutfitAssignment(slot: .top, garmentId: anchorId, gapReason: nil, isAnchor: true)
+                        ],
+                        rationaleSummary: "Synthetic look",
+                        offlineCached: false
+                    ),
+                    userId: FixedIDs.user
+                )
+            )
+            let voided = WearEventEntity(
+                id: FixedIDs.sprint8VoidedWear,
+                userId: FixedIDs.user,
+                wornOn: Date(timeIntervalSince1970: 1_758_100_000),
+                garmentIds: [anchorId],
+                sourceOutfitId: FixedIDs.sprint8Outfit,
+                voidedAt: Date(timeIntervalSince1970: 1_758_100_600)
+            )
+            let active = WearEventEntity(
+                id: FixedIDs.sprint8ActiveWear,
+                userId: FixedIDs.user,
+                wornOn: Date(timeIntervalSince1970: 1_758_100_600),
+                garmentIds: wornIds,
+                sourceOutfitId: FixedIDs.sprint8Outfit
+            )
+            context.insert(voided)
+            context.insert(active)
+            WearMembershipSync.replace(event: voided, in: context)
+            WearMembershipSync.replace(event: active, in: context)
         }
     }
 

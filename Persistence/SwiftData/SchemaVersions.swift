@@ -13,6 +13,8 @@ import SwiftData
 //   D-72 adds optional `GarmentEntity.attributeSourceJSON` on the live V2 type.
 //   A V2.1 VersionedSchema was not added: SwiftData hashes the shared @Model class,
 //   so a same-graph stage throws "Duplicate version checksums across stages".
+// - V3 (3.0.0) — Sprint 9 (ADR-0004): V2 + WearingPhotoEntity. No existing live class
+//   changes, so V1/V1.1/V2 checksums are unchanged and V3's differs by the new entity.
 //
 // Live `@Model` types live in DomainModels.swift (V2 shape). Lightweight stages add
 // entities and optional attributes; VersionedSchema.models lists which types belong
@@ -81,6 +83,14 @@ enum PersonalStylistSchemaV2: VersionedSchema {
     }
 }
 
+enum PersonalStylistSchemaV3: VersionedSchema {
+    static var versionIdentifier = Schema.Version(3, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        PersonalStylistSchemaV2.models + [WearingPhotoEntity.self]
+    }
+}
+
 // MARK: - Migration plan
 
 enum PersonalStylistMigrationPlan: SchemaMigrationPlan {
@@ -95,11 +105,12 @@ enum PersonalStylistMigrationPlan: SchemaMigrationPlan {
             PersonalStylistSchemaV1.self,
             PersonalStylistSchemaV1_1.self,
             PersonalStylistSchemaV2.self,
+            PersonalStylistSchemaV3.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV1_1, migrateV1_1toV2]
+        [migrateV1toV1_1, migrateV1_1toV2, migrateV2toV3]
     }
 
     /// Additive: WearMembershipEntity + GarmentQueryIndex (#164 / #167).
@@ -123,6 +134,12 @@ enum PersonalStylistMigrationPlan: SchemaMigrationPlan {
             defaults.set(true, forKey: fixturePatternSurfaceBackfillKey)
             defaults.set(true, forKey: schemaV2MigrationCompletedKey)
         }
+    )
+
+    /// Additive: WearingPhotoEntity (Sprint 9). No row or photo file is rewritten.
+    static let migrateV2toV3 = MigrationStage.lightweight(
+        fromVersion: PersonalStylistSchemaV2.self,
+        toVersion: PersonalStylistSchemaV3.self
     )
 }
 

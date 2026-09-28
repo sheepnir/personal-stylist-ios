@@ -19,6 +19,8 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
     private var profiles: [StubStyleProfile] = []
     private var sets: [StubSet]
     private var cameraPendings: [UUID: MemoryCameraPending] = [:]
+    private var wearingPhotos: [StubWearingPhoto] = []
+    let wearingPhotoFiles: WearingPhotoFileStore
     private let defaults: UserDefaults
     private let lock = NSLock()
     private var generation = 0
@@ -32,7 +34,8 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
     init(
         garments: [StubGarment]? = nil,
         sets: [StubSet]? = nil,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        wearingPhotoFiles: WearingPhotoFileStore = .temporary()
     ) {
         if let garments {
             self.garments = garments
@@ -42,6 +45,7 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
             self.sets = sets ?? FixtureWardrobeLoader.loadSets()
         }
         self.defaults = defaults
+        self.wearingPhotoFiles = wearingPhotoFiles
     }
 
     func fetchGarments() async -> [StubGarment] {
@@ -144,9 +148,12 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
         var cleanupPaths: [String] = []
         var referencedByOthers = Set<String>()
         var didDelete = false
+        var galleryFiles: [UUID] = []
         lock.lock()
         if let garment = garments.first(where: { $0.id == id }) {
             didDelete = true
+            galleryFiles = Self.fileIds(of: wearingPhotos.filter { $0.garmentId == id })
+            wearingPhotos.removeAll { $0.garmentId == id }
             if let path = garment.imagePath { cleanupPaths.append(path) }
             referencedByOthers = Set(garments.compactMap { other in
                 other.id == id ? nil : other.imagePath
@@ -174,12 +181,16 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
                 excluding: referencedByOthers
             )
         }
+        wearingPhotoFiles.remove(galleryFiles)
     }
 
     func clearWardrobeAndLooks() async throws {
         var cleanup: [(UUID, String?)] = []
         var pendingCleanup: [(UUID, String)] = []
+        var galleryFiles: [UUID] = []
         lock.lock()
+        galleryFiles = Self.fileIds(of: wearingPhotos)
+        wearingPhotos = []
         cleanup = garments.map { ($0.id, $0.imagePath) }
         pendingCleanup = cameraPendings.values.map { ($0.id, $0.masterURI) }
         cameraPendings = [:]
@@ -200,6 +211,7 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
             UserGarmentPhotoStore.removeFile(imagePath: path)
             UserGarmentPhotoStore.removeFiles(forGarmentId: id)
         }
+        wearingPhotoFiles.remove(galleryFiles)
     }
 
     func resetActiveStyleProfile() async throws -> StubStyleProfile {
@@ -425,5 +437,136 @@ final class InMemoryPersistenceStore: PersistenceStore, @unchecked Sendable {
         )
         UserGarmentPhotoStore.evictThumbnails()
         return updated
+    }
+}
+
+// MARK: - Sprint 9 wearing gallery (mirrors SwiftDataPersistenceStore+WearingPhotos)
+
+extension InMemoryPersistenceStore {
+    fileprivate static func fileIds(of photos: [StubWearingPhoto]) -> [UUID] {
+        photos.flatMap { [$0.displayFileId] + ($0.sourceFileId.map { [$0] } ?? []) }
+    }
+
+    func fetchWearingPhotos(garmentId: UUID) async -> [StubWearingPhoto] {
+        lock.lock(); defer { lock.unlock() }
+        return WearingPhotoOrdering.sorted(wearingPhotos.filter { $0.garmentId == garmentId })
+    }
+
+    func addWearingPhoto(_ request: WearingPhotoAddRequest) async throws -> StubWearingPhoto {
+        try await PhotoReplaceGate.wearingPhotos.run {
+            try self.addWearingPhotoUnlocked(request)
+        }
+    }
+
+    func updateWearingPhotoDisplay(id: UUID, displayJPEG: Data) async throws -> StubWearingPhoto {
+        try await PhotoReplaceGate.wearingPhotos.run {
+            try self.updateWearingPhotoDisplayUnlocked(id: id, displayJPEG: displayJPEG)
+        }
+    }
+
+    func removeWearingPhoto(id: UUID) async throws {
+        try await PhotoReplaceGate.wearingPhotos.run {
+            self.removeWearingPhotoUnlocked(id: id)
+        }
+    }
+
+    func setWearingPhotoExportState(id: UUID, state: WearingPhotoExportState) async throws -> StubWearingPhoto {
+        lock.lock(); defer { lock.unlock() }
+        guard let idx = wearingPhotos.firstIndex(where: { $0.id == id }) else {
+            throw WearingPhotoPersistError.photoUnavailable
+        }
+        wearingPhotos[idx].exportState = state
+        return wearingPhotos[idx]
+    }
+
+    func sweepOrphanWearingPhotoFiles() async {
+        lock.lock()
+        let referenced = Set(Self.fileIds(of: wearingPhotos))
+        lock.unlock()
+        wearingPhotoFiles.sweepOrphans(referenced: referenced)
+    }
+
+    private func addWearingPhotoUnlocked(_ request: WearingPhotoAddRequest) throws -> StubWearingPhoto {
+        lock.lock()
+        let existing = wearingPhotos.first { $0.id == request.id }
+        lock.unlock()
+        if let existing { return existing }
+
+        let displayId = try wearingPhotoFiles.write(request.displayJPEG)
+        var sourceId: UUID?
+        if let source = request.sourceJPEG {
+            do {
+                sourceId = try wearingPhotoFiles.write(source)
+            } catch {
+                wearingPhotoFiles.remove([displayId])
+                throw WearingPhotoPersistError.map(error)
+            }
+        }
+        let newFiles = [displayId] + (sourceId.map { [$0] } ?? [])
+        if let injected = WearingPhotoPersistHooks.failBeforeMetadataCommit {
+            WearingPhotoPersistHooks.failBeforeMetadataCommit = nil
+            wearingPhotoFiles.remove(newFiles)
+            throw WearingPhotoPersistError.map(injected)
+        }
+
+        lock.lock()
+        guard garments.contains(where: { $0.id == request.garmentId }) else {
+            lock.unlock()
+            wearingPhotoFiles.remove(newFiles)
+            throw WearingPhotoPersistError.garmentUnavailable
+        }
+        let photo = StubWearingPhoto(
+            id: request.id,
+            garmentId: request.garmentId,
+            displayFileId: displayId,
+            sourceFileId: sourceId,
+            addedAt: request.addedAt,
+            updatedAt: request.addedAt,
+            source: request.source,
+            exportState: nil
+        )
+        wearingPhotos.append(photo)
+        lock.unlock()
+        return photo
+    }
+
+    private func updateWearingPhotoDisplayUnlocked(id: UUID, displayJPEG: Data) throws -> StubWearingPhoto {
+        let newDisplayId = try wearingPhotoFiles.write(displayJPEG)
+        if let injected = WearingPhotoPersistHooks.failBeforeMetadataCommit {
+            WearingPhotoPersistHooks.failBeforeMetadataCommit = nil
+            wearingPhotoFiles.remove([newDisplayId])
+            throw WearingPhotoPersistError.map(injected)
+        }
+        lock.lock()
+        guard let idx = wearingPhotos.firstIndex(where: { $0.id == id }) else {
+            lock.unlock()
+            wearingPhotoFiles.remove([newDisplayId])
+            throw WearingPhotoPersistError.photoUnavailable
+        }
+        guard garments.contains(where: { $0.id == wearingPhotos[idx].garmentId }) else {
+            lock.unlock()
+            wearingPhotoFiles.remove([newDisplayId])
+            throw WearingPhotoPersistError.garmentUnavailable
+        }
+        let previous = wearingPhotos[idx].displayFileId
+        wearingPhotos[idx].displayFileId = newDisplayId
+        if wearingPhotos[idx].sourceFileId == nil {
+            wearingPhotos[idx].sourceFileId = previous
+        }
+        wearingPhotos[idx].updatedAt = Date()
+        let updated = wearingPhotos[idx]
+        lock.unlock()
+        if updated.sourceFileId != previous {
+            wearingPhotoFiles.remove([previous])
+        }
+        return updated
+    }
+
+    private func removeWearingPhotoUnlocked(id: UUID) {
+        lock.lock()
+        let removed = wearingPhotos.filter { $0.id == id }
+        wearingPhotos.removeAll { $0.id == id }
+        lock.unlock()
+        wearingPhotoFiles.remove(Self.fileIds(of: removed))
     }
 }

@@ -9,6 +9,8 @@ final class SwiftDataPersistenceStore: PersistenceStore, @unchecked Sendable {
     private let container: ModelContainer
     let userId: UUID
     private let defaults: UserDefaults
+    /// Sprint 9 wearing-gallery files (ADR-0004). Injected in tests.
+    let wearingPhotoFiles: WearingPhotoFileStore
     private let generationLock = NSLock()
     private var generation = 0
 
@@ -21,11 +23,13 @@ final class SwiftDataPersistenceStore: PersistenceStore, @unchecked Sendable {
     init(
         container: ModelContainer,
         userId: UUID = AppIdentity.defaultUserId,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        wearingPhotoFiles: WearingPhotoFileStore = WearingPhotoFileStore()
     ) {
         self.container = container
         self.userId = userId
         self.defaults = defaults
+        self.wearingPhotoFiles = wearingPhotoFiles
     }
 
     /// Called from `App.init` before scenes appear (main thread).
@@ -322,6 +326,7 @@ final class SwiftDataPersistenceStore: PersistenceStore, @unchecked Sendable {
         }
         bumpGeneration()
         result.0.apply()
+        wearingPhotoFiles.remove(result.0.wearingFileIds)
     }
 
     func clearWardrobeAndLooks() async throws {
@@ -334,6 +339,7 @@ final class SwiftDataPersistenceStore: PersistenceStore, @unchecked Sendable {
         SeedSuppression.suppressAutomaticWardrobeSeed(in: defaults)
         bumpGeneration()
         cleanup.apply()
+        wearingPhotoFiles.remove(cleanup.wearingFileIds)
     }
 
     func resetActiveStyleProfile() async throws -> StubStyleProfile {

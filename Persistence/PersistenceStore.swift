@@ -48,6 +48,23 @@ protocol PersistenceStore: AnyObject, Sendable {
     /// Point the existing garment at a staged file, then delete the previous owned unshared file.
     /// Missing / deleted / cleared garments fail closed and do not resurrect.
     func replaceGarmentPhoto(garmentId: UUID, stagingId: UUID) async throws -> StubGarment
+
+    // MARK: Sprint 9 — wearing gallery (ADR-0004). Local only; never part of an engine request.
+
+    /// Files for gallery rows. The UI reads display files through this store only.
+    var wearingPhotoFiles: WearingPhotoFileStore { get }
+    /// One garment's photos, newest added first with a stable `id` tie-break.
+    func fetchWearingPhotos(garmentId: UUID) async -> [StubWearingPhoto]
+    /// Files, then one save. Idempotent on `request.id`. Rejects a missing garment.
+    func addWearingPhoto(_ request: WearingPhotoAddRequest) async throws -> StubWearingPhoto
+    /// Replace the displayed file (crop). `addedAt` is unchanged; the source is kept.
+    func updateWearingPhotoDisplay(id: UUID, displayJPEG: Data) async throws -> StubWearingPhoto
+    /// Delete the row, then its files. Missing ids are success no-ops.
+    func removeWearingPhoto(id: UUID) async throws
+    /// Record the separate system Photos export outcome.
+    func setWearingPhotoExportState(id: UUID, state: WearingPhotoExportState) async throws -> StubWearingPhoto
+    /// Remove gallery files no row references (termination between write and commit).
+    func sweepOrphanWearingPhotoFiles() async
 }
 
 extension PersistenceStore {
