@@ -26,9 +26,11 @@ struct PersonalStylistApp: App {
         self.store = opened.store
         self.blockedMessage = launch.blockedMessage
         if let opened = opened.store {
-            // ADR-0004: remove wearing-photo files left by a termination between write and commit.
+            // ADR-0004: remove gallery files and crop sources left by a termination mid-save.
             Task(priority: .utility) {
                 await opened.sweepOrphanWearingPhotoFiles()
+                let referenced = Set(await opened.fetchGarments().compactMap(\.imagePath))
+                UserGarmentPhotoStore.sweepOrphanSources(referencedImagePaths: referenced)
             }
         }
         #if DEBUG

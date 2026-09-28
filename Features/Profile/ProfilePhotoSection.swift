@@ -6,6 +6,11 @@ struct ProfilePhotoSection: View {
     @State private var photo: UIImage?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    /// Sprint 9 (#120): a new pick or an existing picture opens the square crop editor.
+    /// Nothing is written until Save; Cancel keeps the current picture.
+    @State private var crop: CropEditorPayload?
+    @State private var pendingNewSource: Data?
+    @State private var isSavingCrop = false
     private let store = ProfilePhotoStore()
 
     var body: some View {
@@ -22,8 +27,16 @@ struct ProfilePhotoSection: View {
                 Label(photo == nil ? "Add profile picture" : "Replace profile picture", systemImage: "photo")
                     .frame(minHeight: 44)
             }
-            .disabled(isLoading)
+            .disabled(isLoading || isSavingCrop)
             if photo != nil {
+                Button {
+                    beginEditingExisting()
+                } label: {
+                    Label(CropEditorCopy.editProfilePicture, systemImage: "crop")
+                        .frame(minHeight: 44)
+                }
+                .disabled(isLoading || isSavingCrop)
+                .accessibilityHint(CropEditorCopy.cropPhotoHint)
                 Button("Remove profile picture", role: .destructive) {
                     do {
                         try store.remove()
@@ -35,7 +48,7 @@ struct ProfilePhotoSection: View {
                     }
                 }
                 .frame(minHeight: 44)
-                .disabled(isLoading)
+                .disabled(isLoading || isSavingCrop)
             }
             if isLoading { ProgressView("Loading picture…") }
             if let errorMessage {
@@ -59,14 +72,68 @@ struct ProfilePhotoSection: View {
                     throw ProfilePhotoStore.StoreError.invalidImage
                 }
                 try Task.checkCancellation()
-                let saved = try store.replace(with: data)
-                photo = UIImage(data: saved)
+                guard let image = PhotoEditing.normalizedImage(from: data),
+                      let source = PhotoEditing.jpegData(image, quality: 0.95) else {
+                    throw ProfilePhotoStore.StoreError.invalidImage
+                }
+                pendingNewSource = source
+                crop = CropEditorPayload(image: image)
                 errorMessage = nil
             } catch is CancellationError {
                 // Leaving the screen or cancelling a transfer keeps the old photo.
             } catch {
-                errorMessage = "Couldn’t save that picture. Your existing picture is unchanged."
+                errorMessage = "Couldn’t use that picture. Your existing picture is unchanged."
             }
         }
+        .fullScreenCover(item: $crop) { payload in
+            CropEditorView(
+                image: payload.image,
+                title: CropEditorCopy.profileTitle,
+                aspects: [.square],
+                isSaving: isSavingCrop,
+                onCancel: {
+                    crop = nil
+                    pendingNewSource = nil
+                },
+                onSave: { result in
+                    save(result, payload: payload)
+                }
+            )
+        }
+    }
+
+    private func beginEditingExisting() {
+        guard let data = try? store.loadEditSource(),
+              let image = PhotoEditing.normalizedImage(from: data) else {
+            errorMessage = CropEditorCopy.loadFailedMessage
+            return
+        }
+        pendingNewSource = nil
+        crop = CropEditorPayload(image: image)
+    }
+
+    private func save(_ result: CropEditResult, payload: CropEditorPayload) {
+        guard !isSavingCrop else { return }
+        let newSource = pendingNewSource
+        if result.isNoOp && newSource == nil {
+            // Editing the existing picture without changing it rewrites nothing.
+            crop = nil
+            return
+        }
+        isSavingCrop = true
+        defer { isSavingCrop = false }
+        do {
+            guard let cropped = PhotoEditing.cropped(payload.image, to: result.pixelRect),
+                  let jpeg = PhotoEditing.jpegData(cropped, quality: 0.95) else {
+                throw ProfilePhotoStore.StoreError.invalidImage
+            }
+            let saved = try store.replace(croppedDisplay: jpeg, newSource: newSource)
+            photo = UIImage(data: saved)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn’t save that picture. Your existing picture is unchanged."
+        }
+        crop = nil
+        pendingNewSource = nil
     }
 }

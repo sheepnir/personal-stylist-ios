@@ -16,6 +16,12 @@ struct ReviewCardView: View {
     @State private var showDeleteConfirm = false
     @State private var showPhotoReplaceSource = false
     @AccessibilityFocusState private var changePhotoFocused: Bool
+    /// Sprint 9 reference-photo crop (#120). One editor at a time; the live photo stays
+    /// until the cropped replacement commits.
+    @State private var garmentCrop: CropEditorPayload?
+    @State private var garmentCropSource: Data?
+    @State private var isSavingGarmentCrop = false
+    @State private var garmentCropError: String?
 
     var body: some View {
         PhotoReplaceHost(session: photoReplaceSession) {
@@ -124,6 +130,43 @@ struct ReviewCardView: View {
         } message: {
             Text(DataControlsCopy.deleteGarmentMessage(name: liveGarment?.displayName ?? ""))
         }
+        .fullScreenCover(item: $garmentCrop) { payload in
+            CropEditorView(
+                image: payload.image,
+                title: CropEditorCopy.garmentTitle,
+                aspects: [.original, .portrait4x5, .square],
+                isSaving: isSavingGarmentCrop,
+                onCancel: {
+                    garmentCrop = nil
+                    garmentCropSource = nil
+                },
+                onSave: { result in
+                    Task { await saveGarmentCrop(result, payload: payload) }
+                }
+            )
+            .alert(
+                CropEditorCopy.saveFailedTitle,
+                isPresented: Binding(
+                    get: { garmentCropError != nil },
+                    set: { if !$0 { garmentCropError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(garmentCropError ?? "")
+            }
+        }
+        .alert(
+            CropEditorCopy.saveFailedTitle,
+            isPresented: Binding(
+                get: { garmentCropError != nil && garmentCrop == nil },
+                set: { if !$0 { garmentCropError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(garmentCropError ?? "")
+        }
         .sheet(item: $finishDetailsPresentation) { presentation in
             FinishDetailsSheet(model: model, garmentId: presentation.garmentId, mode: presentation.mode) {
                 onFinishedDetails?()
@@ -190,6 +233,52 @@ struct ReviewCardView: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("photo.replace.changePhoto")
             .accessibilityFocused($changePhotoFocused)
+            if g.isUserPhoto {
+                Button(CropEditorCopy.cropPhoto) {
+                    beginGarmentCrop(g)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(photoReplaceSession.state.commitInFlight || isSavingGarmentCrop)
+                .accessibilityHint(CropEditorCopy.cropPhotoHint)
+                .accessibilityIdentifier("photo.crop")
+            }
+        }
+    }
+
+    private func beginGarmentCrop(_ g: StubGarment) {
+        guard let data = UserGarmentPhotoStore.editSourceData(forImagePath: g.imagePath),
+              let image = PhotoEditing.normalizedImage(from: data) else {
+            garmentCropError = CropEditorCopy.loadFailedMessage
+            return
+        }
+        garmentCropSource = data
+        garmentCrop = CropEditorPayload(image: image)
+    }
+
+    @MainActor
+    private func saveGarmentCrop(_ result: CropEditResult, payload: CropEditorPayload) async {
+        guard let id = liveGarment?.id, let source = garmentCropSource, !isSavingGarmentCrop else { return }
+        if result.isNoOp {
+            // Nothing changed: no file or entity is rewritten.
+            garmentCrop = nil
+            return
+        }
+        guard let cropped = PhotoEditing.cropped(payload.image, to: result.pixelRect),
+              let jpeg = PhotoEditing.jpegData(cropped, quality: 0.95) else {
+            garmentCropError = CropEditorCopy.saveFailedMessage
+            return
+        }
+        isSavingGarmentCrop = true
+        defer { isSavingGarmentCrop = false }
+        do {
+            try await model.cropGarmentPhoto(garmentId: id, croppedJPEG: jpeg, editSource: source)
+            garmentCrop = nil
+            garmentCropSource = nil
+        } catch PhotoReplacePersistError.lowStorage {
+            garmentCropError = CropEditorCopy.lowStorageMessage
+        } catch {
+            garmentCropError = CropEditorCopy.saveFailedMessage
         }
     }
 
