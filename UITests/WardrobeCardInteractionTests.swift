@@ -93,7 +93,11 @@ final class WardrobeCardInteractionTests: XCTestCase {
             XCTAssertNotNil(sample, "Sample picker must expose a usable synthetic garment")
             guard let sample else { return }
             sample.tap()
-            let save = app.buttons["finish.details.save"]
+            // SwiftUI propagates the containing bar's identifier to both buttons
+            // in the actual XCUI tree; distinguish the explicit primary action.
+            let save = app.buttons.matching(NSPredicate(
+                format: "identifier == %@ AND label == %@", "finish.details.saveBar", "Save"
+            )).firstMatch
             XCTAssertTrue(save.waitForExistence(timeout: 5))
             guard save.exists else { return }
             XCTAssertTrue(save.isEnabled, "Synthetic sample must arrive ready for explicit Save")
