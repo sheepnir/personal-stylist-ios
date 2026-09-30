@@ -50,7 +50,7 @@ enum OutfitEngineClient {
         )
     }
 
-    /// Cancels the URLSession work started by `generate` (#162).
+    /// Cancels owned URLSession generate/alternatives work; a cancelled handle never dispatches.
     final class EngineDataTask: @unchecked Sendable {
         private let lock = NSLock()
         private var task: URLSessionDataTask?
@@ -840,7 +840,8 @@ enum OutfitEngineClient {
         occasion: String = "WORK_STANDARD",
         occasionFormality: Int = 3,
         temperatureBand: String = "MILD",
-        precipitation: Bool = false
+        precipitation: Bool = false,
+        flight: EngineDataTask? = nil
     ) async throws -> AlternativesResponse {
         if try requiresDeviceToken(for: baseURL) && !DeviceTokenStore.hasToken {
             throw ClientError.missingDeviceToken
@@ -863,11 +864,10 @@ enum OutfitEngineClient {
         request.timeoutInterval = 30
         request.httpBody = payload
         emitLifecycle(.constructed, request: request)
-        emitLifecycle(.dispatched, request: request)
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await urlSession.data(for: request)
+            (data, response) = try await (flight ?? EngineDataTask()).data(for: request)
         } catch {
             throw ClientError.transport(error)
         }
