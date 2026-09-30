@@ -11,6 +11,7 @@ import {
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  countUnresolvedAttemptsAcrossDays,
   type MarkUnknownResult,
   type ReconcileResult,
   type ReserveResult,
@@ -206,6 +207,17 @@ export class DeviceSpendLedger extends DurableObject<Env> {
         return toRpcDaySummary(failClosedDaySummary(day));
       }
       return toRpcDaySummary(summary);
+    });
+  }
+
+  /** Count unknown attempts on every retained ledger day (not yet aged to spent). */
+  unresolvedAttempts(): number {
+    return this.ctx.storage.transactionSync(() => {
+      const { dayKeysBefore, state, pruned } = this.touch();
+      if (pruned && !this.persist(state, dayKeysBefore)) {
+        return 0;
+      }
+      return countUnresolvedAttemptsAcrossDays(state);
     });
   }
 }

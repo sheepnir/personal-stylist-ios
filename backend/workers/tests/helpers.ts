@@ -11,6 +11,7 @@ import {
   removeEmptyDayBucket,
   reserveAttempt,
   summarizeDay,
+  countUnresolvedAttemptsAcrossDays,
   type LedgerState,
 } from '../src/ledgerCore.js';
 import type { SpendConfig } from '../src/types.js';
@@ -122,6 +123,11 @@ export function createSpendLedgerMock(options?: { legacyMonolithPresent?: boolea
         const state = stateFor(deviceId);
         ageLedger(state, new Date(), NO_COST_SOURCE);
         return markAttemptUnknown(state, attemptId, generationId);
+      },
+      unresolvedAttempts: async () => {
+        const state = stateFor(deviceId);
+        ageLedger(state, new Date(), NO_COST_SOURCE);
+        return countUnresolvedAttemptsAcrossDays(state);
       },
     }),
   } as unknown as DurableObjectNamespace;
