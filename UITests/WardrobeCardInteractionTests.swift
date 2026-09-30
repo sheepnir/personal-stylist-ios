@@ -75,7 +75,33 @@ final class WardrobeCardInteractionTests: XCTestCase {
         let tip = app.buttons["Got it"]
         if tip.waitForExistence(timeout: 3) { tip.tap() }
         let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "wardrobe.card.")).firstMatch
+        if !card.waitForExistence(timeout: 2) {
+            // Fresh installs intentionally have no seeded wardrobe. Add one
+            // synthetic piece through the same sample intake and Save UI as a user.
+            let add = app.buttons["Add your first piece"]
+            XCTAssertTrue(add.waitForExistence(timeout: 5))
+            guard add.exists else { return }
+            add.tap()
+            let samples = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Use a sample piece")).firstMatch
+            XCTAssertTrue(samples.waitForExistence(timeout: 5))
+            guard samples.exists else { return }
+            samples.tap()
+            XCTAssertTrue(app.navigationBars["Use a sample piece"].waitForExistence(timeout: 5))
+            let sampleButtons = app.scrollViews.buttons
+            XCTAssertTrue(sampleButtons.firstMatch.waitForExistence(timeout: 5))
+            let sample = sampleButtons.allElementsBoundByIndex.first { $0.isHittable }
+            XCTAssertNotNil(sample, "Sample picker must expose a usable synthetic garment")
+            guard let sample else { return }
+            sample.tap()
+            let save = app.buttons["finish.details.save"]
+            XCTAssertTrue(save.waitForExistence(timeout: 5))
+            guard save.exists else { return }
+            XCTAssertTrue(save.isEnabled, "Synthetic sample must arrive ready for explicit Save")
+            guard save.isEnabled else { return }
+            save.tap()
+        }
         XCTAssertTrue(card.waitForExistence(timeout: 10))
+        guard card.exists else { return }
         let name = String(card.label.split(separator: ",").first!)
         // Name/badge area used to sit outside the image's tap target.
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
