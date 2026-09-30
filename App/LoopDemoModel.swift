@@ -755,7 +755,6 @@ final class LoopDemoModel: ObservableObject {
             let sameSet = !snapshotIds.isEmpty && newIds == snapshotIds
             let engineReason = response.noAlternativeReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-            contextDirty = false
             generateFailureMessage = nil
             generateFailureSubtitle = nil
             generateFailureDetail = nil
@@ -773,6 +772,7 @@ final class LoopDemoModel: ObservableObject {
                 } else {
                     outfit = built
                     outfitWearable = true
+                    contextDirty = false
                     recordShown(built)
                     announceFallbackNoticeIfPresent(for: built)
                 }
@@ -782,6 +782,7 @@ final class LoopDemoModel: ObservableObject {
             noAlternativeReason = nil
             outfit = built
             outfitWearable = true
+            contextDirty = false
             outfitSnapshotBeforeGenerate = nil
             recordShown(built)
             announceFallbackNoticeIfPresent(for: built)

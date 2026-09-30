@@ -152,7 +152,10 @@ struct WearCalendarView: View {
                     .fill(isSelected ? Color.accentColor : Color.clear)
             }
             .overlay {
-                if isToday && !isSelected {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary, lineWidth: 2)
+                } else if isToday {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.accentColor, lineWidth: 1)
                 }

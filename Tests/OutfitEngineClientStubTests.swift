@@ -500,6 +500,47 @@ final class OutfitEngineClientStubTests: XCTestCase {
     }
 
     @MainActor
+    func testTryAnotherNoAlternativeRestoresOutfitWithEarlierContextReminder() async throws {
+        try await assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: true)
+    }
+
+    @MainActor
+    func testTryAnotherSameSetRestoresOutfitWithEarlierContextReminder() async throws {
+        try await assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: false)
+    }
+
+    @MainActor
+    private func assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: Bool) async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let anchorId = try XCTUnwrap(model.selectedGarment?.id)
+        let firstBody = try generateSuccessBody(anchorId: anchorId)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: firstBody) }
+        let built = await model.buildDemoOutfit()
+        XCTAssertTrue(built)
+        let prior = try XCTUnwrap(model.outfit)
+        model.rain.toggle()
+        XCTAssertTrue(model.contextDirty)
+
+        // A different set isolates the engine-reason branch from the same-set branch.
+        let secondGarmentId = engineReportsNoAlternative
+            ? try DeviceAccessTestFixtures.readyGarments()[1].id : nil
+        let nextBody = try generateSuccessBody(anchorId: anchorId, secondGarmentId: secondGarmentId)
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: nextBody) as? [String: Any])
+        if engineReportsNoAlternative { payload["noAlternativeReason"] = "no_alternative" }
+        let responseBody = try JSONSerialization.data(withJSONObject: payload)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: responseBody) }
+
+        let triedAnother = await model.tryAnotherOutfit()
+        XCTAssertTrue(triedAnother)
+        XCTAssertNotNil(model.noAlternativeReason)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        XCTAssertEqual(model.outfit?.assignments, prior.assignments)
+        XCTAssertEqual(model.outfit?.generation, prior.generation)
+        XCTAssertTrue(model.outfitWearable)
+        XCTAssertTrue(model.contextDirty, "Restoring an earlier outfit must retain its context reminder")
+    }
+
+    @MainActor
     func testContextEditDiscardsDelayedGenerateAndExplicitRetryUsesNewChoices() async throws {
         let model = try await makeModelForDeviceAccessTests()
         let body = try generateSuccessBody(anchorId: model.selectedGarment!.id)
