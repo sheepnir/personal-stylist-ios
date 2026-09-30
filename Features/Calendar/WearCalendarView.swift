@@ -7,6 +7,7 @@ struct WearCalendarView: View {
     /// Opens a garment that still exists (the Wardrobe tab owns garment detail).
     var onOpenGarment: (StubGarment) -> Void = { _ in }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.calendar) private var calendar
     @Environment(\.locale) private var locale
     @State private var visibleMonth: WearCalendar.Month?
@@ -21,15 +22,26 @@ struct WearCalendarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 monthHeader
-                // Seven columns must fit a small phone; very large sizes scale within the cell,
-                // and the selected day's details below keep full Dynamic Type.
-                Group {
-                    weekdayHeader
-                    dayGrid
+                if dynamicTypeSize.isAccessibilitySize {
+                    // Keep the selected result near the header instead of below 31 large rows.
+                    dayDetail
+                    Divider()
+                    // Full date rows preserve readable text and targets at large sizes.
+                    accessibleDayList
+                } else {
+                    ScrollView(.horizontal) {
+                        VStack(spacing: 8) {
+                            weekdayHeader
+                            dayGrid
+                        }
+                        .containerRelativeFrame(.horizontal)
+                        .frame(minWidth: 332) // seven 44-point targets plus six gaps
+                    }
                 }
-                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-                Divider()
-                dayDetail
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Divider()
+                    dayDetail
+                }
             }
             .padding()
         }
@@ -87,6 +99,15 @@ struct WearCalendarView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var accessibleDayList: some View {
+        let marked = WearCalendar.markedDays(in: month, events: model.wearEvents, calendar: calendar)
+        return LazyVStack(spacing: 8) {
+            ForEach(month.days, id: \.self) { day in
+                dayCell(day, hasRecord: marked.contains(day))
+            }
+        }
+    }
+
     private var dayGrid: some View {
         let marked = WearCalendar.markedDays(in: month, events: model.wearEvents, calendar: calendar)
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
@@ -110,16 +131,21 @@ struct WearCalendarView: View {
             selectedDay = day
         } label: {
             VStack(spacing: 3) {
-                Text("\(day.day)")
+                Text(dynamicTypeSize.isAccessibilitySize
+                     ? WearCalendarCopy.dayAccessibility(date, hasRecord: hasRecord, isToday: isToday,
+                                                         locale: locale, calendar: calendar)
+                     : "\(day.day)")
                     .font(.body.monospacedDigit())
                     .fontWeight(isToday ? .bold : .regular)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
                     .foregroundStyle(isSelected ? Color.white : Color.primary)
                 Circle()
                     .fill(hasRecord ? (isSelected ? Color.white : Color.accentColor) : Color.clear)
                     .frame(width: 6, height: 6)
             }
+            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 12 : 0)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)

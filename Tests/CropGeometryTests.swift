@@ -70,6 +70,43 @@ final class CropGeometryTests: XCTestCase {
         XCTAssertEqual(CropGeometry.frameSize(ratio: 1, fitting: .zero), .zero)
     }
 
+    func testPositionControlsReachAllEdgesWithoutGestures() {
+        let frame = CGSize(width: 300, height: 400)
+        for x in [CGFloat(-1), CGFloat(1)] {
+            for y in [CGFloat(-1), CGFloat(1)] {
+                let offset = CropGeometry.offset(for: CGSize(width: x, height: y),
+                                                 imageSize: portrait, frame: frame, zoom: 2)
+                let rect = CropGeometry.pixelRect(imageSize: portrait, frame: frame, zoom: 2, offset: offset)
+                XCTAssertTrue(CGRect(origin: .zero, size: portrait).contains(rect))
+                XCTAssertEqual(x < 0 ? rect.maxX : rect.minX, x < 0 ? portrait.width : 0)
+                XCTAssertEqual(y < 0 ? rect.maxY : rect.minY, y < 0 ? portrait.height : 0)
+            }
+        }
+    }
+
+    func testPositionControlsReflectDraggedOffsetAndSaveSameCrop() {
+        let frame = CGSize(width: 300, height: 400)
+        let dragged = CGSize(width: 57, height: -123)
+        let position = CropGeometry.normalizedPosition(dragged, imageSize: portrait, frame: frame, zoom: 3)
+        let restored = CropGeometry.offset(for: position, imageSize: portrait, frame: frame, zoom: 3)
+        XCTAssertEqual(restored.width, dragged.width, accuracy: 0.001)
+        XCTAssertEqual(restored.height, dragged.height, accuracy: 0.001)
+        XCTAssertEqual(CropGeometry.pixelRect(imageSize: portrait, frame: frame, zoom: 3, offset: restored),
+                       CropGeometry.pixelRect(imageSize: portrait, frame: frame, zoom: 3, offset: dragged))
+    }
+
+    func testPositionControlsCannotMoveAnAxisWithNoSlack() {
+        let frame = CGSize(width: 300, height: 300)
+        let offset = CropGeometry.offset(for: CGSize(width: 1, height: -1),
+                                         imageSize: portrait, frame: frame, zoom: 1)
+        XCTAssertEqual(offset.width, 0)
+        XCTAssertEqual(offset.height, -50)
+        XCTAssertEqual(CropGeometry.normalizedPosition(offset, imageSize: portrait, frame: frame, zoom: 1).width, 0)
+        let invalid = CropGeometry.offset(for: CGSize(width: CGFloat.nan, height: CGFloat.infinity),
+                                          imageSize: portrait, frame: frame, zoom: 2)
+        XCTAssertEqual(invalid, .zero)
+    }
+
     func testDegenerateImageFallsBackToFullRect() {
         let rect = CropGeometry.pixelRect(imageSize: .zero, frame: CGSize(width: 10, height: 10), zoom: 1, offset: .zero)
         XCTAssertEqual(rect, .zero)

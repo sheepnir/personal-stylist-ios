@@ -51,12 +51,34 @@ enum CropGeometry {
 
     /// Keep the frame covered: the image edge can never move inside the frame.
     static func clampedOffset(_ offset: CGSize, imageSize: CGSize, frame: CGSize, zoom: CGFloat) -> CGSize {
-        let scale = displayScale(imageSize: imageSize, frame: frame, zoom: zoom)
-        let maxX = max(0, (imageSize.width * scale - frame.width) / 2)
-        let maxY = max(0, (imageSize.height * scale - frame.height) / 2)
+        let limits = offsetLimits(imageSize: imageSize, frame: frame, zoom: zoom)
+        let maxX = limits.width
+        let maxY = limits.height
         let x = offset.width.isFinite ? offset.width : 0
         let y = offset.height.isFinite ? offset.height : 0
         return CGSize(width: min(max(x, -maxX), maxX), height: min(max(y, -maxY), maxY))
+    }
+
+    /// Maximum movement from centre on each axis; a zero axis cannot be positioned.
+    static func offsetLimits(imageSize: CGSize, frame: CGSize, zoom: CGFloat) -> CGSize {
+        let scale = displayScale(imageSize: imageSize, frame: frame, zoom: zoom)
+        return CGSize(width: max(0, (imageSize.width * scale - frame.width) / 2),
+                      height: max(0, (imageSize.height * scale - frame.height) / 2))
+    }
+
+    /// Slider coordinates: -1 moves the photo left/up, 0 centres it, +1 right/down.
+    static func normalizedPosition(_ offset: CGSize, imageSize: CGSize, frame: CGSize, zoom: CGFloat) -> CGSize {
+        let limits = offsetLimits(imageSize: imageSize, frame: frame, zoom: zoom)
+        let clamped = clampedOffset(offset, imageSize: imageSize, frame: frame, zoom: zoom)
+        return CGSize(width: limits.width > 0 ? clamped.width / limits.width : 0,
+                      height: limits.height > 0 ? clamped.height / limits.height : 0)
+    }
+
+    static func offset(for position: CGSize, imageSize: CGSize, frame: CGSize, zoom: CGFloat) -> CGSize {
+        let limits = offsetLimits(imageSize: imageSize, frame: frame, zoom: zoom)
+        let x = position.width.isFinite ? min(max(position.width, -1), 1) : 0
+        let y = position.height.isFinite ? min(max(position.height, -1), 1) : 0
+        return CGSize(width: x * limits.width, height: y * limits.height)
     }
 
     /// The visible frame in image pixels, integral and inside the image.
