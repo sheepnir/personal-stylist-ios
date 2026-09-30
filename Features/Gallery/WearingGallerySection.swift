@@ -36,7 +36,8 @@ struct WearingGallerySection: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(WearingGalleryCopy.latestLabel)
-                .accessibilityHint(WearingGalleryCopy.photoAccessibility(addedAt: latest.addedAt))
+                .accessibilityValue(WearingGalleryCopy.photoAccessibility(addedAt: latest.addedAt))
+                .accessibilityHint("Opens the photo and its crop, remove, and Photos actions.")
                 .accessibilityIdentifier("wearing.latest")
                 if !session.recentPreviews.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -50,6 +51,7 @@ struct WearingGallerySection: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(WearingGalleryCopy.photoAccessibility(addedAt: photo.addedAt))
+                                .accessibilityHint("Opens the photo.")
                             }
                         }
                     }

@@ -23,6 +23,7 @@ final class RecordingURLProtocol: URLProtocol {
 
     private static let lock = NSLock()
     private static var _recorded: [RecordedRequest] = []
+    private static var _cancelledPaths: [String] = []
     private static var _handler: ((URLRequest) -> StubResult)?
     private static var _latencyNanoseconds: UInt64 = 0
     private static var _enabled = false
@@ -31,6 +32,11 @@ final class RecordingURLProtocol: URLProtocol {
     static var recorded: [RecordedRequest] {
         lock.lock(); defer { lock.unlock() }
         return _recorded
+    }
+
+    static var cancelledPaths: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _cancelledPaths
     }
 
     static var latencyNanoseconds: UInt64 {
@@ -42,6 +48,7 @@ final class RecordingURLProtocol: URLProtocol {
         lock.lock()
         _handler = handler
         _recorded = []
+        _cancelledPaths = []
         _enabled = true
         lock.unlock()
     }
@@ -50,6 +57,7 @@ final class RecordingURLProtocol: URLProtocol {
         lock.lock()
         _handler = nil
         _recorded = []
+        _cancelledPaths = []
         _latencyNanoseconds = 0
         _enabled = false
         hangContinuations.removeAll()
@@ -103,7 +111,9 @@ final class RecordingURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {
-        // Cancellation is observed via the URLSession completion / URLError.cancelled.
+        Self.lock.lock()
+        Self._cancelledPaths.append(request.url?.path ?? "")
+        Self.lock.unlock()
     }
 
     private func deliver(_ result: StubResult) async {

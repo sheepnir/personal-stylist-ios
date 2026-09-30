@@ -7,6 +7,7 @@ struct WearingPhotoViewer: View {
     let photoId: UUID
     let garmentName: String
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @State private var cropPayload: CropEditorPayload?
     @State private var confirmRemove = false
@@ -29,7 +30,7 @@ struct WearingPhotoViewer: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         exportStatus(photo)
-                        HStack(spacing: 12) {
+                        photoActionLayout {
                             Button {
                                 beginCrop(photo)
                             } label: {
@@ -38,6 +39,7 @@ struct WearingPhotoViewer: View {
                             }
                             .buttonStyle(.bordered)
                             .disabled(session.isSaving)
+                            .accessibilityHint(CropEditorCopy.cropPhotoHint)
                             .accessibilityIdentifier("wearing.viewer.crop")
                             Button(role: .destructive) {
                                 confirmRemove = true
@@ -47,6 +49,7 @@ struct WearingPhotoViewer: View {
                             }
                             .buttonStyle(.bordered)
                             .disabled(session.isSaving)
+                            .accessibilityHint(WearingGalleryCopy.removeMessage)
                             .accessibilityIdentifier("wearing.viewer.remove")
                         }
                         if let viewerError, cropPayload == nil {
@@ -137,6 +140,12 @@ struct WearingPhotoViewer: View {
                 EmptyView()
             }
         }
+    }
+
+    private var photoActionLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
     }
 
     private func beginCrop(_ photo: StubWearingPhoto) {

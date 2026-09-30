@@ -7,9 +7,13 @@ enum CropEditorCopy {
     static let saving = "Saving photo"
     static let reset = "Reset"
     static let zoom = "Zoom"
+    static let horizontalPosition = "Move photo horizontally"
+    static let verticalPosition = "Move photo vertically"
+    static let positionHint = "Swipe up or down to move the photo within the crop area."
+    static let positionUnavailable = "Zoom in to move the photo on this axis."
     static let shape = "Crop shape"
     static let canvasLabel = "Crop area"
-    static let canvasHint = "Drag to position the photo. Pinch, or swipe up or down, to zoom."
+    static let canvasHint = "Swipe up or down to zoom. Use the position sliders to move the photo."
 
     static let profileTitle = "Crop profile picture"
     static let garmentTitle = "Crop photo"
@@ -26,6 +30,12 @@ enum CropEditorCopy {
 
     static func zoomValue(_ zoom: CGFloat) -> String {
         String(format: "%.1f times", Double(zoom))
+    }
+
+    static func positionValue(_ value: CGFloat, horizontal: Bool) -> String {
+        if abs(value) < 0.01 { return "Centred" }
+        let direction = horizontal ? (value < 0 ? "left" : "right") : (value < 0 ? "up" : "down")
+        return "\(Int((abs(value) * 100).rounded())) percent \(direction)"
     }
 
     static func label(for aspect: CropGeometry.Aspect) -> String {

@@ -46,19 +46,24 @@ struct CropEditorView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                GeometryReader { proxy in
-                    let frame = CropGeometry.frameSize(
-                        ratio: aspect.ratio(for: imageSize),
-                        fitting: CGSize(width: proxy.size.width - 32, height: proxy.size.height - 16)
-                    )
-                    cropCanvas(frame: frame, container: proxy.size)
-                        .onAppear { lastFrame = frame }
-                        .onChange(of: frame) { _, newFrame in lastFrame = newFrame }
+            GeometryReader { layout in
+                ScrollView {
+                    VStack(spacing: 16) {
+                        GeometryReader { proxy in
+                            let frame = CropGeometry.frameSize(
+                                ratio: aspect.ratio(for: imageSize),
+                                fitting: CGSize(width: proxy.size.width - 32, height: proxy.size.height - 16)
+                            )
+                            cropCanvas(frame: frame, container: proxy.size)
+                                .onAppear { lastFrame = frame }
+                                .onChange(of: frame) { _, newFrame in lastFrame = newFrame }
+                        }
+                        .frame(height: max(200, min(400, layout.size.height * 0.5)))
+                        controls
+                    }
+                    .padding(.bottom, 12)
                 }
-                controls
             }
-            .padding(.bottom, 12)
             .background(Color.black.opacity(0.92).ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -77,6 +82,7 @@ struct CropEditorView: View {
                     } else {
                         Button(CropEditorCopy.save) { save() }
                             .fontWeight(.semibold)
+                            .disabled(lastFrame.width <= 0 || lastFrame.height <= 0)
                             .accessibilityIdentifier("crop.save")
                     }
                 }
@@ -145,6 +151,7 @@ struct CropEditorView: View {
                     }
             )
         )
+        .allowsHitTesting(!isSaving)
         .onChange(of: zoom) { _, newZoom in
             // Any zoom change counts, including VoiceOver adjustments of the slider.
             hasInteracted = true
@@ -155,6 +162,7 @@ struct CropEditorView: View {
         .accessibilityValue(CropEditorCopy.zoomValue(zoom))
         .accessibilityHint(CropEditorCopy.canvasHint)
         .accessibilityAdjustableAction { direction in
+            guard !isSaving else { return }
             hasInteracted = true
             switch direction {
             case .increment: zoom = CropGeometry.clampedZoom(zoom + 0.25)
@@ -174,7 +182,7 @@ struct CropEditorView: View {
                         Text(CropEditorCopy.label(for: option)).tag(option)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .accessibilityLabel(CropEditorCopy.shape)
                 .onChange(of: aspect) { _, _ in
                     hasInteracted = true
@@ -194,6 +202,8 @@ struct CropEditorView: View {
                     .foregroundStyle(.white.opacity(0.8))
                     .accessibilityHidden(true)
             }
+            positionControl(CropEditorCopy.horizontalPosition, horizontal: true)
+            positionControl(CropEditorCopy.verticalPosition, horizontal: false)
             Button(CropEditorCopy.reset) {
                 hasInteracted = true
                 offset = .zero
@@ -206,6 +216,41 @@ struct CropEditorView: View {
         .padding(.horizontal, 20)
         .disabled(isSaving)
         .environment(\.colorScheme, .dark)
+    }
+
+    /// Position sliders use the same clamping as dragging; zero centres the photo.
+    /// Recompute from offset so gestures and accessibility controls always agree.
+    private func positionControl(_ label: String, horizontal: Bool) -> some View {
+        let position = CropGeometry.normalizedPosition(
+            offset, imageSize: imageSize, frame: lastFrame, zoom: zoom
+        )
+        let limits = CropGeometry.offsetLimits(imageSize: imageSize, frame: lastFrame, zoom: zoom)
+        let canMove = horizontal ? limits.width > 0 : limits.height > 0
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .foregroundStyle(.white)
+            Slider(value: Binding(
+                get: {
+                    let current = CropGeometry.normalizedPosition(
+                        offset, imageSize: imageSize, frame: lastFrame, zoom: zoom
+                    )
+                    return horizontal ? current.width : current.height
+                },
+                set: { value in
+                    var current = CropGeometry.normalizedPosition(
+                        offset, imageSize: imageSize, frame: lastFrame, zoom: zoom
+                    )
+                    if horizontal { current.width = value } else { current.height = value }
+                    offset = CropGeometry.offset(for: current, imageSize: imageSize, frame: lastFrame, zoom: zoom)
+                    hasInteracted = true
+                }
+            ), in: -1...1)
+            .disabled(!canMove)
+            .accessibilityLabel(label)
+            .accessibilityValue(CropEditorCopy.positionValue(horizontal ? position.width : position.height, horizontal: horizontal))
+            .accessibilityHint(canMove ? CropEditorCopy.positionHint : CropEditorCopy.positionUnavailable)
+            .accessibilityIdentifier(horizontal ? "crop.horizontalPosition" : "crop.verticalPosition")
+        }
     }
 
     private func save() {

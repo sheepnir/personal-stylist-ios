@@ -14,6 +14,8 @@ struct OutfitBoardView: View {
     var autoBuildsOnAppear: Bool = true
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contextExpanded = false
     @AppStorage("demo.boardKeepTipShown") private var boardKeepTipShown = false
     @AppStorage(StylingModel.defaultsKey) private var selectedStylingModel = StylingModel.jev.rawValue
     @State private var showKeepTipBanner = false
@@ -468,50 +470,53 @@ struct OutfitBoardView: View {
 
     private var contextBar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Menu {
-                    ForEach(DayOccasion.allCases) { o in
-                        Button(o.rawValue) {
-                            model.occasion = o
-                            model.markContextChanged()
+            DisclosureGroup(isExpanded: $contextExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Occasion", selection: $model.occasion) {
+                        ForEach(DayOccasion.allCases) { option in
+                            Text(option.rawValue).tag(option)
                         }
                     }
-                } label: {
-                    contextChip(model.occasion.rawValue, systemImage: "briefcase")
-                }
-                .frame(minHeight: 44)
-                .accessibilityLabel("Occasion")
-                .accessibilityValue(model.occasion.rawValue)
-                .accessibilityHint("Choose occasion for this outfit")
-
-                Menu {
-                    ForEach(TempBand.allCases) { t in
-                        Button(t.rawValue) {
-                            model.temperatureBand = t
-                            model.markContextChanged()
+                    .pickerStyle(.menu)
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Applies to your next explicit outfit request")
+                    Picker("Temperature", selection: $model.temperatureBand) {
+                        ForEach(TempBand.allCases) { option in
+                            Text(option.rawValue).tag(option)
                         }
                     }
-                } label: {
-                    contextChip(model.temperatureBand.rawValue, systemImage: "thermometer")
+                    .pickerStyle(.menu)
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Choose the weather manually")
+                    Toggle("Rain", isOn: $model.rain)
+                        .frame(minHeight: 44)
+                    Button("Use these choices for today") { model.confirmManualContext() }
+                        .buttonStyle(.bordered)
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Confirms the weather without generating an outfit")
+                }
+                .padding(.top, 8)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Outfit context · Edit")
+                        .font(.subheadline.weight(.semibold))
+                    Text(model.manualContext.summary)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(minHeight: 44)
-                .accessibilityLabel("Temperature")
-                .accessibilityValue(model.temperatureBand.rawValue)
-                .accessibilityHint("Choose temperature for this outfit")
-
-                Button {
-                    model.rain.toggle()
-                    model.markContextChanged()
-                } label: {
-                    contextChip(model.rain ? "Rain" : "No rain", systemImage: model.rain ? "cloud.rain.fill" : "sun.max")
-                }
-                .buttonStyle(.plain)
-                .frame(minHeight: 44)
-                .accessibilityLabel("Rain")
-                .accessibilityValue(model.rain ? "On" : "Off")
-                .accessibilityHint("Turns rain consideration on or off")
-
-                Spacer(minLength: 0)
+            }
+            // Refresh the date label while the app stays open over local midnight.
+            TimelineView(.periodic(from: .now, by: 60)) { _ in
+                Text(model.contextReviewCopy)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.contextRequestCancelled {
+                Text("Context changed. The pending result won’t be used. Generate or Swap again when you’re ready.")
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if model.contextDirty, !(model.isGenerating && model.generateIntent == .updateContext) {
@@ -584,7 +589,7 @@ struct OutfitBoardView: View {
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: a.isLocked)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: a.isLocked)
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(g.displayName)
@@ -719,7 +724,7 @@ struct OutfitBoardView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: a.isLocked)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: a.isLocked)
                 Text(g.displayName)
                     .font(.caption2.weight(.semibold))
                     .lineLimit(2)
@@ -793,9 +798,12 @@ private struct BoardTileActionRow<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack(spacing: 8) {
-            content()
-            Spacer(minLength: 0)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                content()
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 8) { content() }
         }
     }
 }

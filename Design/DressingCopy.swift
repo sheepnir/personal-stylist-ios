@@ -281,3 +281,65 @@ enum TempBand: String, CaseIterable, Identifiable {
     /// openapi TemperatureBand enum
     var apiValue: String { rawValue.uppercased() }
 }
+
+/// Versioned local choices for the next explicit request. Stable API identifiers are stored
+/// instead of display copy. This is preferences data, not a SwiftData schema change.
+struct ManualOutfitContext: Equatable {
+    var occasion: DayOccasion = .workStandard
+    var temperature: TempBand = .mild
+    var rain: Bool = false
+
+    var summary: String {
+        "\(occasion.rawValue) · \(temperature.rawValue) · \(rain ? "Rain" : "No rain")"
+    }
+}
+
+enum ManualContextPreferences {
+    static let key = "outfit.manualContext.v1"
+
+    private struct Record: Codable {
+        var version: Int
+        var occasion: String
+        var temperature: String
+        var rain: Bool
+        var reviewedAt: Date
+    }
+
+    struct Saved {
+        var context: ManualOutfitContext
+        var reviewedAt: Date
+    }
+
+    static func load(from defaults: UserDefaults) -> Saved? {
+        guard let data = defaults.data(forKey: key),
+              let record = try? JSONDecoder().decode(Record.self, from: data),
+              record.version == 1, record.reviewedAt.timeIntervalSince1970.isFinite else { return nil }
+        // An unfamiliar value falls back independently; known choices still survive.
+        return Saved(
+            context: ManualOutfitContext(
+                occasion: DayOccasion.allCases.first { $0.apiValue == record.occasion } ?? .workStandard,
+                temperature: TempBand.allCases.first { $0.apiValue == record.temperature } ?? .mild,
+                rain: record.rain
+            ),
+            reviewedAt: record.reviewedAt
+        )
+    }
+
+    static func save(_ context: ManualOutfitContext, reviewedAt: Date, to defaults: UserDefaults) {
+        let record = Record(version: 1, occasion: context.occasion.apiValue,
+                            temperature: context.temperature.apiValue, rain: context.rain,
+                            reviewedAt: reviewedAt)
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        defaults.set(data, forKey: key)
+    }
+
+    static func reviewCopy(reviewedAt: Date?, now: Date, calendar: Calendar) -> String {
+        guard let reviewedAt else {
+            return "Default choices — set the weather and occasion yourself."
+        }
+        if calendar.isDate(reviewedAt, inSameDayAs: now) {
+            return "Manually selected — no forecast is checked."
+        }
+        return "Last-used weather — review it for today. Your choices are kept."
+    }
+}

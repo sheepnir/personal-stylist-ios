@@ -44,3 +44,77 @@ final class StylingModelTests: XCTestCase {
         XCTAssertEqual(StylingModel.resultTitle("typesafe/jev-1.13-20260917"), "Jev 1.13")
     }
 }
+
+final class ManualContextPreferencesTests: XCTestCase {
+    private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
+        let name = "ManualContextPreferencesTests.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        try body(defaults)
+    }
+
+    func testMissingCorruptAndOldVersionDoNotRewriteStorage() throws {
+        try withDefaults { defaults in
+            XCTAssertNil(ManualContextPreferences.load(from: defaults))
+            let corrupt = Data("broken".utf8)
+            defaults.set(corrupt, forKey: ManualContextPreferences.key)
+            XCTAssertNil(ManualContextPreferences.load(from: defaults))
+            XCTAssertEqual(defaults.data(forKey: ManualContextPreferences.key), corrupt)
+            let old = Data(#"{"version":0,"occasion":"CASUAL_DAY","temperature":"HOT","rain":true,"reviewedAt":0}"#.utf8)
+            defaults.set(old, forKey: ManualContextPreferences.key)
+            XCTAssertNil(ManualContextPreferences.load(from: defaults))
+            XCTAssertEqual(defaults.data(forKey: ManualContextPreferences.key), old)
+        }
+    }
+
+    func testUnknownEnumsFallBackIndependently() {
+        withDefaults { defaults in
+            defaults.set(Data(#"{"version":1,"occasion":"FUTURE_OCCASION","temperature":"HOT","rain":true,"reviewedAt":0}"#.utf8), forKey: ManualContextPreferences.key)
+            let saved = ManualContextPreferences.load(from: defaults)
+            XCTAssertEqual(saved?.context.occasion, .workStandard)
+            XCTAssertEqual(saved?.context.temperature, .hot)
+            XCTAssertEqual(saved?.context.rain, true)
+            defaults.set(Data(#"{"version":1,"occasion":"CASUAL_DAY","temperature":"FUTURE_TEMP","rain":false,"reviewedAt":0}"#.utf8), forKey: ManualContextPreferences.key)
+            XCTAssertEqual(ManualContextPreferences.load(from: defaults)?.context,
+                           ManualOutfitContext(occasion: .casualDay, temperature: .mild, rain: false))
+        }
+    }
+
+    func testLocalMidnightAndTimeZoneUseCurrentCalendarWithoutChangingChoices() throws {
+        let reviewed = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-30T06:59:00Z"))
+        let now = reviewed.addingTimeInterval(120)
+        var pacific = Calendar(identifier: .gregorian)
+        pacific.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        XCTAssertTrue(ManualContextPreferences.reviewCopy(reviewedAt: reviewed, now: now, calendar: pacific).contains("Last-used"))
+        XCTAssertTrue(ManualContextPreferences.reviewCopy(reviewedAt: reviewed, now: now, calendar: utc).contains("Manually selected"))
+        XCTAssertTrue(ManualContextPreferences.reviewCopy(reviewedAt: nil, now: now, calendar: utc).contains("Default"))
+        XCTAssertTrue(ManualContextPreferences.reviewCopy(reviewedAt: reviewed, now: now.addingTimeInterval(86400), calendar: utc).contains("Last-used"))
+    }
+
+    @MainActor
+    func testChoicesSurviveModelRecreationAndSameValueConfirmation() {
+        withDefaults { defaults in
+            var now = Date(timeIntervalSince1970: 1_790_784_000)
+            let store = InMemoryPersistenceStore(garments: [], sets: [], defaults: defaults)
+            let model = LoopDemoModel(store: store, preferences: defaults, contextNow: { now })
+            XCTAssertEqual(model.manualContext, ManualOutfitContext())
+            XCTAssertNil(defaults.data(forKey: ManualContextPreferences.key))
+            model.temperatureBand = .cold
+            model.rain = true
+            model.occasion = .eveningOut
+            let persisted = defaults.data(forKey: ManualContextPreferences.key)
+            let restored = LoopDemoModel(store: store, preferences: defaults, contextNow: { now })
+            XCTAssertEqual(restored.manualContext, model.manualContext)
+            XCTAssertEqual(defaults.data(forKey: ManualContextPreferences.key), persisted)
+            now = now.addingTimeInterval(86400)
+            XCTAssertTrue(restored.contextReviewCopy.contains("Last-used"))
+            restored.confirmManualContext()
+            XCTAssertEqual(restored.contextReviewedAt, now)
+            XCTAssertEqual(restored.manualContext, model.manualContext)
+            XCTAssertFalse(restored.contextReviewCopy.contains("Last-used"))
+            XCTAssertFalse(restored.isGenerating)
+        }
+    }
+}

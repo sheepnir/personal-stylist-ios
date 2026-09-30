@@ -10,6 +10,7 @@ struct WearingPhotoCaptureFlow: View {
     @ObservedObject var session: WearingGallerySession
     var onFinish: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var captured: CGImage?
     @State private var cropRect: CGRect?
     @State private var cropPayload: CropEditorPayload?
@@ -66,7 +67,7 @@ struct WearingPhotoCaptureFlow: View {
                         .accessibilityLabel(WearingGalleryCopy.photoTitle)
                     Label(WearingGalleryCopy.addingTo(garmentName), systemImage: "tshirt")
                         .font(.subheadline.weight(.semibold))
-                    HStack(spacing: 12) {
+                    photoActionLayout {
                         Button {
                             cropPayload = CropEditorPayload(image: image)
                         } label: {
@@ -140,6 +141,12 @@ struct WearingPhotoCaptureFlow: View {
             }
         }
         .interactiveDismissDisabled(isFinishing)
+    }
+
+    private var photoActionLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
     }
 
     private func retake() {
