@@ -25,6 +25,14 @@ struct PersonalStylistApp: App {
         self.modelContainer = opened.container
         self.store = opened.store
         self.blockedMessage = launch.blockedMessage
+        if let opened = opened.store {
+            // ADR-0004: remove gallery files and crop sources left by a termination mid-save.
+            Task(priority: .utility) {
+                await opened.sweepOrphanWearingPhotoFiles()
+                let referenced = Set(await opened.fetchGarments().compactMap(\.imagePath))
+                UserGarmentPhotoStore.sweepOrphanSources(referencedImagePaths: referenced)
+            }
+        }
         #if DEBUG
         if let sd = opened.store {
             Task {

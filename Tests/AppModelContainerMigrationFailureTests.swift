@@ -142,6 +142,7 @@ final class AppModelContainerMigrationFailureTests: XCTestCase {
             )
         }
         defer { sqlite3_close(database) }
+        try configureBusyTimeout(database)
         guard sqlite3_exec(database, "DROP TABLE ZGARMENTENTITY", nil, nil, nil) == SQLITE_OK else {
             let message = database.map { String(cString: sqlite3_errmsg($0)) } ?? "drop failed"
             throw NSError(
@@ -182,6 +183,7 @@ final class AppModelContainerMigrationFailureTests: XCTestCase {
             throw NSError(domain: "test", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
         }
         defer { sqlite3_close(database) }
+        try configureBusyTimeout(database)
         sqlite3_exec(database, "PRAGMA wal_checkpoint(PASSIVE);", nil, nil, nil)
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -193,5 +195,16 @@ final class AppModelContainerMigrationFailureTests: XCTestCase {
             throw NSError(domain: "test", code: 4)
         }
         return try read(statement)
+    }
+
+    private func configureBusyTimeout(_ database: OpaquePointer?) throws {
+        // The SwiftData fixture writer can still be releasing its SQLite connection.
+        // Wait at most five seconds for its lock; persistent contention still fails.
+        let result = sqlite3_busy_timeout(database, 5_000)
+        guard result == SQLITE_OK else {
+            throw NSError(domain: "test", code: Int(result), userInfo: [
+                NSLocalizedDescriptionKey: "could not configure SQLite busy timeout"
+            ])
+        }
     }
 }

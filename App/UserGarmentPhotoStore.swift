@@ -114,6 +114,7 @@ enum UserGarmentPhotoStore {
             evictThumbnails()
             try? FileManager.default.removeItem(at: url)
         }
+        removeSource(forPhotoId: id)
     }
 
     /// Delete a user-owned photo if `imagePath` is `user-photo:` or a file URL. Never touches bundle fixtures.
@@ -122,6 +123,9 @@ enum UserGarmentPhotoStore {
         evictThumbnails()
         if let url = ownedFileURL(imagePath) {
             try? FileManager.default.removeItem(at: url)
+        }
+        if let id = photoID(from: imagePath) {
+            removeSource(forPhotoId: id)
         }
     }
 
@@ -176,6 +180,106 @@ enum UserGarmentPhotoStore {
     private static func isUnderGarmentPhotos(_ url: URL) -> Bool {
         guard let dir = try? directoryURL() else { return false }
         return url.path.hasPrefix(dir.path)
+    }
+
+    // MARK: - Crop sources (Sprint 9, ADR-0004)
+    //
+    // `Sources/{uuid}.jpg` keeps the uncropped pixels behind the displayed `{uuid}.jpg`, so a
+    // later crop starts from the source instead of the previous crop. It lives and dies with
+    // the displayed file: every removal of `{uuid}` above also removes its source.
+
+    static let sourcesDirectoryName = "Sources"
+
+    /// Pixels to re-edit for `imagePath`: the retained source, else the displayed file.
+    static func editSourceData(forImagePath imagePath: String?) -> Data? {
+        if let url = existingSourceURL(forImagePath: imagePath),
+           let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+            return data
+        }
+        guard let url = resolvedFileURL(imagePath) else { return nil }
+        return try? Data(contentsOf: url, options: .mappedIfSafe)
+    }
+
+    /// Keep `data` (already bounded, app-held JPEG bytes) as the source of photo `id`.
+    static func writeSource(_ data: Data, forPhotoId id: UUID) throws {
+        let url = try sourceFileURL(forPhotoId: id)
+        do {
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            try applyProtectionAndExcludeFromBackup(at: url)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw mapWriteError(error)
+        }
+    }
+
+    static func removeSource(forPhotoId id: UUID) {
+        guard let url = existingSourceURL(forPhotoId: id) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Whether a crop source is retained behind `imagePath` (it was cropped in the app).
+    static func hasSource(forImagePath imagePath: String?) -> Bool {
+        existingSourceURL(forImagePath: imagePath) != nil
+    }
+
+    /// Looks up without creating `Sources/` as a side effect.
+    private static func existingSourceURL(forImagePath imagePath: String?) -> URL? {
+        guard let imagePath, let id = photoID(from: imagePath) else { return nil }
+        return existingSourceURL(forPhotoId: id)
+    }
+
+    private static func existingSourceURL(forPhotoId id: UUID) -> URL? {
+        guard let dir = try? directoryURL() else { return nil }
+        let url = dir.appendingPathComponent(sourcesDirectoryName, isDirectory: true)
+            .appendingPathComponent("\(id.uuidString).jpg")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Launch cleanup: sources whose displayed photo no garment references any more.
+    /// Skips recent files (an in-flight crop) and does nothing without references.
+    @discardableResult
+    static func sweepOrphanSources(
+        referencedImagePaths: Set<String>,
+        minimumAge: TimeInterval = 600,
+        now: Date = Date(),
+        onlyAmong candidates: Set<UUID>? = nil
+    ) -> [UUID] {
+        let referencedIds = Set(referencedImagePaths.compactMap(photoID(from:)))
+        // No user photo referenced at all (e.g. rows lost and fixtures re-seeded): never sweep.
+        guard !referencedIds.isEmpty, let dir = try? sourcesDirectoryURL() else { return [] }
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        var removed: [UUID] = []
+        for url in urls where url.pathExtension.lowercased() == "jpg" {
+            guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                  !referencedIds.contains(id),
+                  candidates.map({ $0.contains(id) }) ?? true else { continue }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            guard now.timeIntervalSince(modified) >= minimumAge else { continue }
+            if (try? FileManager.default.removeItem(at: url)) != nil { removed.append(id) }
+        }
+        return removed
+    }
+
+    static func sourceFileURL(forPhotoId id: UUID) throws -> URL {
+        try sourcesDirectoryURL().appendingPathComponent("\(id.uuidString).jpg")
+    }
+
+    private static func sourcesDirectoryURL() throws -> URL {
+        let dir = try directoryURL().appendingPathComponent(sourcesDirectoryName, isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(
+                at: dir,
+                withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.complete]
+            )
+            try applyProtectionAndExcludeFromBackup(at: dir)
+        }
+        return dir
     }
 
     static func loadUIImage(imagePath: String?) -> UIImage? {

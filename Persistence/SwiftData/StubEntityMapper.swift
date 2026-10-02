@@ -249,3 +249,20 @@ enum StubEntityMapper {
         return decoded
     }
 }
+
+// MARK: - Wearing photo (Sprint 9)
+
+extension StubEntityMapper {
+    static func stub(from entity: WearingPhotoEntity) -> StubWearingPhoto {
+        StubWearingPhoto(
+            id: entity.id,
+            garmentId: entity.garmentId,
+            displayFileId: entity.displayFileId,
+            sourceFileId: entity.sourceFileId,
+            addedAt: entity.addedAt,
+            updatedAt: entity.updatedAt,
+            source: WearingPhotoSource(rawValue: entity.sourceRaw) ?? .library,
+            exportState: entity.photosExportRaw.flatMap(WearingPhotoExportState.init(rawValue:))
+        )
+    }
+}

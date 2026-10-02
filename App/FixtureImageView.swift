@@ -41,6 +41,8 @@ struct FixtureImageView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: sizeClass == .tiny ? 8 : 12, style: .continuous))
+        // Clipping limits drawing, not hit testing: tall photos must not cover nearby controls.
+        .contentShape(Rectangle())
         .accessibilityLabel(accessibilityLabel)
     }
 

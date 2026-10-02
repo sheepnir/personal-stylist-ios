@@ -1,3 +1,6 @@
+import { LUNA_MODEL } from './luna.js';
+import { generateCandidates, swapCandidates, JEV_MODEL, JEV_PROMPT_VERSION, POLICY_VERSION } from './jev.js';
+import { eligible, selectPaid } from './paidSelection.js';
 /**
  * Route handlers for Personal Stylist backend (M0-09).
  */
@@ -47,7 +50,7 @@ export async function handleUsage(
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Usage endpoint error:', error);
+    console.error('Usage endpoint error');
     return internalError('Failed to retrieve usage data');
   }
 }
@@ -57,8 +60,8 @@ export async function handleUsage(
  */
 export async function handleAlternatives(
   request: Request,
-  _env: Env,
-  _auth: AuthContext
+  env: Env,
+  auth: AuthContext
 ): Promise<Response> {
   try {
     const parsed = await readJsonWithLimit(request);
@@ -83,8 +86,9 @@ export async function handleAlternatives(
       return badRequest('Missing or invalid context object');
     }
     
-    const result = rankAlternatives({
+    const input = {
       slot: body.slot,
+      options: body.options,
       currentAssignments: body.currentAssignments,
       wardrobe: body.wardrobe,
       profile: body.profile ?? null,
@@ -93,7 +97,8 @@ export async function handleAlternatives(
       limit: body.limit ?? 8,
       sets: body.sets ?? [],
       requestId: body.requestId ?? null,
-    });
+    };
+    const result = rankAlternatives(input);
     
     if (isAlternativesProblem(result)) {
       return new Response(JSON.stringify(result), {
@@ -102,12 +107,18 @@ export async function handleAlternatives(
       });
     }
     
-    return new Response(JSON.stringify(result), {
+    const accepted = request.headers.get('X-Styling-Policy');
+    const selectedModel = request.headers.get('X-Styling-Model') ?? JEV_MODEL;
+    if (![JEV_MODEL, LUNA_MODEL].includes(selectedModel)) return badRequest('Unsupported styling model');
+    const selected = await selectPaid({ candidates: eligible(env, auth, accepted, selectedModel) ? swapCandidates(input, result) : [],
+      fallback: result, context: input.context, acceptedPolicy: accepted, selectedModel, env, auth, task: 'jev-swap' });
+    const output = selected.provenance ? { ...selected.result, generation: selected.provenance } : selected.result;
+    return new Response(JSON.stringify(output), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Alternatives endpoint error:', error);
+    console.error('Alternatives endpoint error');
     return internalError('Failed to rank alternatives');
   }
 }
@@ -118,8 +129,8 @@ export async function handleAlternatives(
  */
 export async function handleGenerate(
   request: Request,
-  _env: Env,
-  _auth: AuthContext
+  env: Env,
+  auth: AuthContext
 ): Promise<Response> {
   try {
     // Parse request body with a size limit (#170)
@@ -141,7 +152,7 @@ export async function handleGenerate(
     
     // M0-09: Always deterministic — no model call, so no hard-cap KV read (#165).
     // Live OpenRouter (#92) must reintroduce isHardCapReached before paid attempts.
-    const result = generateLocal({
+    const input = {
       wardrobe: body.wardrobe,
       context: body.context,
       profile: body.profile ?? null,
@@ -152,7 +163,8 @@ export async function handleGenerate(
       boldness: body.boldness ?? 'FAMILIAR',
       recentOutfits: body.recentOutfits ?? [],
       requestId: body.requestId ?? null,
-    });
+    };
+    const result = generateLocal(input);
     
     // Handle Stage 1 problem (400)
     if (isLocalProblem(result)) {
@@ -162,14 +174,22 @@ export async function handleGenerate(
       });
     }
     
+    const accepted = request.headers.get('X-Styling-Policy');
+    const selectedModel = request.headers.get('X-Styling-Model') ?? JEV_MODEL;
+    if (![JEV_MODEL, LUNA_MODEL].includes(selectedModel)) return badRequest('Unsupported styling model');
+    const selected = await selectPaid({ candidates: eligible(env, auth, accepted, selectedModel) ? generateCandidates(input, result) : [],
+      fallback: result, context: input.context, acceptedPolicy: accepted, selectedModel, env, auth, task: 'jev-generate' });
+    const output = selected.provenance ? { ...selected.result,
+      rationale: { ...selected.result.rationale, ...(selected.provenance.fallbackLevel === 'NONE' ? { summary: `${selectedModel === LUNA_MODEL ? 'GPT-5.6 Luna' : 'Jev'} selected this outfit. Pairing notes follow your wardrobe rules.` } : {}) },
+      generation: { ...selected.result.generation, ...selected.provenance } } : selected.result;
     // Success: deterministic outfit (200)
     // Note: generation.spendState is HARD_CAP_DETERMINISTIC
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify(output), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Generate endpoint error:', error);
+    console.error('Generate endpoint error');
     return internalError('Failed to generate outfit');
   }
 }
@@ -251,4 +271,11 @@ export function methodNotAllowed(allowed: string[]): Response {
       'Allow': allowed.join(', '),
     },
   });
+}
+
+export function handleModels(env: Env): Response {
+  return Response.json({ primary: env.PRIMARY_MODEL === JEV_MODEL ? {
+    slug: JEV_MODEL, displayName: 'Jev 1.13', supportsVision: false, supportsStructuredOutput: false, contextWindow: 32000,
+  } : null, secondary: null, promptVersion: JEV_PROMPT_VERSION, policyVersion: POLICY_VERSION,
+    dataPolicy: { excludesTrainingProviders: true, verifiedOn: env.PROVIDER_POLICY_VERIFIED_ON ?? null, note: null } });
 }

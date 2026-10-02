@@ -41,6 +41,11 @@ struct SwapSheetView: View {
 
     private var alternativesList: some View {
         List {
+            if let selection = model.swapAlternatives.first?.selectionMetadata {
+                Section {
+                    if let notice = StylingModel.swapNotice(selection) { Text(notice) }
+                }
+            }
             Section {
                 currentPieceHeader
             }

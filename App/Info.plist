@@ -22,13 +22,15 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSCameraUsageDescription</key>
-	<string>To photograph a garment. The photo stays on this iPhone for your wardrobe.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>To photograph a garment, or yourself wearing one. Photos stay on this iPhone unless you choose Save to Photos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>To save a selfie you confirm to your Photos library when you choose Save to Photos. Personal Stylist doesn’t read your library.</string>
 	<key>OUTFIT_ENGINE_BASE_URL</key>
 	<string>$(OUTFIT_ENGINE_BASE_URL)</string>
 	<key>UILaunchScreen</key>

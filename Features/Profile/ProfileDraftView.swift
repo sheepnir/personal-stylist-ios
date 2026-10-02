@@ -6,6 +6,14 @@ struct ProfileDraftView: View {
     static let deviceAccessSectionID = "device-access-section"
 
     @ObservedObject var model: LoopDemoModel
+    /// Pushed editor: autosave on Back (D-45). As the Profile tab root (Sprint 9) this is
+    /// false — leaving the tab asks Save / Discard / Keep editing instead of saving silently.
+    var autosavesOnDisappear: Bool = true
+    /// Reports whether unsaved edits exist, for the tab shell's leave guard.
+    var onUnsavedChangesChange: (Bool) -> Void = { _ in }
+    /// Save or discard requested by the tab shell's leave guard.
+    var pendingCommand: ProfileEditorCommand? = nil
+    var onCommandHandled: (ProfileEditorCommand) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -20,15 +28,34 @@ struct ProfileDraftView: View {
     @State private var constraintsExtra: String = ""
     @State private var experimentation: Double = 3
     @State private var summaryText: String = ""
-    @State private var isDirty = false
+    /// Compare raw editable values with hydration, before any normalization.
+    /// Photo-only visits must not rewrite unrelated profile fields.
+    @State private var savedFields: Fields?
+
+    private struct Fields: Equatable {
+        let age, profession, environment, weekExtra, goalsExtra, constraintsExtra, summary: String
+        let week, goals, constraints: Set<String>
+        let experimentation: Double
+    }
+
+    private var fields: Fields {
+        Fields(age: ageText, profession: profession, environment: workEnvironment,
+               weekExtra: typicalWeekExtra, goalsExtra: goalsExtra, constraintsExtra: constraintsExtra,
+               summary: summaryText, week: typicalWeek, goals: selectedGoals,
+               constraints: selectedConstraints, experimentation: experimentation)
+    }
+
+    private var isDirty: Bool { savedFields.map { $0 != fields } ?? false }
     @State private var didConfirmThisVisit = false
     @State private var showResetConfirm = false
     @State private var showClearConfirm = false
     @State private var isDataControlBusy = false
+    @State private var isVisible = false
 
     var body: some View {
         ScrollViewReader { proxy in
         Form {
+            ProfilePhotoSection()
             if let profile = model.styleProfile {
                 Section {
                     Label(
@@ -47,13 +74,11 @@ struct ProfileDraftView: View {
                     TextField("Age", text: $ageText)
                         .keyboardType(.numberPad)
                         .accessibilityLabel("Age")
-                        .onChange(of: ageText) { _, _ in isDirty = true }
                     LabeledContent("Profession") {
                         TextField("Profession", text: $profession)
                             .multilineTextAlignment(.trailing)
                             .accessibilityLabel("Profession")
                     }
-                    .onChange(of: profession) { _, _ in isDirty = true }
 
                     Picker("Work environment", selection: $workEnvironment) {
                         Text("Not set").tag("")
@@ -62,7 +87,6 @@ struct ProfileDraftView: View {
                         }
                     }
                     .accessibilityLabel("Work environment")
-                    .onChange(of: workEnvironment) { _, _ in isDirty = true }
                 }
 
                 Section {
@@ -75,8 +99,6 @@ struct ProfileDraftView: View {
                 } footer: {
                     Text("Pick the days that show up most. No percentages needed.")
                 }
-                .onChange(of: typicalWeek) { _, _ in isDirty = true }
-                .onChange(of: typicalWeekExtra) { _, _ in isDirty = true }
 
                 Section {
                     chipWrap(ProfileFieldCopy.goalOptions, selected: $selectedGoals)
@@ -86,8 +108,6 @@ struct ProfileDraftView: View {
                 } header: {
                     Text("Goals")
                 }
-                .onChange(of: selectedGoals) { _, _ in isDirty = true }
-                .onChange(of: goalsExtra) { _, _ in isDirty = true }
 
                 Section {
                     chipWrap(ProfileFieldCopy.constraintChips, selected: $selectedConstraints)
@@ -97,8 +117,6 @@ struct ProfileDraftView: View {
                 } header: {
                     Text("Constraints")
                 }
-                .onChange(of: selectedConstraints) { _, _ in isDirty = true }
-                .onChange(of: constraintsExtra) { _, _ in isDirty = true }
 
                 Section {
                     Slider(value: $experimentation, in: 1...5, step: 1)
@@ -119,7 +137,6 @@ struct ProfileDraftView: View {
                 } header: {
                     Text("Experimentation")
                 }
-                .onChange(of: experimentation) { _, _ in isDirty = true }
 
                 Section {
                     TextEditor(text: $summaryText)
@@ -131,7 +148,6 @@ struct ProfileDraftView: View {
                 } header: {
                     Text("Summary")
                 }
-                .onChange(of: summaryText) { _, _ in isDirty = true }
 
                 Section {
                     Button(profile.isDraft ? "Confirm profile" : "Save changes") {
@@ -172,19 +188,21 @@ struct ProfileDraftView: View {
             }
 
             // TestFlight / Release device-token seed (#89 / D-46). No default secrets.
+            StylingConsentSection()
             DeviceAccessSection(model: model)
         }
         .onChange(of: model.scrollToDeviceAccessRequested, initial: true) { _, requested in
-            guard requested else { return }
-            if accessibilityReduceMotion {
-                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-            } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
-                }
-            }
-            model.scrollToDeviceAccessRequested = false
+            // A kept-alive tab may be offscreen: leave the request for the next appearance.
+            guard requested, isVisible else { return }
+            scrollToDeviceAccess(proxy)
         }
+        .onAppear {
+            isVisible = true
+            if model.scrollToDeviceAccessRequested {
+                scrollToDeviceAccess(proxy)
+            }
+        }
+        .onDisappear { isVisible = false }
         }
         .navigationTitle("Style profile")
         .navigationBarTitleDisplayMode(.inline)
@@ -193,14 +211,31 @@ struct ProfileDraftView: View {
                 if model.styleProfile == nil {
                     await model.ensureEditableStyleProfile()
                 }
-                hydrate()
+                // As a tab root the editor can reappear with unsaved edits (Sprint 9):
+                // reload only when there is nothing unsaved to lose.
+                if savedFields == nil || !isDirty {
+                    hydrate()
+                }
             }
         }
         .onChange(of: model.styleProfile?.id) { _, _ in hydrate() }
         .onDisappear {
-            if isDirty && !didConfirmThisVisit {
+            if autosavesOnDisappear && isDirty && !didConfirmThisVisit {
                 saveEdits(confirm: false)
             }
+        }
+        .onChange(of: isDirty, initial: true) { _, dirty in
+            onUnsavedChangesChange(dirty)
+        }
+        .onChange(of: pendingCommand) { _, command in
+            guard let command else { return }
+            switch command.action {
+            case .save:
+                saveEdits(confirm: false)
+            case .discard:
+                hydrate()
+            }
+            onCommandHandled(command)
         }
         .confirmationDialog(
             DataControlsCopy.resetProfileTitle,
@@ -245,6 +280,17 @@ struct ProfileDraftView: View {
         await model.clearWardrobeAndLooks()
     }
 
+    private func scrollToDeviceAccess(_ proxy: ScrollViewProxy) {
+        if accessibilityReduceMotion {
+            proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(Self.deviceAccessSectionID, anchor: .top)
+            }
+        }
+        model.scrollToDeviceAccessRequested = false
+    }
+
     private func chipWrap(_ options: [String], selected: Binding<Set<String>>) -> some View {
         FlexibleChipWrap(options: options, selected: selected)
     }
@@ -275,30 +321,45 @@ struct ProfileDraftView: View {
         constraintsExtra = constraints.extra
         experimentation = Double(p.experimentationLevel ?? 3)
         summaryText = p.summary ?? ""
-        isDirty = false
+        savedFields = fields
         didConfirmThisVisit = false
     }
 
     private func saveEdits(confirm: Bool) {
-        guard var p = model.styleProfile else { return }
-        let trimmedAge = ageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedAge.isEmpty {
-            p.age = nil
-        } else if let age = Int(trimmedAge), age > 0, age < 120 {
-            p.age = age
+        guard var p = model.styleProfile, let savedFields else { return }
+        guard confirm || isDirty else { return }
+        if ageText != savedFields.age {
+            let trimmedAge = ageText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedAge.isEmpty {
+                p.age = nil
+            } else if let age = Int(trimmedAge), age > 0, age < 120 {
+                p.age = age
+            }
         }
-        p.profession = profession.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        p.workEnvironment = workEnvironment.isEmpty ? nil : workEnvironment
-        p.workEnvironmentLabel = ProfileFieldCopy.workEnvironmentLabel(for: p.workEnvironment)
-        p.typicalWeekNotes = ProfileFieldCopy.encodeTypicalWeek(selected: typicalWeek, extra: typicalWeekExtra)
-        p.goals = ProfileFieldCopy.encodeGoals(selected: selectedGoals, extra: goalsExtra)
-        p.constraintsNotes = ProfileFieldCopy.encodeConstraints(selected: selectedConstraints, extra: constraintsExtra)
-        p.experimentationLevel = Int(experimentation)
-        if summaryText != (p.summary ?? "") {
+        if profession != savedFields.profession {
+            p.profession = profession.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        if workEnvironment != savedFields.environment {
+            p.workEnvironment = workEnvironment.isEmpty ? nil : workEnvironment
+            p.workEnvironmentLabel = ProfileFieldCopy.workEnvironmentLabel(for: p.workEnvironment)
+        }
+        if typicalWeek != savedFields.week || typicalWeekExtra != savedFields.weekExtra {
+            p.typicalWeekNotes = ProfileFieldCopy.encodeTypicalWeek(selected: typicalWeek, extra: typicalWeekExtra)
+        }
+        if selectedGoals != savedFields.goals || goalsExtra != savedFields.goalsExtra {
+            p.goals = ProfileFieldCopy.encodeGoals(selected: selectedGoals, extra: goalsExtra)
+        }
+        if selectedConstraints != savedFields.constraints || constraintsExtra != savedFields.constraintsExtra {
+            p.constraintsNotes = ProfileFieldCopy.encodeConstraints(selected: selectedConstraints, extra: constraintsExtra)
+        }
+        if experimentation != savedFields.experimentation {
+            p.experimentationLevel = Int(experimentation)
+        }
+        if summaryText != savedFields.summary {
             p.summary = summaryText
             p.summaryUserOwned = true
         }
-        isDirty = false
+        self.savedFields = fields
         if confirm {
             model.confirmProfile(p)
         } else {
@@ -308,6 +369,14 @@ struct ProfileDraftView: View {
             model.updateProfile(p)
         }
     }
+}
+
+/// Leave-guard decision from the tab shell. A fresh `id` per request so repeated
+/// choices are delivered even when the action is the same.
+struct ProfileEditorCommand: Equatable {
+    enum Action: Equatable { case save, discard }
+    let id = UUID()
+    let action: Action
 }
 
 private extension String {

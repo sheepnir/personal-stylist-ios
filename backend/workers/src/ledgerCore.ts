@@ -79,6 +79,8 @@ const MAX_ATTEMPT_MICRO = MAX_ATTEMPT_USD * MICRO_USD;
 function resolveReconcileActualMicro(
   actualUSD: number
 ): { ok: true; micro: number; overCeiling: boolean } | { ok: false } {
+  // A confirmed no-call rollback or a reported zero-cost result releases its hold.
+  if (actualUSD === 0 && !Object.is(actualUSD, -0)) return { ok: true, micro: 0, overCeiling: false };
   const bounded = boundedAttemptUsdToMicro(actualUSD);
   if (bounded.ok) {
     return { ok: true, micro: bounded.micro, overCeiling: false };
@@ -955,7 +957,8 @@ function shouldAttemptCostLookup(entry: AttemptEntry, now: Date): boolean {
   return now.getTime() >= anchorMs + backoff;
 }
 
-function processOpenAttempts(state: LedgerState, now: Date, costSource: CostSource): void {
+function processOpenAttempts(state: LedgerState, now: Date, costSource: CostSource, lookupLimit: number): void {
+  let lookups = 0;
   for (const [dayKey, day] of Object.entries(state.days)) {
     for (const entry of Object.values(day.attempts)) {
       if (entry.state !== 'reserved' && entry.state !== 'unknown') continue;
@@ -965,9 +968,10 @@ function processOpenAttempts(state: LedgerState, now: Date, costSource: CostSour
         continue;
       }
 
-      if (entry.state !== 'unknown') continue;
+      if (entry.state !== 'unknown' || costSource === NO_COST_SOURCE) continue;
 
-      if (!shouldAttemptCostLookup(entry, now)) continue;
+      if (lookups >= lookupLimit || !shouldAttemptCostLookup(entry, now)) continue;
+      lookups++;
 
       entry.lastCostLookupAt = now.toISOString();
       entry.costLookupCount = (entry.costLookupCount ?? 0) + 1;
@@ -1084,9 +1088,10 @@ export function dayHardCapReached(state: LedgerState, day: string, capMicro: num
 export function ageLedger(
   state: LedgerState,
   now: Date,
-  costSource: CostSource = NO_COST_SOURCE
+  costSource: CostSource = NO_COST_SOURCE,
+  lookupLimit = Number.POSITIVE_INFINITY
 ): boolean {
-  processOpenAttempts(state, now, costSource);
+  processOpenAttempts(state, now, costSource, lookupLimit);
   return pruneOldDays(state, now);
 }
 

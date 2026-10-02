@@ -345,4 +345,5 @@ struct StubSwapAlternative: Identifiable, Hashable, Sendable {
     var score: Double?
     /// When non-empty, apply all partner garment ids atomically (keepTogether).
     var setPartnerIds: [UUID]
+    var selectionMetadata: SwapSelectionMetadata? = nil
 }

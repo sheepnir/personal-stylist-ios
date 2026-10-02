@@ -1,7 +1,7 @@
 import Foundation
 
 /// #45 / #46 (iOS-A2 / iOS-A3) — "Built without the AI stylist" notice on the board.
-/// Designer spec 0001 rev 3 §2.4 (exact strings; changes need Designer sign-off).
+/// Sprint 8 retains the reviewed notice and removes unverified reset promises.
 /// Keyed on the **presence** of the stored `fallbackReason`, never on `fallbackLevel`
 /// (ADR-0001 §10.4). Raw reason values and `promptVersion` never reach the UI (R10).
 enum FallbackNoticeCopy {
@@ -12,9 +12,7 @@ enum FallbackNoticeCopy {
     /// `fallbackNoticeNoUsableOutfit` — `INVALID_OUTPUT`
     static let noUsableOutfit = "The AI stylist couldn't come up with a usable outfit this time, so the app put this one together from your wardrobe."
     /// `fallbackNoticeLimit` — `SPEND_CAP`
-    static let limit = "The AI stylist reached its usage limit, so the app put this one together from your wardrobe."
-    /// `fallbackNoticeLimitResetUnknown` — `SPEND_CAP` Variant B (R11). No reset time, no usage call.
-    static let limitResetUnknown = "It'll be back after the limit resets."
+    static let limit = "The AI stylist isn't available right now, so the app put this outfit together from your wardrobe."
     /// `fallbackNoticeGeneric` — any other present value (unrecognised, empty, undecodable).
     static let generic = "This time the app put this outfit together from your wardrobe on its own."
 
@@ -41,7 +39,7 @@ enum FallbackNoticeCopy {
         switch reason {
         case .providerError: return unavailable
         case .invalidOutput: return noUsableOutfit
-        case .spendCap: return "\(limit) \(limitResetUnknown)"
+        case .spendCap: return limit
         case .other: return generic
         }
     }

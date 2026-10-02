@@ -1,5 +1,6 @@
 /**
- * Phase A guardrails (ADR-0001 §2): no live OpenRouter calls in any environment.
+ * Historical chat-client guardrail (ADR-0001 §2): no live calls through this client.
+ * ADR-0003 separately permits the gated typed Decisions path in paidSelection.ts.
  */
 
 /** When true, `callOpenRouter` must refuse before any network I/O. */

@@ -13,6 +13,9 @@ export { DeviceSpendLedger } from './spendLedger.js';
  */
 
 import type { Env } from './types.js';
+import { constantTimeEqual } from './auth.js';
+import { GLOBAL_LEDGER_NAME } from './paidSelection.js';
+import { readJsonWithLimit } from './validation.js';
 import { authenticate } from './auth.js';
 import { enforceRateLimit } from './validation.js';
 import {
@@ -22,6 +25,7 @@ import {
 } from './authRoutes.js';
 import {
   handleHealth,
+  handleModels,
   handleUsage,
   handleGenerate,
   handleAlternatives,
@@ -67,6 +71,21 @@ export default {
       return addCorsHeaders(response, corsHeaders);
     }
     
+    // Separate administrative capability; never accepted as a content/device token.
+    if (path === '/v1/admin/provider-switch') {
+      if (method !== 'POST') return methodNotAllowed(['POST']);
+      const bearer = request.headers.get('Authorization') ?? '';
+      if (!env.PROVIDER_CONTROL_SECRET || !await constantTimeEqual(bearer, `Bearer ${env.PROVIDER_CONTROL_SECRET}`)) return new Response(null, { status: 401 });
+      if (!env.SPEND_LEDGER) return new Response(null, { status: 503 });
+      const body = await readJsonWithLimit(request);
+      if (body instanceof Response) return body;
+      if (typeof body !== 'object' || body === null || !('enabled' in body) || typeof body.enabled !== 'boolean') return new Response(null, { status: 400 });
+      try {
+        await env.SPEND_LEDGER.getByName(GLOBAL_LEDGER_NAME).setProviderEnabled(body.enabled);
+        return new Response(null, { status: 204 });
+      } catch { return new Response(null, { status: 503 }); }
+    }
+
     // Auth required for all other endpoints
     const authResult = await authenticate(request, env);
     
@@ -86,7 +105,10 @@ export default {
       let response: Response;
       
       // GET /v1/usage
-      if (path === '/v1/usage') {
+      if (path === '/v1/models') {
+        response = method === 'GET' ? handleModels(env) : methodNotAllowed(['GET']);
+      }
+      else if (path === '/v1/usage') {
         if (method !== 'GET') {
           response = methodNotAllowed(['GET']);
         } else {
@@ -132,7 +154,7 @@ export default {
       
       return addCorsHeaders(response, corsHeaders);
     } catch (error) {
-      console.error('Request handler error:', error);
+      console.error('Request handler error');
       
       const errorResponse = new Response(
         JSON.stringify({
@@ -163,7 +185,7 @@ export default {
 function buildCorsHeaders(request: Request, env: Env): Record<string, string> {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Styling-Policy, X-Styling-Model',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };

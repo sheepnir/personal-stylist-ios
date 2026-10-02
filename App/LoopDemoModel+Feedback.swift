@@ -8,6 +8,8 @@ extension LoopDemoModel {
     func showToast(_ message: String, dismissAfter: Duration = .seconds(2.5), announce: Bool = true) {
         toastDismissTask?.cancel()
         swapUndoAssignmentsSnapshot = nil
+        swapUndoGenerationSnapshot = nil
+        swapUndoRationaleSnapshot = nil
         updateToastState(message)
         if announce {
             AccessibilityNotification.Announcement(message).post()
@@ -35,6 +37,8 @@ extension LoopDemoModel {
     func performSwapUndo() {
         guard var current = outfit, let snapshot = swapUndoAssignmentsSnapshot else { return }
         current.assignments = snapshot
+        current.generation = swapUndoGenerationSnapshot
+        if let summary = swapUndoRationaleSnapshot { current.rationaleSummary = summary }
         outfit = current
         clearActiveToast()
         let message = "Swap undone"
@@ -52,6 +56,8 @@ extension LoopDemoModel {
         toastDismissTask?.cancel()
         updateToastState(nil)
         swapUndoAssignmentsSnapshot = nil
+        swapUndoGenerationSnapshot = nil
+        swapUndoRationaleSnapshot = nil
     }
 
     /// Auto-dismiss “Updated” flash on the board (#105 / soft #137).

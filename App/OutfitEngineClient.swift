@@ -50,7 +50,7 @@ enum OutfitEngineClient {
         )
     }
 
-    /// Cancels the URLSession work started by `generate` (#162).
+    /// Cancels owned URLSession generate/alternatives work; a cancelled handle never dispatches.
     final class EngineDataTask: @unchecked Sendable {
         private let lock = NSLock()
         private var task: URLSessionDataTask?
@@ -236,6 +236,7 @@ enum OutfitEngineClient {
         var slot: String
         var alternatives: [AlternativeRow]
         var emptyReason: String?
+        var generation: EngineGeneration? = nil
     }
 
     struct ProblemBody: Decodable {
@@ -721,6 +722,7 @@ enum OutfitEngineClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         try applyAuth(to: &request)
+        StylingModel.applyHeaders(to: &request)
         request.timeoutInterval = 15
         request.httpBody = payload
 
@@ -838,7 +840,8 @@ enum OutfitEngineClient {
         occasion: String = "WORK_STANDARD",
         occasionFormality: Int = 3,
         temperatureBand: String = "MILD",
-        precipitation: Bool = false
+        precipitation: Bool = false,
+        flight: EngineDataTask? = nil
     ) async throws -> AlternativesResponse {
         if try requiresDeviceToken(for: baseURL) && !DeviceTokenStore.hasToken {
             throw ClientError.missingDeviceToken
@@ -856,15 +859,15 @@ enum OutfitEngineClient {
         var request = URLRequest(url: alternativesURL)
         request.httpMethod = "POST"
         try applyAuth(to: &request)
+        StylingModel.applyHeaders(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
         request.httpBody = payload
         emitLifecycle(.constructed, request: request)
-        emitLifecycle(.dispatched, request: request)
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await urlSession.data(for: request)
+            (data, response) = try await (flight ?? EngineDataTask()).data(for: request)
         } catch {
             throw ClientError.transport(error)
         }
@@ -896,7 +899,7 @@ enum OutfitEngineClient {
     ) -> (alts: [StubSwapAlternative], emptyReason: String?) {
         let byId = Dictionary(uniqueKeysWithValues: garments.map { ($0.id.uuidString.lowercased(), $0) })
         var out: [StubSwapAlternative] = []
-        for row in response.alternatives {
+        for (index, row) in response.alternatives.enumerated() {
             guard let g = byId[row.garmentId.lowercased()] else { continue }
             let partners = (row.setPartnerIds ?? []).compactMap { UUID(uuidString: $0) }
             out.append(
@@ -905,7 +908,12 @@ enum OutfitEngineClient {
                     garment: g,
                     reason: row.reason,
                     score: row.score,
-                    setPartnerIds: partners
+                    setPartnerIds: partners,
+                    selectionMetadata: response.generation.map { generation in
+                        SwapSelectionMetadata(modelId: generation.modelId, promptVersion: generation.promptVersion,
+                            fallbackLevel: generation.fallbackLevel, fallbackReason: generation.fallbackReason,
+                            costUSD: generation.costUSD, selectedSuggestedOption: index == 0)
+                    }
                 )
             )
         }

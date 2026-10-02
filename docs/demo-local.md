@@ -48,7 +48,7 @@ Pass under Product → Scheme → Arguments, or via `simctl launch …`:
 
 | Arg | Effect |
 |-----|--------|
-| *(none)* | Wardrobe grid (fixtures) |
+| *(none)* | Wardrobe tab, grid (fixtures) |
 | `-demoDetail` | Garment detail (prefers a set member) |
 | `-demoEngine` / `-demoBoard` | Build outfit via local engine → Board |
 | `-demoSort` | Wardrobe sorted “Longest since worn” |
@@ -59,6 +59,11 @@ Pass under Product → Scheme → Arguments, or via `simctl launch …`:
 | `-demoLocks` | Board after lock + try-another |
 | `-demoSwap` | Board + swap sheet via `:8787` `/v1/outfit/alternatives` |
 | `-demoWear` | Board → wear confirm |
+| `-demoCalendar` | Calendar tab (recorded wear history, read-only) |
+
+The app uses bottom tabs (Wardrobe, Outfit, Calendar, Profile). Board arguments open the
+Outfit tab; detail arguments push garment detail on the Wardrobe tab; `-demoProfile` opens the
+Profile tab. Opening the Outfit tab by hand never starts a generation.
 
 Example:
 

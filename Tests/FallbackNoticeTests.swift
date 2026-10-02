@@ -29,7 +29,7 @@ final class FallbackNoticeTests: XCTestCase {
 
     private static let unavailable = "The AI stylist wasn't available, so the app put this one together from your wardrobe."
     private static let noUsable = "The AI stylist couldn't come up with a usable outfit this time, so the app put this one together from your wardrobe."
-    private static let limitVariantB = "The AI stylist reached its usage limit, so the app put this one together from your wardrobe. It'll be back after the limit resets."
+    private static let limitVariantB = "The AI stylist isn't available right now, so the app put this outfit together from your wardrobe."
     private static let generic = "This time the app put this outfit together from your wardrobe on its own."
 
     private func notice(_ reason: String?) -> FallbackNotice? {
@@ -58,8 +58,7 @@ final class FallbackNoticeTests: XCTestCase {
 
     func testSpendCapUsesVariantBOnly() {
         let body = notice("SPEND_CAP")?.body ?? ""
-        XCTAssertTrue(body.hasSuffix(FallbackNoticeCopy.limitResetUnknown))
-        XCTAssertEqual(FallbackNoticeCopy.limitResetUnknown, "It'll be back after the limit resets.")
+        XCTAssertFalse(body.contains("reset"))
         XCTAssertNil(body.range(of: #"\d"#, options: .regularExpression), "Variant A (a reset time) is out of scope")
     }
 
@@ -149,6 +148,64 @@ final class FallbackNoticeTests: XCTestCase {
         h.model.setAssignmentLocked(slot: .bottom, locked: false)
         XCTAssertEqual(h.model.boardFallbackNotice?.reason, .invalidOutput, "Keep / Unlock keeps")
         XCTAssertEqual(h.announced.count, 1, "no announcement on swap, undo, or lock")
+    }
+
+    @MainActor
+    func testSwapAttributionClearsForLocalChoiceAndUndoRestoresPriorExplanation() async throws {
+        let h = try await Harness.make(defaults: defaults)
+        h.serve(generationJSON: ADR0001GenerateFixtures.generationJSON(fallbackReasonJSON: nil))
+        _ = await h.model.buildDemoOutfit(intent: .firstBuild)
+        let originalSummary = h.model.outfit?.rationaleSummary
+        let originalGeneration = h.model.outfit?.generation
+        let other = try XCTUnwrap(h.spareBottom)
+        let jev = SwapSelectionMetadata(modelId: "typesafe/jev-1.13", promptVersion: "outfit-choice-v1", fallbackLevel: "NONE", fallbackReason: nil, costUSD: 0.00001, selectedSuggestedOption: true)
+        h.model.swapSlot = .bottom
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev 1.13’s suggested swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, originalSummary)
+        XCTAssertEqual(h.model.outfit?.generation, originalGeneration)
+
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        defaults.removeObject(forKey: StylingConsent.defaultsKey)
+        XCTAssertNil(StylingConsent.acceptedVersion(in: defaults))
+        h.model.setAssignmentLocked(slot: .bottom, locked: false)
+        h.model.applySwap(StubSwapAlternative(id: h.bottom.id, garment: h.bottom, reason: "local", score: nil, setPartnerIds: []))
+        XCTAssertNil(h.model.outfit?.generation?.lastSwap)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated after swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with Jev 1.13’s suggested swap.")
+    }
+
+    @MainActor
+    func testLunaSwapAttributionAndUndoRestoreActualModel() async throws {
+        let h = try await Harness.make(defaults: defaults)
+        h.serve(generationJSON: ADR0001GenerateFixtures.generationJSON(fallbackReasonJSON: nil))
+        _ = await h.model.buildDemoOutfit(intent: .firstBuild)
+        let originalSummary = h.model.outfit?.rationaleSummary
+        let originalGeneration = h.model.outfit?.generation
+        let other = try XCTUnwrap(h.spareBottom)
+        let jev = SwapSelectionMetadata(modelId: "openai/gpt-5.6-luna", promptVersion: "outfit-choice-luna-v1", fallbackLevel: "NONE", fallbackReason: nil, costUSD: 0.00001, selectedSuggestedOption: true)
+        h.model.swapSlot = .bottom
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with GPT-5.6 Luna’s suggested swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, originalSummary)
+        XCTAssertEqual(h.model.outfit?.generation, originalGeneration)
+
+        h.model.applySwap(StubSwapAlternative(id: other.id, garment: other, reason: "test", score: nil, setPartnerIds: [], selectionMetadata: jev))
+        defaults.removeObject(forKey: StylingConsent.defaultsKey)
+        XCTAssertNil(StylingConsent.acceptedVersion(in: defaults))
+        h.model.setAssignmentLocked(slot: .bottom, locked: false)
+        h.model.applySwap(StubSwapAlternative(id: h.bottom.id, garment: h.bottom, reason: "local", score: nil, setPartnerIds: []))
+        XCTAssertNil(h.model.outfit?.generation?.lastSwap)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated after swap.")
+        h.model.performSwapUndo()
+        XCTAssertEqual(h.model.outfit?.generation?.lastSwap, jev)
+        XCTAssertEqual(h.model.outfit?.rationaleSummary, "Updated with GPT-5.6 Luna’s suggested swap.")
     }
 
     @MainActor
@@ -282,7 +339,7 @@ final class FallbackNoticeTests: XCTestCase {
         var users: [String] = []
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            if text.contains("boardFallbackNotice") || text.contains("FallbackNoticeCopy") || text.contains("fallbackReason") {
+            if text.contains("boardFallbackNotice") || text.contains("FallbackNoticeCopy") {
                 users.append(file.lastPathComponent)
             }
             XCTAssertFalse(text.contains("promptVersion"), "\(file.lastPathComponent) must not surface promptVersion")

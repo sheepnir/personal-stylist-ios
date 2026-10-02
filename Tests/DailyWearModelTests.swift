@@ -559,4 +559,20 @@ private final class FailingWearStore: PersistenceStore, @unchecked Sendable {
     func replaceGarmentPhoto(garmentId: UUID, stagingId: UUID) async throws -> StubGarment {
         try await inner.replaceGarmentPhoto(garmentId: garmentId, stagingId: stagingId)
     }
+
+    var wearingPhotoFiles: WearingPhotoFileStore { inner.wearingPhotoFiles }
+    func fetchWearingPhotos(garmentId: UUID) async -> [StubWearingPhoto] {
+        await inner.fetchWearingPhotos(garmentId: garmentId)
+    }
+    func addWearingPhoto(_ request: WearingPhotoAddRequest) async throws -> StubWearingPhoto {
+        try await inner.addWearingPhoto(request)
+    }
+    func updateWearingPhotoDisplay(id: UUID, displayJPEG: Data) async throws -> StubWearingPhoto {
+        try await inner.updateWearingPhotoDisplay(id: id, displayJPEG: displayJPEG)
+    }
+    func removeWearingPhoto(id: UUID) async throws { try await inner.removeWearingPhoto(id: id) }
+    func setWearingPhotoExportState(id: UUID, state: WearingPhotoExportState) async throws -> StubWearingPhoto {
+        try await inner.setWearingPhotoExportState(id: id, state: state)
+    }
+    func sweepOrphanWearingPhotoFiles() async { await inner.sweepOrphanWearingPhotoFiles() }
 }

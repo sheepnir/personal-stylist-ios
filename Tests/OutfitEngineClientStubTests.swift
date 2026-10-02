@@ -471,6 +471,144 @@ final class OutfitEngineClientStubTests: XCTestCase {
     }
 
     @MainActor
+    func testContextEditsPersistWithoutRequestsOrChangingCurrentOutfit() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let body = try generateSuccessBody(anchorId: model.selectedGarment!.id)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: body) }
+        let built = await model.buildDemoOutfit()
+        XCTAssertTrue(built)
+        let prior = try XCTUnwrap(model.outfit)
+        let requestCount = RecordingURLProtocol.recorded.count
+        let frozen = "baseline.2026092602.cleanStartCompleted"
+        isolatedDefaults.set(true, forKey: frozen)
+        model.temperatureBand = .cold
+        model.rain = true
+        model.occasion = .casualDay
+        XCTAssertEqual(RecordingURLProtocol.recorded.count, requestCount)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        XCTAssertEqual(model.outfit?.assignments, prior.assignments)
+        XCTAssertEqual(model.outfit?.generation, prior.generation)
+        XCTAssertTrue(model.contextDirty)
+        XCTAssertTrue(isolatedDefaults.bool(forKey: frozen))
+        let restored = LoopDemoModel(store: InMemoryPersistenceStore(garments: [], sets: [], defaults: isolatedDefaults),
+                                     preferences: isolatedDefaults)
+        XCTAssertEqual(restored.manualContext, model.manualContext)
+        model.isOffline = true
+        _ = await model.buildDemoOutfit()
+        XCTAssertTrue(model.contextDirty, "A cached outfit was not regenerated for the new context")
+        XCTAssertEqual(RecordingURLProtocol.recorded.count, requestCount)
+    }
+
+    @MainActor
+    func testTryAnotherNoAlternativeRestoresOutfitWithEarlierContextReminder() async throws {
+        try await assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: true)
+    }
+
+    @MainActor
+    func testTryAnotherSameSetRestoresOutfitWithEarlierContextReminder() async throws {
+        try await assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: false)
+    }
+
+    @MainActor
+    private func assertTryAnotherRestoresDirtyOutfit(engineReportsNoAlternative: Bool) async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let anchorId = try XCTUnwrap(model.selectedGarment?.id)
+        let firstBody = try generateSuccessBody(anchorId: anchorId)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: firstBody) }
+        let built = await model.buildDemoOutfit()
+        XCTAssertTrue(built)
+        let prior = try XCTUnwrap(model.outfit)
+        model.rain.toggle()
+        XCTAssertTrue(model.contextDirty)
+
+        // A different set isolates the engine-reason branch from the same-set branch.
+        let secondGarmentId = engineReportsNoAlternative
+            ? try DeviceAccessTestFixtures.readyGarments()[1].id : nil
+        let nextBody = try generateSuccessBody(anchorId: anchorId, secondGarmentId: secondGarmentId)
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: nextBody) as? [String: Any])
+        if engineReportsNoAlternative { payload["noAlternativeReason"] = "no_alternative" }
+        let responseBody = try JSONSerialization.data(withJSONObject: payload)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: responseBody) }
+
+        let triedAnother = await model.tryAnotherOutfit()
+        XCTAssertTrue(triedAnother)
+        XCTAssertNotNil(model.noAlternativeReason)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        XCTAssertEqual(model.outfit?.assignments, prior.assignments)
+        XCTAssertEqual(model.outfit?.generation, prior.generation)
+        XCTAssertTrue(model.outfitWearable)
+        XCTAssertTrue(model.contextDirty, "Restoring an earlier outfit must retain its context reminder")
+    }
+
+    @MainActor
+    func testContextEditDiscardsDelayedGenerateAndExplicitRetryUsesNewChoices() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let body = try generateSuccessBody(anchorId: model.selectedGarment!.id)
+        EngineURLSessionStub.installClientHooks { _ in .http(status: 200, body: body) }
+        let built = await model.buildDemoOutfit()
+        XCTAssertTrue(built)
+        let prior = try XCTUnwrap(model.outfit)
+        RecordingURLProtocol.latencyNanoseconds = 150_000_000
+        let pending = Task { await model.tryAnotherOutfit() }
+        for _ in 0..<200 {
+            if RecordingURLProtocol.recorded.count >= 2 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(RecordingURLProtocol.recorded.count, 2)
+        model.temperatureBand = .hot
+        model.rain = true
+        XCTAssertTrue(model.contextRequestCancelled)
+        XCTAssertFalse(model.isGenerating)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        let delayedApplied = await pending.value
+        XCTAssertFalse(delayedApplied)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        XCTAssertTrue(model.contextDirty)
+        RecordingURLProtocol.latencyNanoseconds = 0
+        let retry = await model.buildDemoOutfit(intent: .updateContext)
+        XCTAssertTrue(retry)
+        let data = try XCTUnwrap(RecordingURLProtocol.recorded.last?.body)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let context = try XCTUnwrap(payload["context"] as? [String: Any])
+        XCTAssertEqual(context["temperatureBand"] as? String, "HOT")
+        XCTAssertEqual(context["precipitation"] as? Bool, true)
+        XCTAssertFalse(model.contextDirty)
+    }
+
+    @MainActor
+    func testChangingContextAwayAndBackDiscardsDelayedSwapSuccess() async throws {
+        let model = try await makeModelForDeviceAccessTests()
+        let garments = try DeviceAccessTestFixtures.readyGarments()
+        let body = try generateSuccessBody(anchorId: model.selectedGarment!.id, secondGarmentId: garments[1].id)
+        let alternate = Data(#"{"slot":"BOTTOM","alternatives":[{"garmentId":"\#(garments[1].id.uuidString.lowercased())","reason":"ok","score":1}]}"#.utf8)
+        EngineURLSessionStub.installClientHooks { request in
+            .http(status: 200, body: request.url?.path.contains("alternatives") == true ? alternate : body)
+        }
+        let built = await model.buildDemoOutfit()
+        XCTAssertTrue(built)
+        let prior = try XCTUnwrap(model.outfit)
+        RecordingURLProtocol.latencyNanoseconds = 100_000_000
+        let pending = Task { await model.alternatives(for: .bottom) }
+        for _ in 0..<200 {
+            if RecordingURLProtocol.recorded.count >= 2 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(RecordingURLProtocol.recorded.count, 2)
+        let original = model.rain
+        model.rain.toggle()
+        model.rain = original
+        await pending.value
+        XCTAssertTrue(RecordingURLProtocol.cancelledPaths.contains("/v1/outfit/alternatives"),
+                      "Context edits cancel transport as well as discarding stale results")
+        XCTAssertTrue(model.swapAlternatives.isEmpty)
+        XCTAssertFalse(model.isLoadingAlternatives)
+        XCTAssertEqual(model.outfit?.id, prior.id)
+        XCTAssertEqual(model.outfit?.generation, prior.generation)
+        XCTAssertTrue(model.contextDirty)
+        XCTAssertEqual(RecordingURLProtocol.recorded.count, 2, "Edits never auto-retry")
+    }
+
+    @MainActor
     private func makeModelForDeviceAccessTests() async throws -> LoopDemoModel {
         DeviceTokenStore.useTestMemory()
         _ = DeviceTokenStore.save(DeviceAccessTestFixtures.validIssuedToken)

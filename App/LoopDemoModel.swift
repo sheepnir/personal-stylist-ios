@@ -13,9 +13,15 @@ final class LoopDemoModel: ObservableObject {
     @Published var isLoadingAlternatives: Bool = false
     @Published var swapSlot: StubSlot?
     @Published var isOffline: Bool = false
-    @Published var occasion: DayOccasion = .workStandard
-    @Published var temperatureBand: TempBand = .mild
-    @Published var rain: Bool = false
+    @Published var occasion: DayOccasion = .workStandard {
+        didSet { if occasion != oldValue { manualContextChanged() } }
+    }
+    @Published var temperatureBand: TempBand = .mild {
+        didSet { if temperatureBand != oldValue { manualContextChanged() } }
+    }
+    @Published var rain: Bool = false {
+        didSet { if rain != oldValue { manualContextChanged() } }
+    }
     /// D-38 / P2-4 — context changed since last generate; board needs Update outfit.
     @Published var contextDirty: Bool = false
     @Published var showRetired: Bool {
@@ -57,6 +63,8 @@ final class LoopDemoModel: ObservableObject {
     /// Undo swap from toast (#109).
     @Published private(set) var toastUndoAvailable: Bool = false
     var swapUndoAssignmentsSnapshot: [StubOutfitAssignment]?
+    var swapUndoGenerationSnapshot: OutfitGenerationMetadata?
+    var swapUndoRationaleSnapshot: String?
     /// Swap sheet empty-state copy (inline, not global strip).
     @Published var swapSheetDetail: String?
 #if DEBUG
@@ -85,7 +93,44 @@ final class LoopDemoModel: ObservableObject {
 
     private var shownSetsAnchorId: UUID?
     private let preferences: UserDefaults
+    private let contextNow: () -> Date
+    private let contextCalendar: () -> Calendar
+    @Published private(set) var contextReviewedAt: Date?
+    @Published private(set) var contextRequestCancelled = false
+
+    var manualContext: ManualOutfitContext {
+        ManualOutfitContext(occasion: occasion, temperature: temperatureBand, rain: rain)
+    }
+
+    var contextReviewCopy: String {
+        ManualContextPreferences.reviewCopy(reviewedAt: contextReviewedAt,
+                                            now: contextNow(), calendar: contextCalendar())
+    }
+
+    /// Edits persist locally and invalidate request work; they never start a request.
+    private func manualContextChanged() {
+        let hadRequest = isGenerating || isLoadingAlternatives
+        cancelGeneration() // Restore the pre-request board before marking it dirty.
+        cancelSwapFlight()
+        swapAlternatives = []
+        swapEmptyReason = nil
+        if hadRequest {
+            contextRequestCancelled = true
+            swapSheetDetail = "Context changed. Choose Swap again when you’re ready."
+        }
+        contextReviewedAt = contextNow()
+        ManualContextPreferences.save(manualContext, reviewedAt: contextReviewedAt!, to: preferences)
+        markContextChanged()
+    }
+
+    /// A same-value confirmation updates the local review date without generating anything.
+    func confirmManualContext() {
+        contextReviewedAt = contextNow()
+        ManualContextPreferences.save(manualContext, reviewedAt: contextReviewedAt!, to: preferences)
+    }
     private let store: PersistenceStore
+    /// Read-only access for feature extensions in other files (Sprint 9 photo flows).
+    var persistence: PersistenceStore { store }
     /// Board + wear state before an in-flight generate (#112 Cancel / failure restore).
     private var outfitSnapshotBeforeGenerate: StubOutfit?
     private var wearableSnapshotBeforeGenerate: Bool = false
@@ -96,6 +141,7 @@ final class LoopDemoModel: ObservableObject {
     private var activeSwapGeneration: UInt64 = 0
     /// In-flight generate request. Cancel must abort the URLSession task (#162).
     private var generateFlight: OutfitEngineClient.EngineDataTask?
+    private var swapFlight: OutfitEngineClient.EngineDataTask?
     /// Client timings against the 4 s / 8 s generation budgets (#158).
     private(set) var generationLatencySamples: [OutfitEngineClient.GenerationLatencySample] = []
     /// Fixture / intake last-worn stamps captured at load — never overwritten by app events.
@@ -109,10 +155,19 @@ final class LoopDemoModel: ObservableObject {
 
     init(
         store: PersistenceStore = InMemoryPersistenceStore.shared,
-        preferences: UserDefaults = .standard
+        preferences: UserDefaults = .standard,
+        contextNow: @escaping () -> Date = Date.init,
+        contextCalendar: @escaping () -> Calendar = { .current }
     ) {
         self.store = store
         self.preferences = preferences
+        self.contextNow = contextNow
+        self.contextCalendar = contextCalendar
+        let savedContext = ManualContextPreferences.load(from: preferences)
+        self.contextReviewedAt = savedContext?.reviewedAt
+        self.occasion = savedContext?.context.occasion ?? .workStandard
+        self.temperatureBand = savedContext?.context.temperature ?? .mild
+        self.rain = savedContext?.context.rain ?? false
         self.showRetired = preferences.bool(forKey: "wardrobe.showRetired")
     }
 
@@ -654,6 +709,8 @@ final class LoopDemoModel: ObservableObject {
             )
         }
         let generation = activeGenerateGeneration
+        let requestContext = manualContext
+        contextRequestCancelled = false
         generateAuthEpochAtStart = deviceAccessAuthEpoch
         let flight = OutfitEngineClient.EngineDataTask()
         generateFlight = flight
@@ -678,10 +735,10 @@ final class LoopDemoModel: ObservableObject {
                 sets: sets,
                 anchorId: anchor.id,
                 lockedAssignments: priorLocks,
-                occasion: occasion.apiValue,
-                occasionFormality: occasion.occasionFormality,
-                temperatureBand: temperatureBand.apiValue,
-                precipitation: rain,
+                occasion: requestContext.occasion.apiValue,
+                occasionFormality: requestContext.occasion.occasionFormality,
+                temperatureBand: requestContext.temperature.apiValue,
+                precipitation: requestContext.rain,
                 excludeGarmentSets: excludeShown ? excludeSetsForTryAnother() : [],
                 flight: flight
             )
@@ -698,7 +755,6 @@ final class LoopDemoModel: ObservableObject {
             let sameSet = !snapshotIds.isEmpty && newIds == snapshotIds
             let engineReason = response.noAlternativeReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-            contextDirty = false
             generateFailureMessage = nil
             generateFailureSubtitle = nil
             generateFailureDetail = nil
@@ -716,6 +772,7 @@ final class LoopDemoModel: ObservableObject {
                 } else {
                     outfit = built
                     outfitWearable = true
+                    contextDirty = false
                     recordShown(built)
                     announceFallbackNoticeIfPresent(for: built)
                 }
@@ -725,6 +782,7 @@ final class LoopDemoModel: ObservableObject {
             noAlternativeReason = nil
             outfit = built
             outfitWearable = true
+            contextDirty = false
             outfitSnapshotBeforeGenerate = nil
             recordShown(built)
             announceFallbackNoticeIfPresent(for: built)
@@ -804,7 +862,6 @@ final class LoopDemoModel: ObservableObject {
             outfit = existing
             generateFailureMessage = nil
             outfitWearable = true  // D-24 cached/revalidated path
-            contextDirty = false
             recordDiagnostic("Offline — showing your last outfit")
             return true
         }
@@ -833,27 +890,34 @@ final class LoopDemoModel: ObservableObject {
             swapSheetDetail = DressingCopy.swapEmptyState(code: "LOCK_FIXED").message
             return
         }
+        cancelSwapFlight()
         // A generation shortlist is not swap-validated; use the D-33 endpoint.
         activeSwapGeneration += 1
         let generation = activeSwapGeneration
+        let flight = OutfitEngineClient.EngineDataTask()
+        swapFlight = flight
         isLoadingAlternatives = true
         defer {
+            if swapFlight === flight { swapFlight = nil }
             if generation == activeSwapGeneration {
                 isLoadingAlternatives = false
             }
         }
 
         swapAuthEpochAtStart = deviceAccessAuthEpoch
+        let requestContext = manualContext
+        contextRequestCancelled = false
         do {
             let response = try await OutfitEngineClient.fetchAlternatives(
                 slot: slot,
                 outfit: outfit,
                 garments: selectedGarment.map { garmentsForEngine(including: $0) } ?? garments,
                 sets: sets,
-                occasion: occasion.apiValue,
-                occasionFormality: occasion.occasionFormality,
-                temperatureBand: temperatureBand.apiValue,
-                precipitation: rain
+                occasion: requestContext.occasion.apiValue,
+                occasionFormality: requestContext.occasion.occasionFormality,
+                temperatureBand: requestContext.temperature.apiValue,
+                precipitation: requestContext.rain,
+                flight: flight
             )
             guard generation == activeSwapGeneration, isCurrentStoreGeneration() else { return }
             clearDeviceAccessRejected()
@@ -917,6 +981,8 @@ final class LoopDemoModel: ObservableObject {
         clearWearFlash()
         guard var outfit, let slot = swapSlot else { return }
         let undoSnapshot = outfit.assignments
+        let undoGeneration = outfit.generation
+        let undoRationale = outfit.rationaleSummary
         if let idx = outfit.assignments.firstIndex(where: { $0.slot == slot }) {
             guard !outfit.assignments[idx].isLocked, !outfit.assignments[idx].isAnchor else {
                 recordDiagnostic("\(slot.displayLabel) is locked — unlock to swap")
@@ -938,9 +1004,15 @@ final class LoopDemoModel: ObservableObject {
                 )
             }
         }
-        outfit.rationaleSummary = "Updated after swap."
+        if alt.selectionMetadata != nil {
+            if outfit.generation == nil { outfit.generation = OutfitGenerationMetadata() }
+        }
+        outfit.generation?.lastSwap = alt.selectionMetadata
+        outfit.rationaleSummary = StylingModel.swapSummary(alt.selectionMetadata)
         self.outfit = outfit
         showSwapAppliedToast("Swapped to \(alt.garment.displayName)", undoSnapshot: undoSnapshot)
+        swapUndoGenerationSnapshot = undoGeneration
+        swapUndoRationaleSnapshot = undoRationale
         recordDiagnostic("Swapped \(slot.displayLabel) → \(alt.garment.displayName)")
     }
 
@@ -1461,6 +1533,8 @@ final class LoopDemoModel: ObservableObject {
     }
 
     private func cancelSwapFlight() {
+        swapFlight?.cancel()
+        swapFlight = nil
         activeSwapGeneration += 1
         isLoadingAlternatives = false
     }

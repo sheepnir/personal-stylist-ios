@@ -25,8 +25,7 @@ FALLBACK_NOTICE_REQUIRED = [
     "Built without the AI stylist",
     "The AI stylist wasn't available, so the app put this one together from your wardrobe.",
     "The AI stylist couldn't come up with a usable outfit this time, so the app put this one together from your wardrobe.",
-    "The AI stylist reached its usage limit, so the app put this one together from your wardrobe.",
-    "It'll be back after the limit resets.",
+    "The AI stylist isn't available right now, so the app put this outfit together from your wardrobe.",
     "This time the app put this outfit together from your wardrobe on its own.",
 ]
 FALLBACK_NOTICE_FORBIDDEN_WORDS = re.compile(

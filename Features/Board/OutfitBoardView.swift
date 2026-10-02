@@ -9,9 +9,15 @@ struct OutfitBoardView: View {
     /// D-75 — explicit same-day correction. Must not persist.
     var onChangeWhatIWore: () -> Void = {}
     var onSetUpDeviceAccess: () -> Void = {}
+    /// Sprint 9: false under the tab shell — opening the Outfit tab never starts a
+    /// generation (and never a paid request). Building stays an explicit user action.
+    var autoBuildsOnAppear: Bool = true
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contextExpanded = false
     @AppStorage("demo.boardKeepTipShown") private var boardKeepTipShown = false
+    @AppStorage(StylingModel.defaultsKey) private var selectedStylingModel = StylingModel.jev.rawValue
     @State private var showKeepTipBanner = false
 
     /// Main column: non-accessories + accessory Starting item (GH #61).
@@ -33,6 +39,21 @@ struct OutfitBoardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 contextBar
+                Picker("Stylist for next request", selection: $selectedStylingModel) {
+                    ForEach(StylingModel.allCases) { option in Text(option.title).tag(option.rawValue) }
+                }
+                .pickerStyle(.menu)
+                .disabled(model.isGenerating || model.isLoadingAlternatives)
+                .accessibilityHint("Select a model, then update the outfit to compare with the same weather and occasion.")
+                .onChange(of: selectedStylingModel) { _, _ in model.markContextChanged() }
+                Text("Enable each model’s suggestions in Profile before using it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let current = model.outfit {
+                    Text("Generated with: \(StylingModel.resultTitle(current.generation?.modelId))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if model.deviceAccessRejected {
                     deviceAccessFailureBanner()
                 } else if let fail = model.generateFailureMessage {
@@ -131,8 +152,8 @@ struct OutfitBoardView: View {
         .navigationTitle("Outfit")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if model.outfit == nil, !model.isGenerating, model.generateFailureMessage == nil,
-               !model.deviceAccessRejected {
+            if autoBuildsOnAppear, model.outfit == nil, !model.isGenerating,
+               model.generateFailureMessage == nil, !model.deviceAccessRejected {
                 Task { await model.buildDemoOutfit(intent: .firstBuild) }
             }
         }
@@ -449,57 +470,60 @@ struct OutfitBoardView: View {
 
     private var contextBar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Menu {
-                    ForEach(DayOccasion.allCases) { o in
-                        Button(o.rawValue) {
-                            model.occasion = o
-                            model.markContextChanged()
+            DisclosureGroup(isExpanded: $contextExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Occasion", selection: $model.occasion) {
+                        ForEach(DayOccasion.allCases) { option in
+                            Text(option.rawValue).tag(option)
                         }
                     }
-                } label: {
-                    contextChip(model.occasion.rawValue, systemImage: "briefcase")
-                }
-                .frame(minHeight: 44)
-                .accessibilityLabel("Occasion")
-                .accessibilityValue(model.occasion.rawValue)
-                .accessibilityHint("Choose occasion for this outfit")
-
-                Menu {
-                    ForEach(TempBand.allCases) { t in
-                        Button(t.rawValue) {
-                            model.temperatureBand = t
-                            model.markContextChanged()
+                    .pickerStyle(.menu)
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Applies to your next explicit outfit request")
+                    Picker("Temperature", selection: $model.temperatureBand) {
+                        ForEach(TempBand.allCases) { option in
+                            Text(option.rawValue).tag(option)
                         }
                     }
-                } label: {
-                    contextChip(model.temperatureBand.rawValue, systemImage: "thermometer")
+                    .pickerStyle(.menu)
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Choose the weather manually")
+                    Toggle("Rain", isOn: $model.rain)
+                        .frame(minHeight: 44)
+                    Button("Use these choices for today") { model.confirmManualContext() }
+                        .buttonStyle(.bordered)
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Confirms the weather without generating an outfit")
+                }
+                .padding(.top, 8)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Outfit context · Edit")
+                        .font(.subheadline.weight(.semibold))
+                    Text(model.manualContext.summary)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(minHeight: 44)
-                .accessibilityLabel("Temperature")
-                .accessibilityValue(model.temperatureBand.rawValue)
-                .accessibilityHint("Choose temperature for this outfit")
-
-                Button {
-                    model.rain.toggle()
-                    model.markContextChanged()
-                } label: {
-                    contextChip(model.rain ? "Rain" : "No rain", systemImage: model.rain ? "cloud.rain.fill" : "sun.max")
-                }
-                .buttonStyle(.plain)
-                .frame(minHeight: 44)
-                .accessibilityLabel("Rain")
-                .accessibilityValue(model.rain ? "On" : "Off")
-                .accessibilityHint("Turns rain consideration on or off")
-
-                Spacer(minLength: 0)
+            }
+            // Refresh the date label while the app stays open over local midnight.
+            TimelineView(.periodic(from: .now, by: 60)) { _ in
+                Text(model.contextReviewCopy)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.contextRequestCancelled {
+                Text("Context changed. The pending result won’t be used. Generate or Swap again when you’re ready.")
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if model.contextDirty, !(model.isGenerating && model.generateIntent == .updateContext) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Out of date for this weather/occasion")
+                    Text("Settings changed")
                         .font(.subheadline.weight(.semibold))
-                    Text("Your outfit still shows the previous context. Update when you’re ready.")
+                    Text("Your outfit still uses the previous settings. Update when you’re ready.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Update outfit") {
@@ -565,7 +589,7 @@ struct OutfitBoardView: View {
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: a.isLocked)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: a.isLocked)
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(g.displayName)
@@ -700,7 +724,7 @@ struct OutfitBoardView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: a.isLocked)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: a.isLocked)
                 Text(g.displayName)
                     .font(.caption2.weight(.semibold))
                     .lineLimit(2)
@@ -774,9 +798,12 @@ private struct BoardTileActionRow<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack(spacing: 8) {
-            content()
-            Spacer(minLength: 0)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                content()
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 8) { content() }
         }
     }
 }

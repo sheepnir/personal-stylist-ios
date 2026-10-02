@@ -101,3 +101,24 @@ npm run dev     # wrangler dev --config wrangler.local.toml (needs the local con
   printable ASCII (U+0020–U+007E) or that carry image-bearing keys / image-looking string values.
   Rules are shared with the iOS client via `fixtures/image-guard/corpus.json` and
   `scripts/check-image-guard-parity.py` (run after `npm ci` here).
+
+## Bounded typed decisions
+
+The explicit live path uses `typesafe/jev-1.13` through OpenRouter's typed Decisions API. Generate and swap share eligibility, current-price verification, reservations, validation and reconciliation in `paidSelection.ts`. The older mock-only chat path remains guarded.
+
+Committed configurations keep `PROVIDER_GENERATION=off`. Private deployment configuration must provide the pinned `PRIMARY_MODEL`, device and global daily caps, cumulative evaluation cap, provider-policy verification date, key-limit verification, and the existing `SPEND_LEDGER` binding. Never commit operational values. A separate `PROVIDER_CONTROL_SECRET` authenticates `POST /v1/admin/provider-switch` with `{ "enabled": true|false }`; the durable switch defaults to false. Turning it off blocks new reservations; calls already reserved may finish. Preserve the same `application-spend-v1` object identity and namespace when deploying, including its cumulative evaluation limit.
+
+`X-Styling-Policy` must match `shared/privacy-policy-version.json`. Consent covers only the documented allowlisted text attributes. `GET /v1/models` reports the policy and model metadata; it does not grant consent. Withdrawn or outdated consent takes the deterministic path.
+
+Run `npm run test:runtime` in addition to unit tests. These tests use Miniflare/workerd with synthetic credentials, local disk persistence and isolated test objects; they do not call OpenRouter. See `tests/runtime/README.md` and `docs/qa/sprint8-bounded-selection.md` at the repository root for coverage and limits.
+
+### Optional Luna comparison
+
+`X-Styling-Model` may select `typesafe/jev-1.13` (default) or
+`openai/gpt-5.6-luna`. Luna additionally requires private deployment setting
+`LUNA_COMPARISON=enabled` and exact `X-Styling-Policy: luna-text-v1` consent.
+Existing Jev consent remains `jev-text-v1`; it cannot authorize Luna. Keep
+`PRIMARY_MODEL=typesafe/jev-1.13` as the base configuration pin for this comparison.
+Both choices use the same device/global ledger, runtime switch, device allowlist
+and total evaluation cap. No separate budget is introduced. Model-specific
+activation still requires provider policy verification and release approval.
